@@ -216,7 +216,7 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
     container.appendChild(renderer.domElement);
 
     const scene = new THREE.Scene();
-    const horizonHex = 0x5c6470;
+    const horizonHex = 0x4d2b14;
     scene.background = new THREE.Color(horizonHex);
 
     // Studio Environment Reflection (RoomEnvironment)
@@ -233,21 +233,21 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
       camera.aspect = aspect;
       if (aspect < 0.85) {
         // Ensure full horizontal table fit AND full vertical fit (including Chef & table legs above the bottom dock)
-        const halfVFovByWidth = Math.atan(0.248 / aspect);
-        const minVFovDeg = 50; // Guarantees z = -6.5 to z = +6.2 always fits vertically even with Chrome + AI Studio headers!
+        const halfVFovByWidth = Math.atan(0.232 / aspect);
+        const minVFovDeg = 47;
         camera.fov = THREE.MathUtils.clamp(
           Math.max(minVFovDeg, THREE.MathUtils.radToDeg(halfVFovByWidth * 2)),
-          50,
-          62
+          47,
+          54
         );
       } else {
-        camera.fov = 48;
+        camera.fov = 46;
       }
       camera.updateProjectionMatrix();
     }
     updateCameraProjection(initW, initH);
-    camera.position.set(0, 9.8, 10.6);
-    camera.lookAt(0, -0.55, 0.48);
+    camera.position.set(0, 9.5, 10.2);
+    camera.lookAt(0, -0.46, 0.16);
 
     // 3-Point Warm Cel-Shading Lighting Rig + 2048x2048 Crisp Shadows
     const hemiLight = new THREE.HemisphereLight(0xfffbeb, 0xfde68a, 1.05);
@@ -291,12 +291,7 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
       new THREE.BoxGeometry(18.0, 6.8, 0.36),
       createToonMaterial(0xffffff, { map: backsplashTex })
     );
-    const wallMoulding = new THREE.Mesh(
-      new THREE.BoxGeometry(18.0, 0.16, 0.48),
-      createToonMaterial(0xdbe2ea)
-    );
-    wallMoulding.position.set(0, -1.25, 0.06);
-    wallGroup.add(wallSlab, wallMoulding);
+    wallGroup.add(wallSlab);
     addInkOutline(wallGroup, 0.045);
     worldGroup.add(wallGroup);
 
@@ -1197,11 +1192,11 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
       } else if (gState === 'title') {
         // Live World 3/4 Camera Tour on Title Screen!
         const tourX = Math.sin(elapsed * 0.45) * 1.1;
-        const tourZ = 10.5 + Math.cos(elapsed * 0.35) * 0.35;
+        const tourZ = 10.1 + Math.cos(elapsed * 0.35) * 0.35;
         camera.position.x = THREE.MathUtils.damp(camera.position.x, tourX, 3, dt);
-        camera.position.y = THREE.MathUtils.damp(camera.position.y, 9.8, 3, dt);
+        camera.position.y = THREE.MathUtils.damp(camera.position.y, 9.5, 3, dt);
         camera.position.z = THREE.MathUtils.damp(camera.position.z, tourZ, 3, dt);
-        camera.lookAt(0, -0.55, 0.48);
+        camera.lookAt(0, -0.46, 0.16);
       } else {
         // Full 9:16 Vertical Countertop Framing with decaying trauma*trauma shake
         cameraTrauma = Math.max(0, cameraTrauma - dt * 2.4);
@@ -1209,9 +1204,9 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
         const shakeX = (Math.random() - 0.5) * shake;
         const shakeZ = (Math.random() - 0.5) * shake;
         camera.position.x = THREE.MathUtils.damp(camera.position.x, shakeX, 10, dt);
-        camera.position.y = THREE.MathUtils.damp(camera.position.y, 9.8, 8, dt);
-        camera.position.z = THREE.MathUtils.damp(camera.position.z, 10.6 + shakeZ, 10, dt);
-        camera.lookAt(0, -0.55, 0.48);
+        camera.position.y = THREE.MathUtils.damp(camera.position.y, 9.5, 8, dt);
+        camera.position.z = THREE.MathUtils.damp(camera.position.z, 10.2 + shakeZ, 10, dt);
+        camera.lookAt(0, -0.46, 0.16);
       }
 
       // Check manual "EMPEZAR OLEADA" button trigger or auto-start after all pieces are placed

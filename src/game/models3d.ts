@@ -207,12 +207,18 @@ export function createWoodGrainTexture(
     ctx.fillRect(dx + 4, 16, 3, 1504);
   }
 
+  // Carved Horizontal Wood Groove separating Playable Rows from the 4 Bastion Plates (replaces any gray bar!)
+  ctx.fillStyle = '#5c2808';
+  ctx.fillRect(40, 1358, 944, 10);
+  ctx.fillStyle = '#f6ad55';
+  ctx.fillRect(40, 1368, 944, 4);
+
   // Wood/brass dowels at top & bottom corners of the butcher block
   const dowelPositions = [
     [95, 42],
     [929, 42],
-    [76, 1168],
-    [948, 1168],
+    [76, 1326],
+    [948, 1326],
     [76, 1465],
     [948, 1465],
   ];
@@ -279,8 +285,8 @@ export function createOuterTableWoodTexture(): THREE.CanvasTexture {
 }
 
 /**
- * Grey Tiled Kitchen Floor Texture visible under the front of the Butcher Block Table
- * (around the wooden table legs, Chef, and bottom tactical tray).
+ * Warm Dark Wood/Terracotta Kitchen Floor Texture visible under the front of the Butcher Block Table
+ * (eliminating any cold gray band beneath the table legs, Chef, and bottom tactical tray).
  */
 export function createKitchenFloorTileTexture(): THREE.CanvasTexture {
   if (cachedKitchenFloorTex) return cachedKitchenFloorTex;
@@ -290,15 +296,15 @@ export function createKitchenFloorTileTexture(): THREE.CanvasTexture {
   canvas.height = 512;
   const ctx = canvas.getContext('2d')!;
 
-  ctx.fillStyle = '#475569';
+  ctx.fillStyle = '#3b2110';
   ctx.fillRect(0, 0, 512, 512);
 
   const step = 128;
   for (let r = 0; r < 4; r++) {
     for (let c = 0; c < 4; c++) {
-      ctx.fillStyle = (r + c) % 2 === 0 ? '#64748b' : '#526277';
+      ctx.fillStyle = (r + c) % 2 === 0 ? '#5c3419' : '#4d2b14';
       ctx.fillRect(c * step + 4, r * step + 4, step - 8, step - 8);
-      ctx.strokeStyle = '#1e293b';
+      ctx.strokeStyle = '#291509';
       ctx.lineWidth = 4;
       ctx.strokeRect(c * step + 2, r * step + 2, step - 4, step - 4);
     }
@@ -1227,39 +1233,27 @@ export function buildOvercookedKitchenProps(railToWorldX: (r: number) => number)
   }
 
   // ===========================================================================
-  // BARRA METÁLICA HORIZONTAL DIVISORIA ENTRE LAS CASILLAS JUGABLES Y LOS 4 PLATOS
-  // (Exactamente como la barra de acero horizontal en z = +3.52 de 1794109185461.jpg)
-  // ===========================================================================
-  const dividerBar = new THREE.Mesh(
-    new THREE.BoxGeometry(7.28, 0.1, 0.16),
-    createToonMaterial(0x94a3b8)
-  );
-  dividerBar.position.set(0, 0.05, 3.52);
-  addInkOutline(dividerBar);
-  root.add(dividerBar);
-
-  // ===========================================================================
   // FRENTE GRUESO DE LA MESA DE CARNICERO + 2 PATAS ROBUSTAS DE MADERA
-  // (Exactamente como las patas delanteras de la mesa en 1794109185461.jpg)
+  // (Sin barra gris horizontal para que la encimera de madera sea continua)
   // ===========================================================================
   const tableApronMat = createToonMaterial(0xb4692c);
   const tableLegMat = createToonMaterial(0x8c4a19);
 
   [-2.85, 2.85].forEach((lx) => {
     const leg = new THREE.Mesh(
-      new THREE.BoxGeometry(0.82, 2.2, 0.82),
+      new THREE.BoxGeometry(0.92, 3.2, 0.92),
       tableLegMat
     );
-    leg.position.set(lx, -1.45, 4.35);
+    leg.position.set(lx, -1.85, 4.35);
     addInkOutline(leg);
     root.add(leg);
   });
 
   const underBeam = new THREE.Mesh(
-    new THREE.BoxGeometry(6.2, 0.42, 0.6),
+    new THREE.BoxGeometry(6.4, 0.56, 0.65),
     tableApronMat
   );
-  underBeam.position.set(0, -0.82, 4.42);
+  underBeam.position.set(0, -0.86, 4.42);
   addInkOutline(underBeam);
   root.add(underBeam);
 
