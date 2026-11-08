@@ -1,8 +1,34 @@
+# Dependencies
 node_modules/
+.pnp
+.pnp.js
+
+# Production & PWA build outputs
 build/
 dist/
+dev-dist/
 coverage/
+
+# Temporary browser verification & AI Studio debug attachments
+.playwright-cli/
+public/assets/aistudio/
+*.webm
+
+# Capacitor & Android Gradle build outputs
+android/.gradle/
+android/captures/
+android/local.properties
+android/app/build/
+android/build/
+*.apk
+*.aab
+*.ap_
+*.dex
+
+# Environment & OS files
 .DS_Store
+Thumbs.db
 *.log
 .env*
 !.env.example
+

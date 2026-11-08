@@ -1,14 +1,17 @@
 {
-  "name": "react-example",
+  "name": "chef-bastion-3d",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite --port=3000 --host=0.0.0.0",
     "build": "vite build",
     "preview": "vite preview",
+    "test": "tsx --test src/game/rules.test.ts",
     "clean": "rm -rf dist server.js",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "cap:sync": "vite build && npx @capacitor/cli sync android",
+    "cap:open:android": "npx @capacitor/cli open android"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
