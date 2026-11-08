@@ -5,6 +5,15 @@
 
 ---
 
+## 📸 Galería Oficial del Juego (Capturas Reales en 9:16)
+
+| 1. Pantalla de Título y Mundos | 2. Combo en Línea (`¡Combo x5!` · 2★) | 3. Puente de Fuego UV (`¡Escudo Fundido!`) | 4. Victoria y Progresión Automática |
+| :---: | :---: | :---: | :---: |
+| <img src="docs/screenshots/01-pantalla-titulo.png" width="210" alt="Pantalla de Título de Chef Bastion" /> | <img src="docs/screenshots/02-combo-espuma-x5.png" width="210" alt="Combo de Abanico de Espuma x5 y Exfoliación Letal 2 Estrellas" /> | <img src="docs/screenshots/03-puente-fuego-uv.png" width="210" alt="Puente de Fuego entre Aerosoles UV fundiendo escudo" /> | <img src="docs/screenshots/04-victoria-cocina-desinfectada.png" width="210" alt="Pantalla de Victoria Cocina Desinfectada" /> |
+| *Selector de mundos, Álbum 3★, Vestuario 3D e instalación PWA/APK* | *Flus-Flus + Estropajo proyectando cono y pompas 3D hacia las plagas* | *2 Aerosoles UV conectados en paralelo fundiendo el escudo rojo* | *Resumen de puntos, récord, monedas y acceso directo al Álbum 3★* |
+
+---
+
 ## 🧭 1. Necesidad del Proyecto y Visión de Diseño (¿Por qué y para qué nace?)
 
 ### 1.1. El Problema en los Juegos Móviles de Defensa Actuales
