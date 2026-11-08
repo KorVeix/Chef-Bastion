@@ -1,0 +1,527 @@
+================================================================================
+DOCUMENTO MAESTRO DE DISEÑO DE JUEGO (GDD)
+TÍTULO OFICIAL: CHEF BASTION (3D Cozy Kitchen Defense & Bullet Hell)
+FECHA: Noviembre 2026
+================================================================================
+
+1. VISIÓN GENERAL, MOTOR Y PLATAFORMA
+--------------------------------------------------------------------------------
+- Género: Casual Tactical Puzzle por Raíles + Bullet Hell + Progresión Determinista.
+- Inspiración Mecánica: Plants vs. Zombies + Bullet Hell / Sinergias Posicionales.
+- Inspiración Visual 3D: Estilo "Cozy Plow" (Three.js / WebGL con iluminación cálida
+  al sol, sombras suaves, materiales táctiles como madera, mármol, cristal y cobre,
+  modelos 3D rechonchos con personalidad y efectos de impacto "juicy").
+- Plataforma Objetivo:
+  * PWA (Progressive Web App) instalable a pantalla completa en Android e iOS.
+  * Lista para empaquetar como App Nativa en Google Play y App Store con Capacitor.
+- Orientación y Control:
+  * Formato VERTICAL (9:16 - Portrait), diseñado desde cero para jugarse de forma
+    rápida, directa y cómoda con un solo pulgar.
+
+
+2. EL TABLERO Y LA MECÁNICA DE "INVENTARIO TÁCTICO LIMITADO"
+--------------------------------------------------------------------------------
+- Estructura del Tablero Vertical:
+  * 4 Raíles Verticales x 6 Filas (casillas amplias en móvil para evitar toques falsos).
+  * ZONA SUPERIOR (Entrada): Rejilla/ventana por donde asoman los bichos un segundo
+    antes de bajar, permitiendo anticipar por qué raíl viene cada amenaza.
+  * ZONA CENTRAL (4x6): Encimera con raíles magnéticos donde colocas y mueves tus
+    piezas/obstáculos.
+  * ZONA INFERIOR (Base): Tu Personaje/Chef Guardián en 3D + tu Bandeja Táctica.
+
+- Estilo "Piezas Limitadas / Inventario Táctico en Tiempo Real":
+  * A diferencia de un Tower Defense pasivo donde llenas el mapa y solo miras, aquí
+    tienes un número LIMITADO de objetos/armas en tu bandeja y tablero.
+  * Puedes ARRASTRAR Y REUBICAR (Drag & Drop) tus piezas de un raíl a otro en
+    cualquier momento y gratis según por dónde bajen los enemigos.
+  * Al soltar una pieza en una casilla hace un "snap" magnético con sonido y tiene
+    un micro-enfriamiento (0.3s) antes de activar su disparo/efecto.
+
+
+3. SISTEMA DE COMBOS ESPACIALES ("PONERLOS DE UNA FORMA ESPECÍFICA")
+--------------------------------------------------------------------------------
+Los objetos cambian su comportamiento y desatan patrones Bullet Hell según cómo los
+coloques entre sí en los raíles. Cuando un combo está bien colocado, el suelo 3D
+entre las piezas se ilumina confirmando la conexión:
+
+- PATRÓN A: COMBO "EN LÍNEA" (Uno delante de otro en el mismo raíl)
+  * Cómo se coloca: [Emisor Base] abajo + [Modificador/Prisma] 1 casilla delante en
+    el mismo raíl.
+  * Ejemplo en Cocina: [Pimentero / Lanza-Guisantes] detrás + [Rallador Prisma]
+    delante.
+  * Resultado Bullet Hell: El disparo recto atraviesa el Rallador y se divide en un
+    abanico Bullet Hell de 5 proyectiles (o cuchillas diagonales) que rodean escudos
+    frontales y limpian enjambres.
+
+- PATRÓN B: COMBO "PUENTE HORIZONTAL" (Dos piezas frente a frente en raíles vecinos)
+  * Cómo se coloca: Dos [Bobinas / Tostadoras] en la misma fila horizontal en dos
+    raíles adyacentes (ej. Fila 3 del Raíl 1 y Fila 3 del Raíl 2).
+  * Resultado: Se tiende una resistencia al rojo vivo / láser horizontal entre ambos
+    raíles. Cuando un enemigo blindado cruza esa línea, su escudo se funde al
+    instante y queda vulnerable a tus cañones de atrás.
+
+- PATRÓN C: COMBO "DESVÍO + TRAMPA / TRIÁNGULO" (Interacción entre raíles)
+  * Cómo se coloca: Una [Trampa Deslizante / Pastilla de Mantequilla] en un raíl +
+    un [Arma Vórtice / Batidora Espiral 360°] o [Mina] en el raíl vecino.
+  * Resultado: El enemigo pisa la trampa, patina forzosamente al raíl contiguo y
+    cae directo dentro del patrón Bullet Hell circular de 360°.
+
+
+4. PROGRESIÓN DETERMINISTA POR NIVELES (CERO RNG FRUSTRANTE)
+--------------------------------------------------------------------------------
+- Sin Azar (No RNG): Los objetos a elegir NO son aleatorios. La progresión está
+  diseñada por maestría para maximizar el engagement:
+  1. Empiezas el nivel con tu equipo base enfrentando al Enemigo Tipo A.
+  2. CONTADOR DE CAZA: Al matar exactamente X número de enemigos iguales (ej. 8/8),
+     salta un POWER-UP / NUEVO OBJETO para elegir.
+  3. NUEVA AMENAZA: En cuanto adquieres ese nuevo objeto, empiezan a salir enemigos
+     nuevos (Tipo B) que REQUIEREN tener ese objeto recién desbloqueado y colocarlo
+     combinado de una forma específica con los que ya tenías.
+
+- 2 a 3 Cambios Reales dentro de cada Nivel:
+  * Cada nivel tiene 3 fases claras (Cambio 1 -> Cambio 2 -> Cambio 3 / Clímax):
+    - Fase 1: Defensa inicial con piezas base + caza del primer grupo de enemigos.
+    - Cambio 1: Desbloqueo del Objeto 2 + entrada de enemigos con escudo/comportamiento
+      que exige el primer combo posicional.
+    - Cambio 2: Desbloqueo del Objeto 3 + cambio táctico en el tablero (ej. casillas
+      potenciadoras, raíles rápidos de hielo o enemigos que disparan Bullet Hell
+      hacia tus piezas obligándote a moverlas o cubrirlas).
+    - Cambio 3 (Clímax): Oleada combinada / Mini-Jefe que exige usar todas las
+      piezas del nivel en su formación óptima.
+
+
+5. SISTEMA DE LOGROS "3 FORMAS DE MATAR" Y RECOMPENSAS REALES
+--------------------------------------------------------------------------------
+Cuando el juego empieza a complicarse, cada enemigo clave tiene 3 FORMAS DISTINTAS
+de ser eliminado. Descubrir y ejecutar cada forma desbloquea un LOGRO y entrega un
+premio real:
+
+- Ejemplo con el "Escarabajo Acorazado (con escudo de chapa)":
+  * FORMA 1 (Directa / Estándar): Fundir su escudo con el Puente Horizontal de calor
+    y rematarlo de frente.
+    -> Premio: Medalla de Bronce + Monedas.
+  * FORMA 2 (Táctica / Diagonal): Eliminarlo por el flanco usando proyectiles
+    divididos en diagonal desde el raíl vecino sin tocar su escudo frontal.
+    -> Premio: Logro Desbloqueado + PELO / GORRO ESPECIAL para tu Chef 3D (con
+       bonificación pasiva).
+  * FORMA 3 (Maestra / Combo Ambiental): Hacerlo resbalar de raíl con Mantequilla
+    directo hacia el vórtice de una Batidora Espiral sobrecargada.
+    -> Premio: Logro Desbloqueado + ARMADURA ESPECIAL o ARMA ESPECIAL + Desbloqueo
+       de un NIVEL ESPECIAL SECRETO (ej. "El Interior de la Nevera").
+
+- Tipos de Premios Desbloqueables:
+  1. Medallas de colección por enemigo.
+  2. Pelos / Peinados / Gorros especiales (visibles en tu personaje 3D en partida).
+  3. Armaduras especiales (cambian el aspecto 3D del personaje y dan ventajas).
+  4. Armas / Obstáculos especiales de élite.
+  5. Niveles Especiales / Bóvedas secretas con mecánicas y premios únicos.
+
+
+6. ECONOMÍA Y MONETIZACIÓN POR ESTANCAMIENTO (COMPRA IN-GAME DE LOGROS)
+--------------------------------------------------------------------------------
+- Cuando la dificultad escala en niveles avanzados y un jugador se estanca (o no
+  consigue ejecutar la "Forma 3 Maestra" necesaria para ganar el Arma o Armadura
+  Especial que facilita los siguientes niveles):
+- El juego habilita la COMPRA IN-GAME DE LOGROS / RECOMPENSAS:
+  * El jugador puede entrar al Códice de Logros / Armería y comprar directamente
+    el desbloqueo de ese logro (obteniendo al instante el Arma Especial, la Armadura,
+    el Pelo o el acceso al Nivel Especial) para romper el estancamiento y seguir
+    avanzando.
+
+
+7. GUARDADO AUTOMÁTICO PERSISTENTE (AUTO-SAVE)
+--------------------------------------------------------------------------------
+- Todo el progreso se guarda automáticamente en tiempo real:
+  * Nivel actual alcanzado (si estás en el Nivel X y cierras la app, al volver a
+    abrirla sigues directamente en el Nivel X).
+  * Fase/Cambio alcanzado, medallas, logros desbloqueados (Formas 1, 2 y 3 de cada
+    enemigo), inventario de armas especiales y cosméticos equipados (Pelo/Armadura).
+
+
+8. TEMÁTICA EN DESARROLLO: COCINA 3D COZY vs. PLAGAS DE BICHOS
+--------------------------------------------------------------------------------
+- Escenarios por Mundos / Niveles Especiales:
+  1. La Encimera Soleada (Madera cálida y azulejos al sol).
+  2. El Interior de la Nevera (Raíles de hielo resbaladizos, estética invernal tipo
+     Cozy Plow).
+  3. La Parrilla / Fogones (Casillas de brasas y calor).
+  4. La Mesa de Postres (Miel, caramelo pegajoso y azúcar).
+- Utensilios / Obstáculos Candidatos:
+  * Pimentero Ametralladora (Emisor rápido).
+  * Rallador Prisma (Divide balas en abanico Bullet Hell).
+  * Bobinas Tostadoras (Puente de calor entre dos raíles).
+  * Pastilla de Mantequilla / Bote de Miel (Desvío de raíl / Ralentización).
+  * Tapa de Olla Reflectora (Muro que bloquea y rebota el Bullet Hell enemigo).
+  * Batidora Vórtice (Emisor espiral 360°).
+- Plagas / Bichos Candidatos:
+  * Hormigas Velocistas (Enjambre rápido).
+  * Escarabajos Chapa (Blindados con escudo frontal).
+  * Polillas / Avispas Bombarderas (Disparan lluvias Bullet Hell hacia tus piezas).
+  * Cucarachas Saltarraíl (Cambian de carril cuando detectan peligro frontal).
+  * Rey Cangrejo de Olla / Mantis Chef (Jefes de final de nivel).
+================================================================================
+
+
+9. FILOSOFÍA DE DISEÑO MÓVIL / PLAY STORE (HYBRID-CASUAL)
+--------------------------------------------------------------------------------
+- Cero Historias ni Textos Largos (Regla de los Primeros 5 Segundos):
+  * Prohibidos los bloques de texto, diálogos de historia o tutoriales invasivos.
+  * El jugador abre la app y en 3 segundos ya está jugando. La mecánica se entiende
+    al 100% por intuición visual: arrastrar la pieza iluminada al raíl, ver cómo se
+    conecta el circuito en el suelo 3D y ver explotar al bicho.
+
+- Partidas Intensas de 90–120 Segundos con Dificultad Incremental:
+  * Sesiones rápidas ideales para móvil a una mano (estilo "espresso": cortas,
+    intensas y satisfactorias).
+  * Curva de dificultad incremental dentro de cada nivel (2–3 cambios reales por
+    nivel) y entre niveles consecutivos, manteniendo siempre la tensión táctica.
+
+- Claridad Visual Instantánea (Legibilidad en Pantalla Vertical):
+  * Alto contraste entre el fondo cálido (encimera 3D), los proyectiles Bullet Hell
+    y las siluetas/escudos de cada bicho.
+  * Cada utensilio/obstáculo comunica su función por su forma física (Rallador =
+    corta y divide en abanico; Tostadora = calor entre raíles; Mantequilla =
+    resbalar de carril).
+
+- Efecto Coleccionista Visual (Álbum de Trofeos 3 Estrellas) y "Casi lo consigo":
+  * Códice visual con las 3 formas de matar a cada bicho (siluetas bloqueadas de
+    Pelos, Armaduras, Armas Especiales y Niveles Secretos).
+  * En caso de derrota, pantalla "Near-Miss" ("¡Te faltaron 2 bajas para desbloquear
+    el nuevo objeto!") con opción inmediata de reintentar o desbloquear/comprar el
+    logro en la tienda para superar el estancamiento.
+
+- Guardado Automático Inmediato (Auto-Save Total):
+  * Cero pérdida de progreso al cerrar la app o cambiar de aplicación en el
+    smartphone; siempre retomas en el Nivel X exacto y con todo tu inventario y
+    logros intactos.
+================================================================================
+
+
+10. REQUISITOS TÉCNICOS DE SMARTPHONE: FULLSCREEN IMPOLUTO Y TIENDAS (iOS / ANDROID)
+--------------------------------------------------------------------------------
+- Pantalla Completa Real (Fullscreen 100% Nativo en Smartphone):
+  * Uso de `100dvh` / `fixed inset-0` sin barras de desplazamiento ni márgenes
+    muertos.
+  * Configuración PWA `display: "fullscreen"` / `"standalone"` con `viewport-fit=cover`
+    para ocupar toda la pantalla del teléfono de borde a borde.
+  * Respeto estricto de Safe Areas (`env(safe-area-inset-top)` y
+    `env(safe-area-inset-bottom)`) para que ni la Dynamic Island / Notch de iPhone
+    ni la barra de gestos inferior de Android/iOS pisen marcadores o botones.
+
+- Tacto y Sensación de App Nativa (Blindaje Regla 4.2 de Apple App Store):
+  * Prohibido cualquier rastro de comportamiento de "página web":
+    - `touch-action: none` en el lienzo 3D para que arrastrar piezas con el pulgar
+      nunca mueva ni haga rebotar la pantalla.
+    - `overscroll-behavior: none` y `user-select: none` / `-webkit-user-select: none`
+      en toda la interfaz (imposible seleccionar texto o hacer zoom accidental).
+    - Bloqueo de menú contextual al mantener pulsado (`contextmenu` preventDefault).
+  * Respuesta táctil inmediata (< 16ms) con áreas de toque generosas (>= 48x48px)
+    para el pulgar.
+
+- 100% Offline-First (Modo Avión para Revisión de Apple y Google):
+  * Geometrías 3D, texturas, shaders y sintetizador de sonido (Web Audio API)
+    generados 100% en código local sin depender de descargas externas.
+  * Carga instantánea sin conexión a internet y sin usar funciones de IA generativa
+    en tiempo de ejecución dentro del móvil del jugador.
+
+- Preparado para Empaquetado Nativo (Capacitor -> Google Play .AAB y Xcode .IPA):
+  * Arquitectura lista para envolver con `@capacitor/core`, vibración háptica nativa,
+    bloqueo de orientación vertical (Portrait) y futura integración con Google Play
+    Billing / Apple StoreKit o anuncios bonificados (AdMob) para el sistema de
+    desbloqueo de logros por estancamiento.
+================================================================================
+
+
+11. FEEDBACK VISUAL "ESTILO CÓMIC" EN DESBLOQUEOS Y LOGROS (~1 SEGUNDO)
+--------------------------------------------------------------------------------
+- Explosión Visual Estilo Cómic (Pop-Art / Arcade Punch):
+  * Cada vez que el jugador:
+    1) Desbloquea un nuevo objeto o arma en mitad de la partida, o
+    2) Consigue acertar una de las 3 formas específicas de matar a un enemigo (Logro
+       de Caza 1★, 2★ o 3★),
+    salta en pantalla un destello y cartel ESTILO CÓMIC súper vistoso.
+  * Duración Rápida y Dinámica (~1 segundo):
+    - Entra con animación elástica ("pop" con escala e inclinación dinámica),
+      permanece ~1 segundo para no cortar el ritmo frenético de la partida y se
+      desvanece limpiamente.
+  * Estética del Cartel Cómic:
+    - Bocadillo de impacto en estrella / explosión con bordes negros gruesos,
+      trama de puntos (halftone) sutil, colores vibrantes de alto contraste
+      (amarillo eléctrico, naranja fuego, cian brillante) y tipografía gruesa
+      inclinada con doble contorno (ej. "¡NUEVA ARMA!", "¡CAZA MAESTRA 3★!",
+      "¡COMBO LETAL!").
+    - Acompañado de un efecto de sonido corto y triunfal (acorde sintetizado +
+      micro-hitstop) y el icono 3D/SVG del premio o arma recién desbloqueada.
+================================================================================
+
+
+12. EL NÚCLEO JUGABLE (CORE LOOP): FRENESÍ + TIEMPO DE AVANCE + MICRO-PUZZLE
+--------------------------------------------------------------------------------
+La clave absoluta de la diversión del juego reside en el equilibrio simultáneo de
+tres sensaciones en cada segundo de partida:
+
+1) EL FRENESÍ DE MATAR (Dopamina de Acción / Bullet Hell):
+   - Lluvias constantes de proyectiles, reacciones en cadena, impactos con peso y
+     explosiones estilo cómic de 1 segundo que hacen que limpiar un raíl sea
+     visceralmente satisfactorio.
+
+2) EL TIEMPO MIENTRAS AVANZAN (El Reloj Físico en el Raíl):
+   - El propio recorrido del enemigo bajando desde la fila superior (Fila 1) hasta
+     tu base (Fila 6) es tu ventana de tiempo real (4 a 7 segundos de tensión).
+   - Cuanto más se acerca el enemigo a la base, mayor es la urgencia, pero también
+     tienes menos casillas por debajo para montar la combinación.
+
+3) PENSAR CÓMO HACERLO EN CALIENTE (El Micro-Puzzle Táctico):
+   - Mientras los enemigos avanzan, tu cerebro resuelve un puzzle rápido con el
+     pulgar:
+     * "¿Muevo mis piezas para matarlo rápido de la Forma 1 y sobrevivir a la
+       oleada?"
+     * "¿O arriesgo 2 segundos para colocar la figura exacta (ej. Mantequilla +
+       Prisma + Batidora) y hacerle la Muerte 3★ antes de que pise la fila 4?"
+   - Esa mezcla de "manos rápidas + cabeza fría bajo presión mientras la horda baja"
+     es el corazón que genera el estado de "Flow" y enganche total.
+================================================================================
+
+
+13. AJUSTES DE PRODUCT MANAGER MÓVIL (ERGONOMÍA TÁCTIL, SLOW-MO Y RITMO)
+--------------------------------------------------------------------------------
+Para evitar el estrés por sobrecarga motora/cognitiva en pantallas de 6 pulgadas y
+mantener al jugador en estado de "Flow", se aplican estas 4 reglas de oro:
+
+A) REGLA 70/30 CONTRA EL "SÍNDROME DEL PULGAR FRENÉTICO":
+   - Tu formación base quieta se encarga automáticamente del 60-70% de la masilla
+     básica (hormigas corredoras).
+   - El jugador NO tiene que arrastrar piezas a lo loco cada medio segundo para no
+     morir; solo interviene tácticamente cada 4–6 segundos cuando asoma un enemigo
+     especial o blindado para armar el contraataque o buscar la Muerte 3★.
+   - Menos movimientos por minuto, pero mucho más inteligentes y satisfactorios.
+
+B) "TIEMPO BALA TÁCTICO" (TACTICAL SLOW-MO AL 30% AL ARRASTRAR) + OFFSET DE PULGAR:
+   - Problema en vertical (9:16): Al apoyar el pulgar para arrastrar una pieza, tu
+     propio dedo tapa parte del tablero inferior.
+   - Solución 1 (Tactical Slow-Mo): Mientras mantienes el dedo pulsado arrastrando
+     una pieza, la velocidad de simulación (bichos y proyectiles) baja al 25-30%
+     durante un máximo de 1.5 a 2.0 segundos (con un efecto sonoro/visual de
+     enfoque táctico). En cuanto sueltas el dedo en la casilla, la velocidad vuelve
+     al 100% de golpe desatando el estallido Bullet Hell.
+   - Solución 2 (Elevación 3D sobre el pulgar): La pieza arrastrada flota ligeramente
+     elevada por encima de la yema del dedo y proyecta un holograma/sombra clara en
+     la casilla destino para que nunca falles el tiro.
+
+C) "SWAP DIRECTO" (INTERCAMBIO AUTOMÁTICO DE CASILLAS OCUPADAS):
+   - Si arrastras una pieza y la sueltas encima de otra casilla que ya está ocupada
+     por otro utensilio, ambas piezas INTERCAMBIAN SU POSICIÓN (Swap instantáneo)
+     sin obligarte a vaciar primero una casilla intermedia. Esto ahorra segundos
+     vitales al armar combos de 3 piezas.
+
+D) CALIBRACIÓN DEL RELOJ ESPACIAL Y PREAVISO SUPERIOR:
+   - Preaviso claro en la rejilla superior (Fila 0): Los enemigos especiales asoman
+     con un aviso visual claro durante 1.5 - 2.0 segundos antes de pisar la Fila 1.
+   - Velocidad de avance calibrada: Cada fila equivale a ~1.5 segundos reales (~9
+     segundos en recorrer las 6 filas para enemigos estándar/blindados), dando
+     margen real para pensar y ejecutar el combo de 3 piezas sin que dependa de la
+     suerte.
+================================================================================
+
+
+14. DIRECCIÓN DE ARTE 3D, ARQUITECTURA DE LA COCINA Y LENGUAJE VISUAL
+--------------------------------------------------------------------------------
+1) ESTILO ARTÍSTICO: "TACTILE TOY-KITCHEN 3D" (Diorama Cálido Nivel Supercell/Nintendo):
+   - Geometría redondeada (chamfer/bevel) y materiales físicos PBR en Three.js
+     (MeshStandardMaterial / MeshPhysicalMaterial) que parecen juguetes táctiles de
+     alta gama: madera torneada, metal esmaltado, cerámica brillante, acero
+     inoxidable y cristal translúcido.
+   - Cámara Diorama 9:16: Ángulo picado de 65° a 70° (permite leer perfectamente las
+     6 filas sin que una pieza tape a la de arriba, pero viendo el volumen 3D, las
+     sombras y la cara del Chef abajo).
+   - Iluminación "Mañana de Domingo":
+     * Luz direccional cálida principal (#FFF3D6) en diagonal con sombras suaves
+       (PCFSoftShadowMap).
+     * Luz ambiental de rebote crema/melocotón (#FFE4C4) sin sombras negras puras.
+     * Motas diminutas de harina/polvo flotando suavemente en los haces de sol.
+
+2) ANATOMÍA DEL ESCENARIO VERTICAL (3 Zonas Físicas):
+   - ZONA SUPERIOR (Fila 0 - El Salpicadero / Rejilla de Ventilación):
+     * Pared de azulejos biselados color crema/menta suave con rejilla de cobre.
+     * Asoman las antenas y ojos brillantes de los bichos 1.5s antes de bajar, con
+       una señal luminosa ámbar/roja proyectada sobre el carril.
+   - ZONA CENTRAL (Filas 1 a 6 - La Encimera de Carnicero 4x6):
+     * Bloque macizo de madera de roble/haya (roughness: 0.7) donde los 4 raíles son
+       canaletas talladas con rieles de latón/cobre incrustados.
+     * Alternancia sutil de tono en los tacos de madera (~5% de diferencia) para
+       distinguir las 24 casillas sin saturar la vista durante el Bullet Hell.
+     * El Borde del Bastión (entre Fila 6 y el Chef): Barra metálica imantada (de
+       colgar cuchillos) con línea de sal/harina luminosa como frontera defensiva.
+   - ZONA INFERIOR (El Puesto del Chef + Bandeja de Inoxidable):
+     * El Chef Bastión en 3D: Rechoncho, expresivo, con gorro/pelo y delantal/armadura
+       que cambian según los logros equipados. Se desplaza mirando hacia el carril
+       donde arrastras el dedo, suda si un bicho pisa la Fila 5 y da una palmada en
+       la mesa cuando salta un ¡3★!.
+     * La Bandeja Táctica: Bandeja de horno de acero inoxidable cepillado en la zona
+       inferior (respetando el Safe Area) con huecos para los utensilios de reserva.
+
+3) LOS 4 MUNDOS / COCINAS (Progresión Visual y Mecánica):
+   - Mundo 1: La Encimera Soleada (Base) -> Madera de roble cálida, azulejos crema,
+     cobre y luz de mañana. Raíles estándar magnéticos.
+   - Mundo 2: El Interior de la Nevera (Nivel Especial Secreto) -> Baldas de cristal
+     translúcido, escarcha y luz LED cian. Raíles congelados donde los bichos y los
+     desvíos con mantequilla deslizan al doble de velocidad.
+   - Mundo 3: Los Fogones de Hierro -> Plancha de hierro fundido negro mate y
+     rejillas de gas encendidas (naranja/azul). Casillas de brasa que se calientan
+     y sobrecargan los utensilios térmicos.
+   - Mundo 4: El Obrador de Pastelería -> Mármol blanco veteado con caramelo dorado
+     y glaseado rosa. Zonas pegajosas que frenan en seco a los enjambres rápidos.
+
+4) SILUETAS DE LOS UTENSILIOS (Reconocibles en 0.2s a 70x70px):
+   - Pimentero Ametralladora (Base): Madera torneada rojiza + cabezal de latón y
+     manivela superior que gira rápido al disparar granos incandescentes.
+   - Rallador Prisma (Multiplicador en Línea): Pirámide truncada de acero brillante
+     (metalness: 0.9, roughness: 0.15) con 3 bocas en abanico; vibra y se ilumina en
+     cian al partir disparos en 5 cuchillas/proyectiles.
+   - Bobinas Tostadoras (Puente Horizontal): Tostadora retro rechoncha crema/roja con
+     ranuras laterales; conecta un filamento al rojo vivo con otra tostadora en el
+     raíl vecino.
+   - Pastilla de Mantequilla (Trampa de Desvío): Taco amarillo semitransparente a
+     45° sobre charquito derretido con flecha grabada hacia el carril vecino.
+   - Batidora Vórtice 360° (Picadora de Área): Vaso de cristal con base turquesa y
+     aspas dobles que crean un remolino blanco/azul y disparan en espiral.
+
+5) DISEÑO DE LAS PLAGAS (Contraste Puro y "Cero Grima" — Estilo Cartoon/Toy):
+   - Hormigas Velocistas: Negras brillantes como canicas de obsidiana, ojos blancos
+     grandes expresivos y casco de miga de pan.
+   - Escarabajos Chapa (Blindados): Caparazón azul metálico rechoncho llevando una
+     chapa de botella de refresco (o media lata de sardinas) como escudo frontal
+     antidisturbios (las balas frontales rebotan con "¡CLINK!").
+   - Avispas Bombarderas: Cápsulas amarillas y negras con alitas translúcidas que
+     escupen gotas ácidas moradas/verdes (color opuesto a tus disparos amarillos/cian
+     para lectura instantánea).
+
+6) EL "CIRCUITO CULINARIO" (Feedback de Conexión en la Madera):
+   - Al arrastrar una pieza en Slow-Mo (25-30%), los surcos de madera que forman
+     combo se iluminan con líneas cálidas incrustadas (Amarillo = Combo en Línea,
+     Naranja Fuego = Puente Tostador, Cian = Desvío a Vórtice).
+   - Al soltar la pieza y hacer snap, salta una nubecita de harina blanca en la base
+     y las piezas conectadas dan un pequeño bote sincronizado.
+================================================================================
+
+
+15. REDISEÑO DEFINITIVO DEL ARSENAL: "HIGIENE LETAL Y DESINFECCIÓN EXTREMA"
+--------------------------------------------------------------------------------
+Giro de identidad y humor comercial: El Chef Bastion está obsesionado con la
+higiene ("Inspección Sanitaria Nivel Dios") y utiliza química doméstica, lejía,
+espuma y estropajos como armamento pesado contra las plagas.
+Además, los colores de limpieza (azul eléctrico, verde radioactivo, amarillo
+limón, rosa jabón y espuma blanca) ofrecen un contraste visual perfecto sobre la
+madera cálida de la encimera.
+
+1) EL NUEVO ARSENAL "HIGIENE LETAL" (Manteniendo las 3 Mecánicas de Combo):
+
+   A. EMISORES BASE (Disparo Directo):
+      - Spray "Flus-Flus" Táctico (Pistola Limpiacristales):
+        * Diseño 3D: Bote translúcido con líquido azul eléctrico y cabezal de gatillo
+          rojo que se aprieta solo a toda velocidad ("¡Flus, flus, flus!").
+        * Disparo: Ráfagas rápidas de gotas presurizadas.
+      - Cañón de Lejía "Don Limpio Nuclear" (Disparo Pesado):
+        * Diseño 3D: Garrafa amarilla rechoncha con etiqueta de calavera sonriente y
+          tapón dosificador giratorio.
+        * Disparo: Chorros densos de lejía corrosiva que dejan a los bichos
+          "blanqueados" al impactar.
+
+   B. MULTIPLICADOR EN LÍNEA (Combo Detrás + Delante en el mismo raíl):
+      - Estropajo "Nanas" / Esponja Doble Cara (Amarilla con fibra verde):
+        * Diseño 3D: Esponja amarilla porosa con capa verde abrasiva (o bola de fibra
+          de acero inoxidable).
+        * Combo en Línea ([Spray Flus-Flus] detrás + [Estropajo] delante): Cuando el
+          chorro del Spray atraviesa la esponja a presión, genera espuma instantánea
+          y sale disparado en un abanico Bullet Hell de 5 burbujas químicas
+          explosivas que rebotan por el carril.
+
+   C. PUENTE HORIZONTAL (Combo en Raíles Vecinos, misma fila):
+      - Aerosoles "Mata-Todo 3000" / Tubos Fluorescentes UV:
+        * Variante 1 (Aerosoles + Chispa): Dos botes de spray en raíles contiguos
+          tienden un arco lanzallamas azul/violeta de "Frescor Alpino Incandescente"
+          que funde las chapas de botella de los escarabajos blindados al cruzar.
+        * Variante 2 (Lámparas UV de Carnicería): Dos postes mata-moscas eléctricos
+          que crean una valla láser ultravioleta (¡BZZZT!) de banda a banda.
+
+   D. TRAMPA DE DESVÍO (Cambio forzoso de carril):
+      - Pastilla de Jabón "Resbalón Mortal" (con cartelito "¡Piso Mojado!"):
+        * Diseño 3D: Pastilla de jabón rosa chicle brillante llena de pompas con una
+          señal diminuta amarilla de "¡Piso Mojado!" colocada a 45°.
+        * Efecto cómico: Al pisarla suena "¡Wiii-plop!", al bicho le salen patines de
+          espuma en las patas y sale despedido patinando sin control al raíl vecino.
+
+   E. TRAMPA VÓRTICE 360° (Picadora / Centrifugadora de Área):
+      - Cabezal de Fregona "Turbo-Spin" (o Desatascador Giratorio):
+        * Diseño 3D: Cubo escurridor compacto con cabeza de fregona blanca que
+          centrifuga a 3.000 RPM como un helicóptero.
+        * Combo Maestro ([Pastilla de Jabón] en Raíl 1 + [Fregona Turbo-Spin] en
+          Raíl 2): El bicho patina en el jabón, cae dentro del centrifugado de la
+          fregona y sale despedido reluciente mientras la fregona lanza una espiral
+          Bullet Hell de 360° de gotas de detergente por todo el mapa.
+
+   F. MURO REFLECTOR (Defensa contra Bullet Hell enemigo):
+      - Pastilla WC "Frescor Atlántico" / Bayeta Tensada:
+        * Diseño 3D: Bloque de gel azul intenso en su jaulita (o bayeta elástica).
+        * Efecto: Rebota las bolas de mugre/miel ácida de las avispas, las convierte
+          en pompas de jabón aliadas y las devuelve contra la oleada.
+
+2) LAS "3 FORMAS DE MATAR" Y SUS CARTELES CÓMIC DE 1 SEGUNDO:
+   - Muerte 1★ (Fuerza Bruta): Achicharrado cruzando el puente de aerosoles/UV
+     -> Cartel cómic (1s): "¡DESINFECTADO! 1★".
+   - Muerte 2★ (Flanqueo de Espuma): Eliminado en diagonal filtrando el Spray por el
+     Estropajo desde el carril vecino sin tocar su chapa frontal
+     -> Cartel cómic (1s): "¡EXFOLIACIÓN LETAL! 2★".
+   - Muerte 3★ (Combo Maestro de Limpieza): Resbala en la Pastilla de Jabón, cae en
+     la Fregona Turbo-Spin sobrecargada y sale volando reluciente con destello de
+     anuncio de TV ("¡DING!")
+     -> Cartel cómic (1s): "¡LIMPIEZA PROFUNDA 3★!".
+
+3) COSMÉTICOS DEL CHEF Y ARMAS ÉLITE (PREMIOS DE LOGROS / COMPRA IN-GAME):
+   - Gorros / Pelos Desbloqueables:
+     1. Gorro de Chef clásico.
+     2. Gorro de ducha de plástico con patito de goma arriba.
+     3. Casco militar hecho con un barreño volcado.
+     4. Máscara antigás con dos rollos de papel higiénico como filtros laterales.
+   - Armaduras Desbloqueables:
+     1. Delantal blanco clásico.
+     2. Traje EPI amarillo químico ("Cocinando Limpieza").
+     3. Peto de estropajos dorados con hombreras de cepillos de raíces.
+   - Armas Especiales (Por Logro 3★ o Compra por Estancamiento):
+     1. Hidrolimpiadora "Kärcher" de Alta Presión (barre un carril entero hacia atrás).
+     2. Bomba Volcán de Bicarbonato + Vinagre (erupción de espuma ácida en área).
+     3. Robot Aspirador (Roomba) Kamikaze con cuchillos pegados con cinta aislante
+        (recorre los carriles rebotando y cortando todo a su paso).
+================================================================================
+
+
+16. CIERRE DE SISTEMAS JUGABLES: PRINGUE, SELLOS SANITARIOS, RECETAS SIN TEXTO Y ULTIMATES
+--------------------------------------------------------------------------------
+1) MECÁNICA DE "PRINGUE / ATASCO" (Tus piezas nunca se destruyen para siempre):
+   - Cuando un bicho choca contra un utensilio o recibe un escupitajo ácido de una
+     avispa, la pieza NO desaparece (evitando bloqueos por falta de piezas): queda
+     "Pringada de Mugre" durante 4 segundos.
+   - Si el jugador le da un toque rápido con el dedo (Tap) o la mueve de casilla,
+     la sacude y limpia al instante para que siga disparando sin esperar.
+
+2) LOS 3 SELLOS DE SANIDAD + OLAS DE LEJÍA DE EMERGENCIA (Estilo Cortacésped PvZ):
+   - Tienes 3 Sellos de Sanidad (Guantes Blancos).
+   - Cuando un bicho logra pisar la frontera del Bastión por primera vez en un
+     raíl, salta una "Ola de Lejía de Emergencia" que barre y desinfecta ese carril
+     entero de abajo a arriba, consumiendo 1 Sello.
+   - Si pierdes los 3 Sellos -> Cartel cómic: "¡CLAUSURADO POR SANIDAD!" (Game Over)
+     con mensaje Near-Miss ("¡Te faltaron X bichos para el siguiente desbloqueo!") y
+     acceso directo a la Tienda de Logros por Estancamiento.
+
+3) RECETAS VISUALES POR PICTOGRAMAS (Cero Texto, Estilo LEGO):
+   - Las 3 formas de matar a cada bicho se muestran mediante ecuaciones de iconos:
+     * 1★: [Aerosol] + [Aerosol] -> ¡DESINFECTADO! 1★
+     * 2★: [Spray] -> [Estropajo] (Diagonal) -> ¡EXFOLIACIÓN LETAL! 2★
+     * 3★: [Jabón 45°] -> [Fregona 360°] -> ¡LIMPIEZA PROFUNDA 3★!
+
+4) MANÓMETRO DE PRESIÓN (ULTIMATE DEL CHEF):
+   - Cada bicho eliminado llena el Manómetro de Presión del Chef. Al llegar al 100%,
+     puedes pulsar el botón de tu Arma Especial Equipada (Roomba Kamikaze con
+     cuchillos, Hidrolimpiadora Kärcher o Volcán de Bicarbonato) para desatar el
+     ataque definitivo en todos los raíles.
+================================================================================
