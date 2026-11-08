@@ -39,18 +39,33 @@ jobs:
           fi
           npx cap sync android
 
-      - name: 6. Lock Portrait Orientation (9:16) in AndroidManifest.xml
+      - name: 6. Lock Portrait Orientation (9:16) & Increase Gradle Network Timeout
         run: |
           MANIFEST="android/app/src/main/AndroidManifest.xml"
           if [ -f "$MANIFEST" ] && ! grep -q 'android:screenOrientation' "$MANIFEST"; then
             sed -i 's/<activity/<activity android:screenOrientation="portrait"/g' "$MANIFEST"
+          fi
+          WRAPPER_PROPS="android/gradle/wrapper/gradle-wrapper.properties"
+          if [ -f "$WRAPPER_PROPS" ]; then
+            sed -i 's/-all\.zip/-bin.zip/g' "$WRAPPER_PROPS"
+            sed -i 's/networkTimeout=.*/networkTimeout=120000/g' "$WRAPPER_PROPS"
+            if ! grep -q 'networkTimeout=' "$WRAPPER_PROPS"; then
+              echo "networkTimeout=120000" >> "$WRAPPER_PROPS"
+            fi
           fi
 
       - name: 7. Compile Installable Android APK (Gradle assembleDebug)
         working-directory: android
         run: |
           chmod +x gradlew
-          ./gradlew assembleDebug --no-daemon
+          for attempt in 1 2 3; do
+            echo "Gradle assembleDebug attempt $attempt..."
+            ./gradlew assembleDebug --no-daemon \
+              -Dorg.gradle.internal.http.socketTimeout=120000 \
+              -Dorg.gradle.internal.http.connectionTimeout=120000 && break
+            echo "Retrying after 5s..."
+            sleep 5
+          done
 
       - name: 8. Package APK File
         run: |
