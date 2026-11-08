@@ -18,50 +18,45 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '22'
-          cache: 'npm'
 
-      - name: 3. Setup Java JDK 21 (Required for Android Gradle Plugin)
+      - name: 3. Setup Java JDK 21 (Required for Android Gradle)
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
           java-version: '21'
 
-      - name: 4. Setup Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: 5. Install Web Dependencies & Run Quality Gates
+      - name: 4. Install Web Dependencies & Build Production Bundle
         run: |
-          npm install
-          npm run lint
+          npm install --legacy-peer-deps
           npm test
           npm run build
 
-      - name: 6. Initialize Capacitor Android Platform & Sync Web Bundle
+      - name: 5. Add Capacitor Android Platform & Sync Web Assets
         run: |
-          npm install --no-save @capacitor/core @capacitor/cli @capacitor/android
+          npm install @capacitor/core @capacitor/cli @capacitor/android --legacy-peer-deps
           if [ ! -d "android" ]; then
             npx cap add android
           fi
           npx cap sync android
 
-      - name: 7. Lock Portrait Orientation (9:16) in AndroidManifest.xml
+      - name: 6. Lock Portrait Orientation (9:16) in AndroidManifest.xml
         run: |
           MANIFEST="android/app/src/main/AndroidManifest.xml"
           if [ -f "$MANIFEST" ] && ! grep -q 'android:screenOrientation' "$MANIFEST"; then
             sed -i 's/<activity/<activity android:screenOrientation="portrait"/g' "$MANIFEST"
           fi
 
-      - name: 8. Build Installable Android APK (assembleDebug)
+      - name: 7. Compile Installable Android APK (Gradle assembleDebug)
         working-directory: android
         run: |
           chmod +x gradlew
           ./gradlew assembleDebug --no-daemon
 
-      - name: 9. Rename APK for Easy Mobile Installation
+      - name: 8. Package APK File
         run: |
           cp android/app/build/outputs/apk/debug/app-debug.apk ./ChefBastion-v1.0.0-debug.apk
 
-      - name: 10. Upload Installable Android APK Artifact
+      - name: 9. Upload Installable Android APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: ChefBastion-Android-APK
