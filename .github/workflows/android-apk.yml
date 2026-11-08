@@ -1,8 +1,6 @@
-name: Build Android APK (Capacitor)
+name: Manual Android APK Builder
 
 on:
-  push:
-    branches: [main, master]
   workflow_dispatch:
 
 jobs:
@@ -39,7 +37,7 @@ jobs:
           fi
           npx cap sync android
 
-      - name: 6. Lock Portrait Orientation (9:16) & Increase Gradle Network Timeout
+      - name: 6. Lock Portrait Orientation (9:16) & Fix Gradle Wrapper Timeout
         run: |
           MANIFEST="android/app/src/main/AndroidManifest.xml"
           if [ -f "$MANIFEST" ] && ! grep -q 'android:screenOrientation' "$MANIFEST"; then
