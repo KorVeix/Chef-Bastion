@@ -2,21 +2,52 @@ export type GameState = 'title' | 'playing' | 'paused' | 'gameover';
 
 export type WorldId = 'sunny_counter' | 'fridge_vault' | 'iron_stoves' | 'pastry_marble';
 
+export type BiomeId =
+  | 'main_kitchen'    // Bioma 0 (Niveles 1-19): La Cocina Principal
+  | 'dining_hall'     // Bioma 1 (Niveles 20-38): El Comedor / Sala
+  | 'tavern_bar'      // Bioma 2 (Niveles 39-57): El Bar / Taberna
+  | 'freezer_vault'   // Bioma 3 (Niveles 58-76): Cámara Frigorífica / Despensa
+  | 'rooftop_terrace';// Bioma 4 (Niveles 77-95): Terraza / Azotea Gourmet
+
+export interface BiomeConfig {
+  rawBiomeIndex: number;
+  biomeIndex: number; // 0..4
+  cycleCount: number; // 0 for levels 1-95, +1 per 95-level loop
+  id: BiomeId;
+  name: string;
+  shortName: string;
+  subtitle: string;
+  zoneBanner: string;
+  wallHex: string;
+  counterHex: string;
+  sideCounterHex: string;
+  floorHex: string;
+  trimHex: string;
+  friction: number;        // 1.0 standard, 1.4 tablecloth, 0.35 wet bar, 0.08 ice
+  bounciness: number;      // 1.0 standard, 0.6 barstools, 0.85 rooftop umbrellas
+  lateralWindForce: number;// > 0 on rooftop_terrace
+  cycleSpeedMultiplier: number; // 1 + cycleCount * 0.10
+}
+
 export type UtensilType =
-  | 'spray_flus'      // Emisor rápido de gotas azules presurizadas
+  | 'spray_flus'      // Emisor rápido de gotas cian/verdes presurizadas hacia delante
   | 'bleach_cannon'   // Cañón pesado de lejía amarilla corrosiva
   | 'scourer_nanas'   // Estropajo amarillo/verde (Multiplicador en Línea -> 5 burbujas en abanico)
-  | 'aerosol_torch'   // Aerosol Mata-Todo / UV (Puente Horizontal entre 2 raíles vecinos -> funde chapas)
+  | 'aerosol_torch'   // Aerosol Mata-Todo / UV (Puente Horizontal láser violeta neón -> funde chapas)
   | 'soap_bar'        // Pastilla de Jabón rosa a 45° (Desvía al bicho patinando al raíl vecino)
   | 'mop_vortex'      // Fregona Turbo-Spin 3000 RPM (Centrifuga y lanza espiral Bullet Hell 360°)
-  | 'wc_shield';      // Pastilla WC Reflectora (Bloquea y devuelve proyectiles enemigos)
+  | 'wc_shield'       // Pastilla WC Reflectora (Bloquea y devuelve proyectiles enemigos)
+  | 'corner_square';  // Escuadra Deflectora 90° (Nivel 31+: redirige bichos laterales en ángulo recto hacia el carril)
 
 export type BugType =
   | 'speed_ant'       // Hormiga Velocista (Canica negra rápida con casco de miga)
-  | 'cap_beetle'      // Escarabajo Chapa (Blindado frontal con chapa de botella -> ¡CLINK!)
+  | 'cap_beetle'      // Escarabajo Chapa / Rata Blindada (Blindado frontal con chapa -> ¡CLINK!)
   | 'acid_wasp'       // Avispa Bombardera (Dispara gotas de miel ácida morada que pringan piezas)
   | 'shift_roach'     // Cucaracha Saltarraíl (Esquiva cambiando de raíl si no la atrapas en combo)
-  | 'king_crab';      // Rey Cangrejo de Olla (Mini-Jefe de Clímax de Fase 3)
+  | 'king_crab';      // Rey Cangrejo / Rey Rata de Olla (Mini-Jefe X5 o Gran Jefe 3 Fases X0)
+
+export type BossPuzzleType = 'soap_stun' | 'uv_overheat' | 'square_deflect';
+export type BossTier = 'mini' | 'grand';
 
 export type KillStarRating = 1 | 2 | 3;
 
@@ -29,22 +60,22 @@ export interface UtensilPiece {
   type: UtensilType;
   level: number;
   rail: number | null; // 0..3 when on board, null when in tray
-  row: number | null;  // 0..5 when on board (0 = top near bugs, 5 = bottom near Chef)
+  row: number | null;  // 0..6 when on board (0 = top near bugs, 6 = bottom near Chef)
   gunkTimer: number;   // > 0 means "Pringada de Mugre" (disabled until tapped/moved or timer expires)
   cooldown: number;    // 0.3s snap cooldown after moving, then firing timer
   fireTimer: number;
-  comboType: 'none' | 'line_foam' | 'bridge_uv' | 'slip_vortex' | 'shield_reflect';
+  comboType: 'none' | 'line_foam' | 'bridge_uv' | 'slip_vortex' | 'shield_reflect' | 'deflect_90';
 }
 
 export interface BugEnemy {
   id: string;
   type: BugType;
-  rail: number;        // 0..3 (current rail)
+  rail: number;        // 0..3 (current rail, or -0.85 / 3.85 when entering laterally)
   targetRail: number;  // for smooth sliding when hitting soap_bar or shifting
-  yProgress: number;   // -0.4 (warning in vent) to 6.0 (Bastion border)
+  yProgress: number;   // -0.4 (warning in vent) to 6.85 (Bastion border)
   hp: number;
   maxHp: number;
-  hasShield: boolean;  // Bottle cap frontal shield on cap_beetle / king_crab
+  hasShield: boolean;  // Bottle cap frontal shield on cap_beetle / mini-boss
   isSlidingFromSoap: boolean;
   hitByDiagonalFoam: boolean;
   hitByBridgeBurn: boolean;
@@ -54,6 +85,71 @@ export interface BugEnemy {
   attackWindup: number; // 0..1 telegraph before shooting acid or ramming
   koTimer: number;      // > 0 when defeated and flying/spinning out
   koStar: KillStarRating;
+  // Level 31+ Lateral Invasion mechanics
+  isLateralInvasion?: boolean;
+  lateralDir?: -1 | 0 | 1; // 1 = entering from left toward right, -1 = entering from right toward left
+  redirectedBySquare?: boolean;
+  // Boss Architecture: Mini-Bosses (X5) & 3-Phase Grand Bosses (X0)
+  isPuzzleBoss?: boolean;
+  bossTier?: BossTier;
+  bossPuzzleType?: BossPuzzleType;
+  bossPhase?: 1 | 2 | 3;       // Real-time 100-67% (1), 66-34% (2), 33-0% (3) for Grand Bosses
+  bossArmorBroken?: boolean;   // True when UV/explosive melts Phase 1 heavy carapace
+  bossEvadeTimer?: number;     // Rail-shift / sabotage timer in Phase 2+
+  bossFrenzyTriggered?: boolean; // Escort/lateral ambush trigger in Phase 3
+  bossPhaseFlashTimer?: number;  // 300ms visual flash on phase break
+  bossStunTimer?: number;      // > 0 when boss mechanic is countered
+}
+
+export interface ActiveBossHudInfo {
+  id: string;
+  tier: BossTier;
+  name: string;
+  hpPct: number;        // 0..100
+  phase: 1 | 2 | 3;
+  phaseLabel: string;
+  armorMelted: boolean;
+  phaseJustBroke: boolean;
+}
+
+export interface RangePreviewCell {
+  rail: number;
+  row: number;
+  role: 'damage' | 'deflect' | 'area';
+}
+
+export interface LevelForecast {
+  bugTypes: BugType[];
+  activeRails: number[]; // 0..3
+  hasLateralConduits: boolean;
+  bossTier: 'none' | BossTier;
+}
+
+export interface SmartComboHint {
+  rail: number;
+  row: number;
+  pieceType: UtensilType;
+  message: string;
+  color: 'orange' | 'green' | 'cyan' | 'yellow';
+}
+
+export interface TacticalOnboardingDiagramCell {
+  rail: number; // 1..4 human-readable
+  row: number;  // 3..6 human-readable
+  icon: string;
+  label: string;
+  highlightColor: 'green' | 'orange' | 'cyan' | 'yellow';
+}
+
+export interface TacticalOnboardingCardData {
+  level: number;
+  badge: string;
+  title: string;
+  subtitle: string;
+  cells: TacticalOnboardingDiagramCell[];
+  flowArrowLabel: string;
+  rewardTitle: string;
+  rewardExplanation: string;
 }
 
 export interface Projectile {
@@ -64,8 +160,17 @@ export interface Projectile {
   vy: number;
   damage: number;
   isEnemy: boolean;
-  flavor: 'water_drop' | 'bleach_glob' | 'foam_fan' | 'vortex_soap' | 'enemy_acid' | 'reflected_bubble' | 'roomba_blade';
+  flavor:
+    | 'water_drop'
+    | 'bleach_glob'
+    | 'foam_fan'
+    | 'vortex_soap'
+    | 'enemy_acid'
+    | 'reflected_bubble'
+    | 'roomba_blade'
+    | 'volcano_foam';
   pierceShield: boolean;
+  isExplosiveOrThermal?: boolean;
   fromDiagonalFoam: boolean;
   fromVortex: boolean;
   life: number;
@@ -105,7 +210,7 @@ export interface AchievementDef {
 }
 
 export interface PlayerProgress {
-  currentLevel: number;         // 1..12 (auto-saved!)
+  currentLevel: number;         // 1..60+ (auto-saved!)
   highestLevel: number;
   currentWorld: WorldId;
   unlockedWorlds: WorldId[];
@@ -119,4 +224,15 @@ export interface PlayerProgress {
   equippedSpecial: SpecialWeaponId;
   bestScore: number;
   totalBugsCleaned: number;
+}
+
+export interface GameSettings {
+  masterVolume: number; // 0..100
+  sfxVolume: number;    // 0..100
+  bgmVolume: number;    // 0..100
+  muted: boolean;
+  gameSpeedMultiplier: 0.75 | 1.0 | 1.25;
+  tacticalSlowMo: boolean;
+  screenShake: boolean;
+  smartComboHints: 'onboarding' | 'always' | 'off';
 }

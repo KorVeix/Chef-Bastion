@@ -6,6 +6,7 @@ import {
   addInkOutline,
   buildBugMesh,
   buildChefBastionMesh,
+  buildGhostUtensilMesh,
   buildOvercookedKitchenProps,
   buildUtensilMesh,
   createBacksplashTileTexture,
@@ -18,31 +19,56 @@ import {
   buildPlacementComboNotification,
   checkPhaseTransition,
   classifyBugElimination,
+  computeBossDamageMultiplier,
+  computeDragComboPreviewLinks,
+  computeSmartComboHints,
+  computeWeaponRangeCells,
   createInitialBoardPieces,
+  DEFAULT_SETTINGS,
   evaluateBoardCombos,
+  getBiomeForLevel,
+  getBossPuzzleTypeForLevel,
+  getBossTierForLevel,
+  getGrandBossPhase,
+  getGrandBossPhaseLabel,
+  getLevelForecast,
   GRID_RAILS,
   GRID_ROWS,
   getLevelSpeedMultiplier,
   getTutorialGuideForLevel,
+  isBiomeTransitionLevel,
+  isDynamicOnboardingLevel,
+  LEVEL_DURATION_SECONDS,
   MIN_PLACEABLE_ROW,
   moveOrSwapUtensil,
   WORLDS_CATALOG,
 } from '../game/rules';
 import {
+  ActiveBossHudInfo,
   ArmorId,
+  BiomeConfig,
   BugEnemy,
   BugType,
   ComicPopEvent,
   FloatingComboEvent,
+  GameSettings,
   GameState,
   HatId,
   KillStarRating,
+  LevelForecast,
   Projectile,
   SpecialWeaponId,
   UtensilPiece,
   UtensilType,
   WorldId,
 } from '../game/types';
+
+export interface DragPointerState {
+  active: boolean;
+  pieceId: string | null;
+  clientX: number;
+  clientY: number;
+}
 
 export interface HudSnapshot {
   phase: 1 | 2 | 3;
@@ -54,10 +80,24 @@ export interface HudSnapshot {
   pressurePct: number;
   slowMoActive: boolean;
   prepTimer: number;
+  levelTimer: number;
+  biome: BiomeConfig;
+  smartComboHintMessage: string | null;
   selectedPieceId: string | null;
   hoveredCell: { rail: number; row: number } | null;
   activeWarningRails: (BugType | null)[];
   pieces: UtensilPiece[];
+  hazmatShieldReady: boolean;
+  armoredPlates: number;
+  lastStandActive: boolean;
+  forecast: LevelForecast;
+  bossHud: ActiveBossHudInfo | null;
+  tutorialTargetScreen: {
+    xPct: number;
+    yPct: number;
+    shortTag: string;
+    pieceId: string;
+  } | null;
 }
 
 interface ChefBastionCanvasProps {
@@ -68,10 +108,14 @@ interface ChefBastionCanvasProps {
   hatId: HatId;
   armorId: ArmorId;
   specialWeaponId: SpecialWeaponId;
+  settings?: GameSettings;
   piecesRef: React.MutableRefObject<UtensilPiece[]>;
   selectedPieceIdRef: React.MutableRefObject<string | null>;
   triggerUltimateRef: React.MutableRefObject<boolean>;
   startWaveRef: React.MutableRefObject<boolean>;
+  dragPointerRef?: React.MutableRefObject<DragPointerState>;
+  boostUltimateRef?: React.MutableRefObject<boolean>;
+  boostPlateShieldRef?: React.MutableRefObject<boolean>;
   resetSignal: number;
   onHudUpdate: (snap: HudSnapshot) => void;
   onComicPop: (pop: ComicPopEvent) => void;
@@ -93,6 +137,7 @@ interface ChefBastionCanvasProps {
 // Chef Bastion stands at the front edge of the table at z = +4.95 with scale 0.46
 const RAIL_SPACING = 1.48;
 const ROW_SPACING = 1.32;
+const DRAG_OFFSET_Y_PX = 45;
 function gridToWorldX(rail: number): number {
   return (rail - (GRID_RAILS - 1) / 2) * RAIL_SPACING;
 }
@@ -110,10 +155,14 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
   hatId,
   armorId,
   specialWeaponId,
+  settings = DEFAULT_SETTINGS,
   piecesRef,
   selectedPieceIdRef,
   triggerUltimateRef,
   startWaveRef,
+  dragPointerRef,
+  boostUltimateRef,
+  boostPlateShieldRef,
   resetSignal,
   onHudUpdate,
   onComicPop,
@@ -133,6 +182,10 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
     hatId,
     armorId,
     specialWeaponId,
+    settings,
+    dragPointerRef,
+    boostUltimateRef,
+    boostPlateShieldRef,
     onHudUpdate,
     onComicPop,
     onFloatingCombo,
@@ -149,6 +202,10 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
       hatId,
       armorId,
       specialWeaponId,
+      settings,
+      dragPointerRef,
+      boostUltimateRef,
+      boostPlateShieldRef,
       onHudUpdate,
       onComicPop,
       onFloatingCombo,
@@ -164,6 +221,10 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
     hatId,
     armorId,
     specialWeaponId,
+    settings,
+    dragPointerRef,
+    boostUltimateRef,
+    boostPlateShieldRef,
     onHudUpdate,
     onComicPop,
     onFloatingCombo,
@@ -202,7 +263,7 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.08;
     renderer.setPixelRatio(isSoftwareGl ? 1 : Math.min(window.devicePixelRatio, 2));
-    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.enabled = !isSoftwareGl;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
     const initW = container.clientWidth || window.innerWidth;
@@ -360,9 +421,10 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
       warningBeacons.push(beacon);
     }
 
-    // Invisible Raycast Targets + Subtle Wood-Engraved Placement Spots (0.12 opacity) + Holographic Grid On-Demand Frames
+    // Invisible Raycast Targets + Subtle Wood-Engraved Placement Spots + Live Range / Dim Pads + Holographic Frames
     const interactableCells: THREE.Mesh[] = [];
     const cellHighlights: THREE.Mesh[][] = [];
+    const cellRangePads: THREE.Mesh[][] = [];
     const cellSpots: (THREE.Mesh | null)[][] = [];
     const invisibleHitMat = new THREE.MeshBasicMaterial({
       transparent: true,
@@ -372,6 +434,7 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
 
     for (let r = 0; r < GRID_RAILS; r++) {
       cellHighlights[r] = [];
+      cellRangePads[r] = [];
       cellSpots[r] = [];
       const rx = gridToWorldX(r);
 
@@ -388,6 +451,19 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
         hitMesh.userData = { rail: r, row };
         worldGroup.add(hitMesh);
         interactableCells.push(hitMesh);
+
+        // Translucent countertop pad for live weapon range preview AND single-focus 55% tutorial dim
+        const padMat = new THREE.MeshBasicMaterial({
+          color: 0x22d3ee,
+          transparent: true,
+          opacity: 0,
+          depthWrite: false,
+        });
+        const padMesh = new THREE.Mesh(new THREE.PlaneGeometry(1.34, 1.22), padMat);
+        padMesh.rotation.x = -Math.PI / 2;
+        padMesh.position.set(rx, 0.019, rz);
+        worldGroup.add(padMesh);
+        cellRangePads[r][row] = padMesh;
 
         // Subtle wood-engraved circular mark on playable rows (opacity 0.12 normally; brightens in Tactical Mode!)
         if (row >= MIN_PLACEABLE_ROW) {
@@ -426,113 +502,127 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
       }
     }
 
-    // Helper to build an organic, roaring 3D Flame Jet (overlapping red, orange & bright yellow-white spheres/cones)
-    function createOrganicFlameStream(): THREE.Group {
-      const fireStream = new THREE.Group();
-      fireStream.name = 'fire_stream';
+    // Crisp Neon Violet UV Laser / Electric Beam (#A855F7 / #E879F9 + #F5D0FE core) between Aerosol UV cans
+    function createNeonUvLaserStream(): THREE.Group {
+      const uvStream = new THREE.Group();
+      uvStream.name = 'fire_stream';
 
-      const redOrangeMat = new THREE.MeshBasicMaterial({
-        color: 0xea580c,
+      const outerVioletMat = new THREE.MeshBasicMaterial({
+        color: 0xa855f7,
+        transparent: true,
+        opacity: 0.55,
+        depthWrite: false,
       });
-      const orangeMat = new THREE.MeshBasicMaterial({
-        color: 0xf97316,
+      const neonMagentaMat = new THREE.MeshBasicMaterial({
+        color: 0xe879f9,
         depthTest: false,
       });
-      const goldMat = new THREE.MeshBasicMaterial({
-        color: 0xfacc15,
+      const electricCoreMat = new THREE.MeshBasicMaterial({
+        color: 0xf5d0fe,
         depthTest: false,
       });
-      const whiteCoreMat = new THREE.MeshBasicMaterial({
-        color: 0xfef08a,
-        depthTest: false,
-      });
+
+      // Continuous crisp laser core beam spanning nozzle-to-nozzle (-0.5..+0.5 along Z)
+      const laserOuter = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.09, 0.09, 1.0, 14),
+        outerVioletMat
+      );
+      laserOuter.rotation.x = Math.PI / 2;
+      laserOuter.renderOrder = 10;
+
+      const laserCore = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.036, 0.036, 1.02, 12),
+        electricCoreMat
+      );
+      laserCore.rotation.x = Math.PI / 2;
+      laserCore.renderOrder = 12;
+      uvStream.add(laserOuter, laserCore);
 
       const nodeCount = 11;
       for (let k = 0; k < nodeCount; k++) {
         const u = k / (nodeCount - 1);
-        const t = u - 0.5; // -0.5 (nozzle 1) to +0.5 (nozzle 2)
-        const env = Math.sin(u * Math.PI); // pinches cleanly at both nozzles, swells in the middle
-        const radiusScale = 0.36 + env * 0.68;
+        const t = u - 0.5;
+        const env = Math.sin(u * Math.PI);
+        const radiusScale = 0.34 + env * 0.62;
 
         const nodeGroup = new THREE.Group();
         nodeGroup.name = `flame_node_${k}`;
         nodeGroup.position.set(0, 0, t);
 
-        // 1. Outer red-orange flame mantle + wavy side licks (renderOrder 10)
-        const outerMantle = new THREE.Mesh(
-          new THREE.SphereGeometry(0.145 * radiusScale, 20, 16),
-          redOrangeMat
+        const plasmaOrb = new THREE.Mesh(
+          new THREE.OctahedronGeometry(0.095 * radiusScale, 0),
+          k % 2 === 0 ? neonMagentaMat : outerVioletMat
         );
-        outerMantle.scale.set(1.05, 0.95, 1.85);
-        outerMantle.renderOrder = 10;
+        plasmaOrb.scale.set(1.15, 1.15, 1.5);
+        plasmaOrb.renderOrder = 11;
 
-        // Wavy flame tongue licking outward from the outer mantle
-        const lick = new THREE.Mesh(
-          new THREE.ConeGeometry(0.085 * radiusScale, 0.24 * radiusScale, 14),
-          redOrangeMat
+        const sparkCore = new THREE.Mesh(
+          new THREE.SphereGeometry(0.048 * radiusScale, 10, 10),
+          electricCoreMat
         );
-        const lickDir = k % 2 === 0 ? 1 : -1;
-        lick.position.set(0, lickDir * 0.095 * radiusScale, 0);
-        lick.rotation.x = lickDir * 0.55;
-        lick.renderOrder = 10;
+        sparkCore.renderOrder = 12;
 
-        // 2. Middle vibrant orange-gold flame body (renderOrder 11)
-        const midLobe = new THREE.Mesh(
-          new THREE.SphereGeometry(0.105 * radiusScale, 20, 16),
-          k % 2 === 0 ? orangeMat : goldMat
-        );
-        midLobe.scale.set(1.0, 0.9, 1.95);
-        midLobe.renderOrder = 11;
-
-        // 3. Inner incandescent yellow-white core (renderOrder 12 — glows crisply down the center!)
-        const coreLobe = new THREE.Mesh(
-          new THREE.SphereGeometry(0.062 * radiusScale, 16, 14),
-          whiteCoreMat
-        );
-        coreLobe.scale.set(0.95, 0.85, 2.1);
-        coreLobe.renderOrder = 12;
-
-        nodeGroup.add(outerMantle, lick, midLobe, coreLobe);
-        fireStream.add(nodeGroup);
+        nodeGroup.add(plasmaOrb, sparkCore);
+        uvStream.add(nodeGroup);
       }
 
-      return fireStream;
+      return uvStream;
+    }
+
+    // Pre-Drop Synergy Electric Arc Pool (connects hovered drag target to already-placed combo partner BEFORE finger release)
+    const synergyArcPool: THREE.Group[] = [];
+    for (let aIdx = 0; aIdx < 4; aIdx++) {
+      const arcGroup = new THREE.Group();
+      arcGroup.visible = false;
+      for (let s = 0; s < 7; s++) {
+        const seg = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.035, 0.035, 0.16, 8),
+          new THREE.MeshBasicMaterial({
+            color: s % 2 === 0 ? 0xe879f9 : 0x22d3ee,
+            depthTest: false,
+          })
+        );
+        seg.rotation.x = Math.PI / 2;
+        seg.name = `arc_seg_${s}`;
+        seg.renderOrder = 15;
+        arcGroup.add(seg);
+      }
+      worldGroup.add(arcGroup);
+      synergyArcPool.push(arcGroup);
     }
 
     // =========================================================================
-    // 3D COMBO VISUALS MATCHING 1794109185461.jpg:
-    // 1. Organic Multi-Layered 3D Flame Jet at nozzle height (y = 0.96) between Aerosol UV cans
-    // 2. Upward (-Z) Translucent White Spray Cone + 3D Glossy Soap Bubbles in front of Estropajo (line_foam)
+    // 3D COMBO VISUALS:
+    // 1. Neon Violet Laser / Electric UV Beam (#A855F7 / #E879F9) between Aerosol UV cans
+    // 2. Upward (-Z) Translucent Cyan-White Spray Cone + 3D Glossy Soap Bubbles in front of Estropajo (line_foam)
     // =========================================================================
     const circuitPool: THREE.Group[] = [];
     for (let i = 0; i < 12; i++) {
       const linkGroup = new THREE.Group();
       linkGroup.visible = false;
 
-      // 1. Organic Multi-Lobed Fire Stream for bridge_uv
-      const fireStream = createOrganicFlameStream();
+      // 1. Neon Violet UV Laser Stream for bridge_uv
+      const fireStream = createNeonUvLaserStream();
       linkGroup.add(fireStream);
 
-      // 2. Upward (-Z, toward plagues!) Translucent White Spray Cone + Glossy Soap Bubbles for line_foam
+      // 2. Upward (-Z, toward plagues!) Translucent Cyan-Green Spray Cone + Glossy Soap Bubbles for line_foam
       const foamSpray = new THREE.Group();
       foamSpray.name = 'foam_spray';
       const sprayCone = new THREE.Mesh(
         new THREE.ConeGeometry(0.95, 2.3, 24, 1, true),
         new THREE.MeshBasicMaterial({
-          color: 0xffffff,
+          color: 0x67e8f9,
           transparent: true,
-          opacity: 0.34,
+          opacity: 0.32,
           side: THREE.DoubleSide,
           depthWrite: false,
         })
       );
-      // Tip (+Y) rotated to +Z (at the Estropajo, z=0) so the wide open mouth (-Y) fans UPWARD toward -Z (toward the bugs)!
       sprayCone.rotation.x = Math.PI / 2;
       sprayCone.scale.set(1.05, 1.0, 0.26);
       sprayCone.position.set(0, 0.36, -1.15);
       foamSpray.add(sprayCone);
 
-      // 8 Glossy 3D Soap Bubbles fanning UPWARD (-Z) from the Estropajo toward the plagues!
       const bubbleSpecs = [
         [0.0, 0.38, -0.62, 0.16],
         [-0.32, 0.42, -0.92, 0.2],
@@ -543,7 +633,7 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
         [-0.36, 0.36, -1.78, 0.31],
         [0.38, 0.36, -1.84, 0.29],
       ];
-      const bubbleShellMat = createToonMaterial(0xe0f2fe, {
+      const bubbleShellMat = createToonMaterial(0xccfbf1, {
         transparent: true,
         opacity: 0.86,
       });
@@ -558,12 +648,12 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
         glint.position.set(-br * 0.35, br * 0.45, -br * 0.25);
         glint.userData.skipOutline = true;
         bGroup.add(sphere, glint);
-        addInkOutline(bGroup, 0.025, 0x38bdf8);
+        addInkOutline(bGroup, 0.025, 0x06b6d4);
         foamSpray.add(bGroup);
       });
       linkGroup.add(foamSpray);
 
-      // Default floor bar for slip_vortex
+      // Default floor bar for slip_vortex / deflect_90
       const floorBar = new THREE.Mesh(
         new THREE.BoxGeometry(0.18, 0.04, 1.0),
         new THREE.MeshBasicMaterial({ color: 0x2dd4bf, transparent: true, opacity: 0.85 })
@@ -575,7 +665,7 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
       circuitPool.push(linkGroup);
     }
 
-    // 3D Tactical Action Preview Group (shows firing arrows, 5x foam fan, organic UV flame jet, or slip vector when touching a piece)
+    // 3D Tactical Action Preview Group (shows firing arrows, 5x foam fan, neon UV laser, or slip vector)
     const previewGroup = new THREE.Group();
     previewGroup.visible = false;
     const previewCones: THREE.Mesh[] = [];
@@ -588,7 +678,7 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
       previewGroup.add(cone);
       previewCones.push(cone);
     }
-    const previewBridgeBar = createOrganicFlameStream();
+    const previewBridgeBar = createNeonUvLaserStream();
     previewBridgeBar.rotation.y = Math.PI / 2;
     previewBridgeBar.scale.set(0.85, 0.85, 2.2);
     previewGroup.add(previewBridgeBar);
@@ -605,14 +695,24 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
     previewGroup.add(previewVortexRing);
     worldGroup.add(previewGroup);
 
-    // Dynamic Actor Containers
+    // Dynamic Actor Containers (+ dragGhostGroup for -45px Y finger-offset weapon ghost)
     const utensilsGroup = new THREE.Group();
+    const ghostTutorialGroup = new THREE.Group();
+    const dragGhostGroup = new THREE.Group();
+    dragGhostGroup.visible = false;
     const bugsGroup = new THREE.Group();
     const projectilesGroup = new THREE.Group();
     const chefAnchor = new THREE.Group();
     chefAnchor.position.set(0, -0.24, 4.72);
     chefAnchor.rotation.y = Math.PI;
-    scene.add(utensilsGroup, bugsGroup, projectilesGroup, chefAnchor);
+    scene.add(
+      utensilsGroup,
+      ghostTutorialGroup,
+      dragGhostGroup,
+      bugsGroup,
+      projectilesGroup,
+      chefAnchor
+    );
 
     // Zero-GC Pooled Particle Ring Buffer (InstancedMesh for flour puffs, foam splashes & sparkles)
     const particleGeo = new THREE.SphereGeometry(0.1, 8, 8);
@@ -678,6 +778,25 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
       }
     }
 
+    // Directional cyan/emerald forward (-Z, upward along its own rail) mist burst for Flus-Flus
+    function spawnForwardSprayMist(wx: number, wy: number, wz: number) {
+      for (let i = 0; i < 6; i++) {
+        const p = particles[particleCursor];
+        particleCursor = (particleCursor + 1) % PARTICLE_POOL_SIZE;
+        p.active = true;
+        p.x = wx + (Math.random() - 0.5) * 0.16;
+        p.y = wy;
+        p.z = wz - 0.18;
+        p.vx = (Math.random() - 0.5) * 0.85;
+        p.vy = 0.65 + Math.random() * 0.75;
+        p.vz = -(3.4 + Math.random() * 2.2); // Strictly forward (-Z) up its own rail!
+        p.scale = 0.45 + Math.random() * 0.45;
+        p.maxLife = 0.22 + Math.random() * 0.14;
+        p.life = p.maxLife;
+        p.color.setHex(i % 2 === 0 ? 0x00d2ff : 0x34d399);
+      }
+    }
+
     // Build Chef Mesh and rebuild when equipped Hat or Armor changes
     let currentChefKey = '';
     function syncChefModel() {
@@ -692,6 +811,9 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
 
     // Map of UtensilPiece.id -> THREE.Group
     const utensilMeshes = new Map<string, { group: THREE.Group; type: UtensilType; bounce: number }>();
+    let currentGhostType: UtensilType | null = null;
+    let currentGhostMesh: THREE.Group | null = null;
+    let currentDragGhostType: UtensilType | null = null;
     const bugMeshes = new Map<string, THREE.Group>();
     const projMeshes = new Map<string, THREE.Object3D>();
 
@@ -699,30 +821,40 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
     let bugs: BugEnemy[] = [];
     let projectiles: Projectile[] = [];
     let phase: 1 | 2 | 3 = 1;
-    let inPlacementPhase = true; // Level ALWAYS starts in 'PREP' (paused until player places pieces or taps Start Wave!)
-    let autoStartAfterPlacementTimer = 0;
+    let inPlacementPhase = !isDynamicOnboardingLevel(stateRef.current.level);
     let phaseKills = 0;
     let totalBugsCleaned = 0;
     let score = 0;
     let sanitationSeals = 3;
+    let armoredPlates = 0;
+    let hazmatShieldAvailable = stateRef.current.armorId === 'hazmat_epi';
+    let lastStandTriggered = false;
+    let lastStandTimer = 0;
+    let bossSpawnedForLevel = false;
     let pressurePct = 45;
     let spawnTimer = 2.0;
     let prepTimer = 0; // 3-second breather timer between Phase 1 -> 2 -> 3
+    let levelTimer = LEVEL_DURATION_SECONDS; // 120s (2-minute) intense wave timer for Level 5+
+    let lastAnnouncedBiomeLevel = 0;
     let shieldWarnCooldown = 0;
     let lastKillComicPopAt = 0; // 6-second minimum cooldown between kill comic banners!
-    let slowMoTimer = 0;
     let hitstopTimer = 0;
     let cameraTrauma = 0;
     let chefTargetX = 0;
     let chefCelebrateTimer = 0;
     let isDraggingOnCanvas = false;
+    let lastPointerClientX = 0;
+    let lastPointerClientY = 0;
     let hoveredCell: { rail: number; row: number } | null = null;
     let lastKnownReset = simResetRef.current;
     let gameEndedLock = false;
+    let waveQuotaCompleted = false;
     let placementComboChain = 0;
     let combatComboStreak = 1;
     let combatComboWindowTimer = 0;
     const _projVec = new THREE.Vector3();
+    const _dragPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -0.72);
+    const _dragWorldPt = new THREE.Vector3();
 
     function projectWorldToScreenPct(wx: number, wy: number, wz: number): { xPct: number; yPct: number } {
       _projVec.set(wx, wy, wz);
@@ -730,8 +862,8 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
       const rawX = (_projVec.x * 0.5 + 0.5) * 100;
       const rawY = (-_projVec.y * 0.5 + 0.5) * 100;
       return {
-        xPct: THREE.MathUtils.clamp(rawX, 18, 82),
-        yPct: THREE.MathUtils.clamp(rawY, 22, 66),
+        xPct: THREE.MathUtils.clamp(rawX, 14, 86),
+        yPct: THREE.MathUtils.clamp(rawY, 16, 78),
       };
     }
 
@@ -756,9 +888,64 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
       });
     }
 
+    function spawnBossForMilestone(lvl: number) {
+      const tier = getBossTierForLevel(lvl);
+      if (!tier || bossSpawnedForLevel) return;
+      bossSpawnedForLevel = true;
+      const puzzle = getBossPuzzleTypeForLevel(lvl) ?? 'uv_overheat';
+      const maxHp = tier === 'grand' ? Math.round(340 + lvl * 12) : Math.round(210 + lvl * 8);
+      const spawnRail = puzzle === 'soap_stun' ? 2 : 1;
+      bugs.push({
+        id: `boss-${tier}-${lvl}-${Date.now()}`,
+        type: 'king_crab',
+        rail: spawnRail,
+        targetRail: spawnRail,
+        yProgress: -0.35,
+        hp: maxHp,
+        maxHp,
+        hasShield: true,
+        isSlidingFromSoap: false,
+        hitByDiagonalFoam: false,
+        hitByBridgeBurn: false,
+        hitByVortexSpin: false,
+        slowTimer: 0,
+        flashTimer: 0,
+        attackWindup: 0,
+        koTimer: 0,
+        koStar: 1,
+        isLateralInvasion: false,
+        lateralDir: 0,
+        redirectedBySquare: false,
+        isPuzzleBoss: true,
+        bossTier: tier,
+        bossPuzzleType: puzzle,
+        bossPhase: 1,
+        bossArmorBroken: false,
+        bossEvadeTimer: 2.6,
+        bossFrenzyTriggered: false,
+        bossPhaseFlashTimer: 0,
+        bossStunTimer: 0,
+      });
+
+      stateRef.current.onComicPop({
+        id: `boss-intro-${lvl}-${Date.now()}`,
+        title:
+          tier === 'grand'
+            ? `👑 ¡GRAN JEFE NV.${lvl} EN CAMINO!`
+            : `🦀 ¡MINI-JEFE NV.${lvl} EN CAMINO!`,
+        subtitle:
+          tier === 'grand'
+            ? 'Fase 1: Coraza Pesada · Usa Láser UV ⚡ o Explosivos (×2.5)'
+            : puzzle === 'square_deflect'
+            ? 'Redirígelo con Escuadra 90° 📐 o Combos (×2.2)'
+            : 'Desvíalo con Jabón 🧼 o Láser UV ⚡ (×2.2)',
+        color: tier === 'grand' ? 'pink' : 'orange',
+        createdAt: Date.now(),
+      });
+    }
+
     function spawnWavePreviewBugs(currentLvl: number, currentPh: 1 | 2 | 3) {
       if (currentLvl === 1) {
-        // Level 1 (Learn Line Foam Combo): Cockroaches peeking out on Rails 2 & 3 (0-indexed 1 & 2)
         bugs.push(
           {
             id: `bug-w-${Date.now()}-1`,
@@ -784,7 +971,7 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
             type: 'speed_ant',
             rail: 2,
             targetRail: 2,
-            yProgress: -0.35,
+            yProgress: -0.55,
             hp: 42,
             maxHp: 42,
             hasShield: false,
@@ -800,7 +987,6 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
           }
         );
       } else if (currentLvl === 2) {
-        // Level 2 (Learn Horizontal UV Bridge): Armored Rat on Rail 2 + Roach/Rat on Rail 3
         bugs.push(
           {
             id: `bug-w-${Date.now()}-1`,
@@ -826,7 +1012,7 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
             type: currentPh >= 2 ? 'cap_beetle' : 'speed_ant',
             rail: 2,
             targetRail: 2,
-            yProgress: -0.35,
+            yProgress: -0.45,
             hp: currentPh >= 2 ? 76 : 44,
             maxHp: currentPh >= 2 ? 76 : 44,
             hasShield: currentPh >= 2,
@@ -841,8 +1027,51 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
             koStar: 1,
           }
         );
+      } else if (currentLvl === 31) {
+        bugs.push(
+          {
+            id: `bug-w-${Date.now()}-lat1`,
+            type: 'shift_roach',
+            rail: -0.65,
+            targetRail: 1,
+            yProgress: 2.0,
+            hp: 58,
+            maxHp: 58,
+            hasShield: false,
+            isSlidingFromSoap: false,
+            hitByDiagonalFoam: false,
+            hitByBridgeBurn: false,
+            hitByVortexSpin: false,
+            slowTimer: 0,
+            flashTimer: 0,
+            attackWindup: 0,
+            koTimer: 0,
+            koStar: 1,
+            isLateralInvasion: true,
+            lateralDir: 1,
+            redirectedBySquare: false,
+          },
+          {
+            id: `bug-w-${Date.now()}-top2`,
+            type: 'speed_ant',
+            rail: 1,
+            targetRail: 1,
+            yProgress: -0.35,
+            hp: 52,
+            maxHp: 52,
+            hasShield: false,
+            isSlidingFromSoap: false,
+            hitByDiagonalFoam: false,
+            hitByBridgeBurn: false,
+            hitByVortexSpin: false,
+            slowTimer: 0,
+            flashTimer: 0,
+            attackWindup: 0,
+            koTimer: 0,
+            koStar: 1,
+          }
+        );
       } else {
-        // Level 3+: Armored Rat on Rail 3 (0-indexed rail 2, aligned with Soap Bar) + Garbage Fly / Roach on Rail 2
         bugs.push(
           {
             id: `bug-w-${Date.now()}-1`,
@@ -887,6 +1116,12 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
     }
 
     function selectNextTrayPieceIfAny() {
+      // In Dynamic Onboarding (Levels 1-3), never pre-select in tray so Tactical Slow-Mo stays off
+      // and ONLY 1 single tray card lights up via tutorial focus!
+      if (!inPlacementPhase) {
+        selectedPieceIdRef.current = null;
+        return;
+      }
       const guide = getTutorialGuideForLevel(stateRef.current.level, piecesRef.current);
       if (guide && guide.nextTarget) {
         const targetPiece = piecesRef.current.find(
@@ -922,29 +1157,61 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
         piecesRef.current = createInitialBoardPieces(stateRef.current.level);
       }
 
+      const currentLvl = stateRef.current.level;
+      const dynamicOnboarding = isDynamicOnboardingLevel(currentLvl);
+
       bugs = [];
       projectiles = [];
       phase = 1;
-      inPlacementPhase = true;
-      autoStartAfterPlacementTimer = 0;
+      // Levels 1-3 skip Strategic Mode pause and start directly with live plague advance!
+      inPlacementPhase = !dynamicOnboarding;
       startWaveRef.current = false;
       phaseKills = 0;
       totalBugsCleaned = 0;
       score = 0;
       sanitationSeals = 3;
+      armoredPlates = 0;
+      hazmatShieldAvailable = stateRef.current.armorId === 'hazmat_epi';
+      lastStandTriggered = false;
+      lastStandTimer = 0;
+      bossSpawnedForLevel = false;
       pressurePct = 45;
-      spawnTimer = 2.4;
+      spawnTimer = dynamicOnboarding ? 3.2 : 2.4;
       prepTimer = 0;
+      levelTimer = LEVEL_DURATION_SECONDS;
       shieldWarnCooldown = 0;
-      slowMoTimer = 0;
       hitstopTimer = 0;
       cameraTrauma = 0;
       gameEndedLock = false;
+      waveQuotaCompleted = false;
       placementComboChain = 0;
       combatComboStreak = 1;
       combatComboWindowTimer = 0;
+      isDraggingOnCanvas = false;
+      if (stateRef.current.dragPointerRef) {
+        stateRef.current.dragPointerRef.current.active = false;
+        stateRef.current.dragPointerRef.current.pieceId = null;
+      }
 
-      // Restore all 4 white gourmet plates & their food_content on the Bastion border (z = +4.18, scale 0.86)
+      const forecast = getLevelForecast(currentLvl);
+      kitchenProps.lateralVents.forEach((lv) => {
+        lv.visible = currentLvl >= 31 || forecast.hasLateralConduits;
+      });
+
+      if (isBiomeTransitionLevel(currentLvl) && lastAnnouncedBiomeLevel !== currentLvl) {
+        lastAnnouncedBiomeLevel = currentLvl;
+        const biomeCfg = getBiomeForLevel(currentLvl);
+        if (currentLvl > 1) {
+          stateRef.current.onComicPop({
+            id: `biome-trans-${currentLvl}-${Date.now()}`,
+            title: biomeCfg.zoneBanner.toUpperCase(),
+            subtitle: biomeCfg.subtitle,
+            color: 'cyan',
+            createdAt: Date.now(),
+          });
+        }
+      }
+
       kitchenProps.bastionPlates.forEach((plate) => {
         plate.visible = true;
         plate.scale.setScalar(0.86);
@@ -952,21 +1219,26 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
         if (food) food.visible = true;
       });
 
-      spawnWavePreviewBugs(stateRef.current.level, 1);
+      spawnWavePreviewBugs(currentLvl, 1);
       selectNextTrayPieceIfAny();
     }
 
     resetSimulation();
 
-    // Pointer / Touch Raycasting for Drag & Drop + Tap-to-Swap
+    // Pointer / Touch Raycasting for Drag & Drop (with -45px Y finger offset) + Tap-to-Swap
     const raycaster = new THREE.Raycaster();
     const pointerNdc = new THREE.Vector2();
 
-    function getCellUnderPointer(clientX: number, clientY: number): { rail: number; row: number } | null {
+    function getCellUnderPointer(
+      clientX: number,
+      clientY: number,
+      applyDragOffset = false
+    ): { rail: number; row: number } | null {
       const rect = renderer.domElement.getBoundingClientRect();
       if (rect.width === 0 || rect.height === 0) return null;
+      const effY = applyDragOffset ? clientY - DRAG_OFFSET_Y_PX : clientY;
       pointerNdc.x = ((clientX - rect.left) / rect.width) * 2 - 1;
-      pointerNdc.y = -((clientY - rect.top) / rect.height) * 2 + 1;
+      pointerNdc.y = -((effY - rect.top) / rect.height) * 2 + 1;
       raycaster.setFromCamera(pointerNdc, camera);
       const hits = raycaster.intersectObjects(interactableCells, false);
       if (hits.length > 0) {
@@ -976,17 +1248,48 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
       return null;
     }
 
+    function projectPointerToDragPlane(clientX: number, clientY: number): boolean {
+      const rect = renderer.domElement.getBoundingClientRect();
+      if (rect.width === 0 || rect.height === 0) return false;
+      const effY = clientY - DRAG_OFFSET_Y_PX;
+      pointerNdc.x = ((clientX - rect.left) / rect.width) * 2 - 1;
+      pointerNdc.y = -((effY - rect.top) / rect.height) * 2 + 1;
+      raycaster.setFromCamera(pointerNdc, camera);
+      return raycaster.ray.intersectPlane(_dragPlane, _dragWorldPt) !== null;
+    }
+
     function handlePostPlacementSelection() {
       if (inPlacementPhase) {
         selectNextTrayPieceIfAny();
-        // If all pieces in the tray have been placed onto the countertop, start a 1.3s grace countdown to launch the wave!
-        const allPlaced = piecesRef.current.every((p) => p.rail !== null && p.row !== null);
-        if (allPlaced && autoStartAfterPlacementTimer <= 0) {
-          autoStartAfterPlacementTimer = 1.35;
-        }
       } else {
         selectedPieceIdRef.current = null;
       }
+    }
+
+    function commitDropOntoCell(pieceId: string, cell: { rail: number; row: number }) {
+      piecesRef.current = moveOrSwapUtensil(
+        piecesRef.current,
+        pieceId,
+        cell.rail,
+        cell.row
+      );
+      const movedPiece = piecesRef.current.find((p) => p.id === pieceId);
+      const hasCombo = movedPiece && movedPiece.comboType !== 'none';
+      soundEngine.playSnapPiece(Boolean(hasCombo));
+      spawnParticles(
+        gridToWorldX(cell.rail),
+        0.25,
+        gridToWorldZ(cell.row),
+        14,
+        hasCombo ? 0xe879f9 : 0xffffff,
+        2.7
+      );
+      const entry = utensilMeshes.get(pieceId);
+      if (entry) entry.bounce = 1.0;
+      if (hasCombo) {
+        emitPlacementComboIfAny(pieceId);
+      }
+      handlePostPlacementSelection();
     }
 
     const onPointerDown = (e: PointerEvent) => {
@@ -995,7 +1298,9 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
         lastKnownReset = simResetRef.current;
         resetSimulation();
       }
-      const cell = getCellUnderPointer(e.clientX, e.clientY);
+      lastPointerClientX = e.clientX;
+      lastPointerClientY = e.clientY;
+      const cell = getCellUnderPointer(e.clientX, e.clientY, false);
       if (!cell) return;
 
       chefTargetX = gridToWorldX(cell.rail);
@@ -1013,50 +1318,21 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
       const currentSelected = selectedPieceIdRef.current;
       if (currentSelected) {
         if (occupant && occupant.id === currentSelected) {
-          // Begin dragging the already-selected piece
           isDraggingOnCanvas = true;
-          slowMoTimer = 2.5;
           soundEngine.playSlowMoEnter();
           return;
         }
 
-        // Enforce Filas 3, 4, 5, y 6 ONLY (0-indexed row >= 2)
         if (cell.row < MIN_PLACEABLE_ROW) {
           soundEngine.playShieldClink();
           return;
         }
 
-        // Move or Direct Swap selected piece onto clicked cell!
-        piecesRef.current = moveOrSwapUtensil(
-          piecesRef.current,
-          currentSelected,
-          cell.rail,
-          cell.row
-        );
-        const movedPiece = piecesRef.current.find((p) => p.id === currentSelected);
-        const hasCombo = movedPiece && movedPiece.comboType !== 'none';
-        soundEngine.playSnapPiece(Boolean(hasCombo));
-        spawnParticles(
-          gridToWorldX(cell.rail),
-          0.25,
-          gridToWorldZ(cell.row),
-          14,
-          hasCombo ? 0xfacc15 : 0xffffff,
-          2.6
-        );
-        const entry = utensilMeshes.get(currentSelected);
-        if (entry) entry.bounce = 1.0;
-        if (hasCombo) {
-          emitPlacementComboIfAny(currentSelected);
-        }
+        commitDropOntoCell(currentSelected, cell);
         isDraggingOnCanvas = false;
-        slowMoTimer = 0;
-        handlePostPlacementSelection();
       } else if (occupant) {
-        // Select piece & activate 20% Tactical Slow-Mo!
         selectedPieceIdRef.current = occupant.id;
         isDraggingOnCanvas = true;
-        slowMoTimer = 2.5;
         hoveredCell = cell;
         soundEngine.playSlowMoEnter();
       }
@@ -1064,7 +1340,15 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
 
     const onPointerMove = (e: PointerEvent) => {
       if (stateRef.current.gameState !== 'playing') return;
-      const cell = getCellUnderPointer(e.clientX, e.clientY);
+      lastPointerClientX = e.clientX;
+      lastPointerClientY = e.clientY;
+      const trayDragActive = Boolean(stateRef.current.dragPointerRef?.current.active);
+      if (trayDragActive && stateRef.current.dragPointerRef) {
+        stateRef.current.dragPointerRef.current.clientX = e.clientX;
+        stateRef.current.dragPointerRef.current.clientY = e.clientY;
+      }
+      const activelyDragging = isDraggingOnCanvas || trayDragActive;
+      const cell = getCellUnderPointer(e.clientX, e.clientY, activelyDragging);
       hoveredCell = cell;
       if (cell) {
         chefTargetX = gridToWorldX(cell.rail) * 0.65;
@@ -1072,12 +1356,20 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
     };
 
     const onPointerUp = (e: PointerEvent) => {
-      if (!isDraggingOnCanvas) return;
+      const trayDrag = stateRef.current.dragPointerRef?.current;
+      const wasTrayDragging = Boolean(trayDrag?.active);
+      if (!isDraggingOnCanvas && !wasTrayDragging) return;
+
+      const selectedId =
+        (wasTrayDragging && trayDrag?.pieceId) ? trayDrag.pieceId : selectedPieceIdRef.current;
       isDraggingOnCanvas = false;
-      const selectedId = selectedPieceIdRef.current;
+      if (trayDrag) {
+        trayDrag.active = false;
+        trayDrag.pieceId = null;
+      }
       if (!selectedId) return;
 
-      const cell = getCellUnderPointer(e.clientX, e.clientY);
+      const cell = getCellUnderPointer(e.clientX, e.clientY, true);
       const origin = piecesRef.current.find((p) => p.id === selectedId);
       if (
         cell &&
@@ -1085,30 +1377,9 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
         origin &&
         (cell.rail !== origin.rail || cell.row !== origin.row)
       ) {
-        piecesRef.current = moveOrSwapUtensil(
-          piecesRef.current,
-          selectedId,
-          cell.rail,
-          cell.row
-        );
-        const movedPiece = piecesRef.current.find((p) => p.id === selectedId);
-        const hasCombo = movedPiece && movedPiece.comboType !== 'none';
-        soundEngine.playSnapPiece(Boolean(hasCombo));
-        spawnParticles(
-          gridToWorldX(cell.rail),
-          0.25,
-          gridToWorldZ(cell.row),
-          14,
-          hasCombo ? 0xfacc15 : 0xffffff,
-          2.8
-        );
-        const entry = utensilMeshes.get(selectedId);
-        if (entry) entry.bounce = 1.0;
-        if (hasCombo) {
-          emitPlacementComboIfAny(selectedId);
-        }
-        slowMoTimer = 0;
-        handlePostPlacementSelection();
+        commitDropOntoCell(selectedId, cell);
+      } else if (wasTrayDragging && cell && cell.row < MIN_PLACEABLE_ROW) {
+        soundEngine.playShieldClink();
       }
     };
 
@@ -1174,23 +1445,34 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
 
       syncChefModel();
 
-      // Update World theme countertop color smoothly (keep sunny_counter pure white to show full Canvas2D Cozy Plow cream/maple texture)
+      // Update Biome & World theme palette smoothly (Bioma 0 + sunny_counter keeps pure white to show full Golden Maple texture)
+      const activeBiome = getBiomeForLevel(stateRef.current.level);
       const worldMeta = WORLDS_CATALOG[stateRef.current.worldId];
-      slab.material.color.set(
-        stateRef.current.worldId === 'sunny_counter' ? '#ffffff' : worldMeta.woodColor
+      const targetCounterHex =
+        stateRef.current.worldId !== 'sunny_counter'
+          ? worldMeta.woodColor
+          : activeBiome.id === 'main_kitchen'
+          ? '#ffffff'
+          : activeBiome.counterHex;
+      slab.material.color.set(targetCounterHex);
+      (wallSlab.material as THREE.MeshToonMaterial).color.set(activeBiome.wallHex);
+      (floorMesh.material as THREE.MeshToonMaterial).color.set(
+        activeBiome.id === 'main_kitchen' ? '#ffffff' : activeBiome.floorHex
       );
+      const levelForecast = getLevelForecast(stateRef.current.level);
+      kitchenProps.lateralVents.forEach((lv) => {
+        lv.visible = stateRef.current.level >= 31 || levelForecast.hasLateralConduits;
+      });
 
       const gState = stateRef.current.gameState;
 
       if (stateRef.current.wardrobeOpen) {
-        // Frame the full 3D Chef + Tall Toque Hat in the top 42% window of the screen above the Wardrobe bottom sheet!
         const previewSway = Math.sin(elapsed * 1.4) * 0.45;
         camera.position.x = THREE.MathUtils.damp(camera.position.x, previewSway, 6, dt);
         camera.position.y = THREE.MathUtils.damp(camera.position.y, 3.5, 6, dt);
         camera.position.z = THREE.MathUtils.damp(camera.position.z, 9.1, 6, dt);
         camera.lookAt(0, -0.1, 4.72);
       } else if (gState === 'title') {
-        // Live World 3/4 Camera Tour on Title Screen!
         const tourX = Math.sin(elapsed * 0.45) * 1.1;
         const tourZ = 10.1 + Math.cos(elapsed * 0.35) * 0.35;
         camera.position.x = THREE.MathUtils.damp(camera.position.x, tourX, 3, dt);
@@ -1198,9 +1480,9 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
         camera.position.z = THREE.MathUtils.damp(camera.position.z, tourZ, 3, dt);
         camera.lookAt(0, -0.46, 0.16);
       } else {
-        // Full 9:16 Vertical Countertop Framing with decaying trauma*trauma shake
+        const cfg = stateRef.current.settings ?? DEFAULT_SETTINGS;
         cameraTrauma = Math.max(0, cameraTrauma - dt * 2.4);
-        const shake = cameraTrauma * cameraTrauma * 0.32;
+        const shake = cfg.screenShake ? cameraTrauma * cameraTrauma * 0.32 : 0;
         const shakeX = (Math.random() - 0.5) * shake;
         const shakeZ = (Math.random() - 0.5) * shake;
         camera.position.x = THREE.MathUtils.damp(camera.position.x, shakeX, 10, dt);
@@ -1209,23 +1491,28 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
         camera.lookAt(0, -0.46, 0.16);
       }
 
-      // Check manual "EMPEZAR OLEADA" button trigger or auto-start after all pieces are placed
+      // Consume Strategic Mode Coin Boosters (Level 15+)
+      if (stateRef.current.boostUltimateRef?.current) {
+        stateRef.current.boostUltimateRef.current = false;
+        pressurePct = Math.min(100, pressurePct + 50);
+        spawnParticles(0, 0.65, 4.18, 18, 0xfacc15, 2.9);
+      }
+      if (stateRef.current.boostPlateShieldRef?.current) {
+        stateRef.current.boostPlateShieldRef.current = false;
+        armoredPlates += 1;
+        spawnParticles(0, 0.65, 4.18, 18, 0x38bdf8, 2.9);
+      }
+
+      // Wait for manual "EMPEZAR" button trigger to exit Strategic Placement Mode (Level 4+)
       if (gState === 'playing' && inPlacementPhase) {
         if (startWaveRef.current) {
           startWaveRef.current = false;
           inPlacementPhase = false;
-          autoStartAfterPlacementTimer = 0;
           selectedPieceIdRef.current = null;
-        } else if (autoStartAfterPlacementTimer > 0) {
-          autoStartAfterPlacementTimer = Math.max(0, autoStartAfterPlacementTimer - dt);
-          if (autoStartAfterPlacementTimer === 0) {
-            inPlacementPhase = false;
-            selectedPieceIdRef.current = null;
-          }
         }
       }
 
-      // Check Ultimate trigger (Roomba Kamikaze / Kärcher / Volcano)
+      // Check Ultimate trigger (Roomba Kamikaze / Kärcher / Volcano — Volcano uses real chemical orange/red fire!)
       if (triggerUltimateRef.current && gState === 'playing') {
         triggerUltimateRef.current = false;
         inPlacementPhase = false;
@@ -1244,22 +1531,38 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
               : specId === 'baking_volcano'
               ? '¡VOLCÁN QUÍMICO!'
               : '¡KÄRCHER A PRESIÓN!',
-          subtitle: '¡Desinfección Masiva en los 4 Raíles!',
-          color: 'cyan',
+          subtitle:
+            specId === 'baking_volcano'
+              ? '¡Fuego Químico Funde-Corazas en los 4 Raíles!'
+              : '¡Desinfección Masiva en los 4 Raíles!',
+          color: specId === 'baking_volcano' ? 'orange' : 'cyan',
           createdAt: Date.now(),
         });
 
+        if (specId === 'karcher_blast') {
+          for (const b of bugs) {
+            if (b.koTimer <= 0) {
+              b.yProgress = Math.max(-0.2, b.yProgress - 1.35);
+              b.slowTimer = 2.0;
+            }
+          }
+        }
+
         for (let r = 0; r < GRID_RAILS; r++) {
+          if (specId === 'baking_volcano') {
+            spawnParticles(gridToWorldX(r), 0.55, gridToWorldZ(4.5), 14, 0xf97316, 3.2);
+          }
           projectiles.push({
             id: `proj-ult-${r}-${Date.now()}`,
             x: r,
             y: 5.3,
             vx: 0,
             vy: -7.5,
-            damage: 140,
+            damage: 145,
             isEnemy: false,
-            flavor: 'roomba_blade',
+            flavor: specId === 'baking_volcano' ? 'volcano_foam' : 'roomba_blade',
             pierceShield: true,
+            isExplosiveOrThermal: true,
             fromDiagonalFoam: false,
             fromVortex: true,
             life: 2.0,
@@ -1267,30 +1570,51 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
         }
       }
 
-      // Simulation step (clamped & affected by 20% Tactical Slow-Mo while holding/selecting a piece!)
+      // Salvada In Extremis (Last Plate): once per match when 1 plate remains and a live bug enters critical zone (yProgress >= 5.25)
+      if (
+        gState === 'playing' &&
+        !inPlacementPhase &&
+        !gameEndedLock &&
+        !lastStandTriggered &&
+        sanitationSeals === 1 &&
+        bugs.some((b) => b.koTimer <= 0 && b.yProgress >= 5.25)
+      ) {
+        lastStandTriggered = true;
+        lastStandTimer = 1.2;
+        soundEngine.playSlowMoEnter();
+      }
+      if (lastStandTimer > 0 && gState === 'playing') {
+        lastStandTimer = Math.max(0, lastStandTimer - dt);
+      }
+
+      // Simulation step (clamped & affected by Hitstop / Salvada In Extremis 0.35x / Tactical Slow-Mo 0.2x)
       if (hitstopTimer > 0) {
         hitstopTimer = Math.max(0, hitstopTimer - dt);
       }
 
-      const isPieceSelected = Boolean(selectedPieceIdRef.current);
-      if (isPieceSelected && !inPlacementPhase) {
-        slowMoTimer = 0.5;
-      } else {
-        slowMoTimer = 0;
-      }
+      const activeSettings = stateRef.current.settings ?? DEFAULT_SETTINGS;
+      const trayDragState = stateRef.current.dragPointerRef?.current;
+      const isActivelyDragging = isDraggingOnCanvas || Boolean(trayDragState?.active);
+      const activePieceId =
+        (trayDragState?.active && trayDragState.pieceId)
+          ? trayDragState.pieceId
+          : selectedPieceIdRef.current;
+      const isPieceSelected = Boolean(activePieceId);
 
       const timeScale =
         gState !== 'playing'
           ? 0
           : hitstopTimer > 0
-          ? 0.05
-          : isPieceSelected && !inPlacementPhase
-          ? 0.2 // 20% Tactical Slow-Mo while selecting/moving a piece during active wave!
-          : 1.0;
+          ? 0.04
+          : isPieceSelected && !inPlacementPhase && activeSettings.tacticalSlowMo
+          ? 0.2
+          : lastStandTimer > 0
+          ? 0.35 // Salvada In Extremis: 1.2s at 0.35x timeScale!
+          : activeSettings.gameSpeedMultiplier;
 
       const simDt = dt * timeScale;
 
-      // Evaluate combos & update 3D Combo Visuals (UV Flame Stream at y=0.96, Soap Bubble Fan, or Vortex Bar)
+      // Evaluate combos & update 3D Combo Visuals (Neon Violet UV Laser at y=0.78, Cyan Soap Bubble Fan, or Vortex Bar)
       const comboEval = evaluateBoardCombos(piecesRef.current);
       piecesRef.current = comboEval.updatedPieces;
 
@@ -1318,11 +1642,12 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
             for (let k = 0; k < 11; k++) {
               const node = fireStream.getObjectByName(`flame_node_${k}`);
               if (node) {
-                const waveX = Math.sin(elapsed * 28 + k * 1.2 + idx) * 0.045;
-                const waveY = Math.cos(elapsed * 34 + k * 0.9 + idx) * 0.045;
-                const pulseScale = 0.84 + Math.sin(elapsed * 30 + k * 1.5 + idx) * 0.24;
+                const waveX = Math.sin(elapsed * 34 + k * 1.4 + idx) * 0.032;
+                const waveY = Math.cos(elapsed * 40 + k * 1.1 + idx) * 0.032;
+                const pulseScale = 0.86 + Math.sin(elapsed * 32 + k * 1.6 + idx) * 0.22;
                 node.position.x = waveX;
                 node.position.y = waveY;
+                node.rotation.z = elapsed * 10 + k;
                 node.scale.set(pulseScale, pulseScale, 1.0);
               }
             }
@@ -1344,7 +1669,6 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
             }
           }
           if (floorBar) floorBar.visible = false;
-          // Position the translucent spray cone + soap bubbles right at the Estropajo (toRow), fanning UPWARD (-Z) toward the plagues
           linkGroup.position.set(x2, 0.08, z2);
           linkGroup.rotation.y = 0;
         } else {
@@ -1352,6 +1676,9 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
           if (foamSpray) foamSpray.visible = false;
           if (floorBar) {
             floorBar.visible = true;
+            ((floorBar as THREE.Mesh).material as THREE.MeshBasicMaterial).color.setHex(
+              link.kind === 'deflect_90' ? 0xfacc15 : 0x2dd4bf
+            );
             floorBar.scale.set(1, 1, dist);
           }
           linkGroup.position.set((x1 + x2) / 2, 0.04, (z1 + z2) / 2);
@@ -1360,38 +1687,182 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
       });
 
       // =======================================================================
-      // GRID ON-DEMAND + SUBTLE WOOD ENGRAVING MARKS (0.12 opacity idle)
-      // Circular wood marks remain at 0.12 opacity during normal play and
-      // brighten ONLY when the player is in Tactical Mode selecting a cell.
+      // SINGLE-FOCUS ONBOARDING (55% DIM) + LIVE RANGE PADS + PRE-DROP COMBO ARCS
       // =======================================================================
-      const tutorialGuide = getTutorialGuideForLevel(stateRef.current.level, piecesRef.current);
-      const pulse = 0.55 + Math.sin(elapsed * 8) * 0.35;
+      const tutorialGuide =
+        gState === 'playing'
+          ? getTutorialGuideForLevel(stateRef.current.level, piecesRef.current)
+          : null;
+      const smartComboHints =
+        gState === 'playing'
+          ? computeSmartComboHints(
+              piecesRef.current,
+              stateRef.current.level,
+              activeSettings.smartComboHints
+            )
+          : [];
+      const pulse = 0.58 + Math.sin(elapsed * 8) * 0.32;
+      const singleFocusOnboarding =
+        gState === 'playing' &&
+        stateRef.current.level <= 2 &&
+        Boolean(tutorialGuide?.nextTarget);
+
+      // Render 3D Semi-Transparent Ghost Utensil on the single active Tutorial Target Cell
+      if (tutorialGuide && tutorialGuide.nextTarget) {
+        const tgt = tutorialGuide.nextTarget;
+        if (currentGhostType !== tgt.pieceType || !currentGhostMesh) {
+          ghostTutorialGroup.clear();
+          currentGhostMesh = buildGhostUtensilMesh(tgt.pieceType, isSoftwareGl);
+          currentGhostType = tgt.pieceType;
+          ghostTutorialGroup.add(currentGhostMesh);
+        }
+        ghostTutorialGroup.visible = true;
+        ghostTutorialGroup.position.set(
+          gridToWorldX(tgt.rail),
+          0.08 + Math.sin(elapsed * 5) * 0.08,
+          gridToWorldZ(tgt.row)
+        );
+      } else {
+        ghostTutorialGroup.visible = false;
+      }
+
+      // Render Floating 3D Weapon Ghost shifted -45px in Y above the finger while dragging!
+      const selPiece = piecesRef.current.find((p) => p.id === activePieceId);
+      if (isActivelyDragging && selPiece) {
+        const ptrX = trayDragState?.active ? trayDragState.clientX : lastPointerClientX;
+        const ptrY = trayDragState?.active ? trayDragState.clientY : lastPointerClientY;
+        if (currentDragGhostType !== selPiece.type) {
+          dragGhostGroup.clear();
+          const dg = buildGhostUtensilMesh(selPiece.type, isSoftwareGl);
+          dragGhostGroup.add(dg);
+          currentDragGhostType = selPiece.type;
+        }
+        if (projectPointerToDragPlane(ptrX, ptrY)) {
+          dragGhostGroup.visible = true;
+          dragGhostGroup.position.set(_dragWorldPt.x, 0.72, _dragWorldPt.z);
+        } else {
+          dragGhostGroup.visible = false;
+        }
+      } else {
+        dragGhostGroup.visible = false;
+      }
+
+      const previewCell =
+        hoveredCell && hoveredCell.row >= MIN_PLACEABLE_ROW && isPieceSelected
+          ? hoveredCell
+          : selPiece && selPiece.rail !== null && selPiece.row !== null
+          ? { rail: selPiece.rail, row: selPiece.row }
+          : null;
+
+      const activeRangeCells =
+        selPiece && previewCell
+          ? computeWeaponRangeCells(selPiece.type, previewCell.rail, previewCell.row, piecesRef.current)
+          : [];
+
+      // Pre-Drop Combo Synergy Electric Arcs BEFORE releasing finger!
+      const preDropLinks =
+        isActivelyDragging &&
+        activePieceId &&
+        hoveredCell &&
+        hoveredCell.row >= MIN_PLACEABLE_ROW
+          ? computeDragComboPreviewLinks(
+              piecesRef.current,
+              activePieceId,
+              hoveredCell.rail,
+              hoveredCell.row
+            )
+          : [];
+
+      synergyArcPool.forEach((arcGroup, aIdx) => {
+        const pl = preDropLinks[aIdx];
+        if (!pl) {
+          arcGroup.visible = false;
+          return;
+        }
+        arcGroup.visible = true;
+        const ax1 = gridToWorldX(pl.fromRail);
+        const az1 = gridToWorldZ(pl.fromRow);
+        const ax2 = gridToWorldX(pl.toRail);
+        const az2 = gridToWorldZ(pl.toRow);
+        const adist = Math.max(0.2, Math.hypot(ax2 - ax1, az2 - az1));
+        arcGroup.position.set((ax1 + ax2) / 2, 0.62, (az1 + az2) / 2);
+        arcGroup.rotation.y = Math.atan2(ax2 - ax1, az2 - az1);
+
+        const arcColor =
+          pl.kind === 'bridge_uv'
+            ? 0xe879f9
+            : pl.kind === 'line_foam'
+            ? 0xa3e635
+            : pl.kind === 'deflect_90'
+            ? 0xfacc15
+            : 0x22d3ee;
+
+        for (let s = 0; s < 7; s++) {
+          const seg = arcGroup.getObjectByName(`arc_seg_${s}`) as THREE.Mesh | undefined;
+          if (!seg) continue;
+          const u = (s + 0.5) / 7 - 0.5;
+          const jitterX = Math.sin(elapsed * 45 + s * 2.1) * 0.08;
+          const jitterY = Math.cos(elapsed * 52 + s * 1.7) * 0.06;
+          seg.position.set(jitterX, jitterY, u * adist);
+          seg.scale.set(1, adist / 1.1, 1);
+          (seg.material as THREE.MeshBasicMaterial).color.setHex(
+            s % 2 === 0 ? arcColor : 0xffffff
+          );
+        }
+      });
 
       for (let r = 0; r < GRID_RAILS; r++) {
         for (let row = 0; row < GRID_ROWS; row++) {
           const hl = cellHighlights[r][row];
           const hlMat = hl.material as THREE.MeshBasicMaterial;
+          const pad = cellRangePads[r][row];
+          const padMat = pad.material as THREE.MeshBasicMaterial;
           const spot = cellSpots[r][row];
           const isHovered = hoveredCell?.rail === r && hoveredCell?.row === row;
           const pieceAt = piecesRef.current.find((p) => p.rail === r && p.row === row);
-          const isSelectedCell = pieceAt && pieceAt.id === selectedPieceIdRef.current;
+          const isSelectedCell = pieceAt && pieceAt.id === activePieceId;
 
           if (spot) {
             const spotMat = spot.material as THREE.MeshBasicMaterial;
-            if (isPieceSelected) {
-              spotMat.opacity = isHovered ? 0.24 : 0.12;
-            } else {
-              spotMat.opacity = 0.08;
-            }
+            spotMat.opacity = isPieceSelected ? (isHovered ? 0.24 : 0.12) : 0.08;
           }
 
           const isNextTutorialTarget =
             tutorialGuide?.nextTarget?.rail === r && tutorialGuide?.nextTarget?.row === row;
-          const isOtherTutorialTarget =
-            tutorialGuide?.targets.some((t) => t.rail === r && t.row === row) ?? false;
+          const rangeMatch = activeRangeCells.find((c) => c.rail === r && c.row === row);
+
+          // 1. Update Countertop Pad (55% dim on non-target cells in L1-L2 guided steps, OR live weapon range illumination)
+          if (singleFocusOnboarding) {
+            if (isNextTutorialTarget) {
+              padMat.color.setHex(0x22c55e);
+              padMat.opacity = 0.24 + Math.sin(elapsed * 8) * 0.1;
+            } else if (rangeMatch && isHovered) {
+              padMat.color.setHex(0x22d3ee);
+              padMat.opacity = 0.22;
+            } else {
+              padMat.color.setHex(0x090605);
+              padMat.opacity = 0.55; // 55% dim on rest of board so ONLY the exact target cell pops!
+            }
+          } else if (rangeMatch) {
+            padMat.color.setHex(
+              rangeMatch.role === 'damage'
+                ? 0x22d3ee
+                : rangeMatch.role === 'area'
+                ? 0xa3e635
+                : 0xf472b6
+            );
+            padMat.opacity = 0.22 + Math.sin(elapsed * 6) * 0.05;
+          } else {
+            padMat.opacity = 0;
+          }
+
+          // 2. Update Cell Ring Highlights (STRICT SINGLE FOCUS when tutorialGuide.nextTarget exists!)
+          const smartHintHere =
+            !tutorialGuide?.nextTarget
+              ? smartComboHints.find((h) => h.rail === r && h.row === row)
+              : undefined;
 
           if (row < MIN_PLACEABLE_ROW) {
-            // Rows 0 and 1 (Filas 1 y 2) are forbidden placement zones near the spawn!
             if (isHovered && isPieceSelected) {
               hlMat.color.setHex(0xef4444);
               hlMat.opacity = 0.65;
@@ -1399,46 +1870,53 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
               hlMat.opacity = 0;
             }
           } else if (isNextTutorialTarget) {
-            // Bright pulsing emerald/gold target cell for the current tutorial step!
             hlMat.color.setHex(0x22c55e);
             hlMat.opacity = pulse;
-          } else if (isOtherTutorialTarget && inPlacementPhase) {
-            hlMat.color.setHex(0xfacc15);
-            hlMat.opacity = 0.45;
+          } else if (tutorialGuide?.nextTarget) {
+            // Single focus: never light secondary green/yellow rings while a guided step is active!
+            if (isHovered && isPieceSelected) {
+              hlMat.color.setHex(0xfacc15);
+              hlMat.opacity = 0.65;
+            } else {
+              hlMat.opacity = 0;
+            }
+          } else if (smartHintHere) {
+            const hintHex =
+              smartHintHere.color === 'orange'
+                ? 0xa855f7
+                : smartHintHere.color === 'green'
+                ? 0xa3e635
+                : 0x22d3ee;
+            hlMat.color.setHex(hintHex);
+            hlMat.opacity = pulse;
           } else if (isSelectedCell) {
             hlMat.color.setHex(0x38bdf8);
             hlMat.opacity = 0.92;
           } else if (isHovered && isPieceSelected) {
-            hlMat.color.setHex(0xfacc15);
-            hlMat.opacity = 0.88;
-          } else if (isPieceSelected || isDraggingOnCanvas) {
-            // GRID ON-DEMAND: Highlight valid cells while in Tactical Mode selecting where to place a piece!
+            hlMat.color.setHex(preDropLinks.length > 0 ? 0xe879f9 : 0xfacc15);
+            hlMat.opacity = 0.9;
+          } else if (isPieceSelected || isActivelyDragging) {
             hlMat.color.setHex(0x38bdf8);
-            hlMat.opacity = isDraggingOnCanvas ? 0.36 : 0.26;
+            hlMat.opacity = isActivelyDragging ? 0.34 : 0.24;
           } else {
-            // Smooth, clean countertop when no piece is selected!
             hlMat.opacity = 0;
           }
         }
       }
 
-      // Update 3D Tactical Preview Group when a piece is selected/touched!
-      const selPiece = piecesRef.current.find((p) => p.id === selectedPieceIdRef.current);
-      const previewCell =
-        hoveredCell && hoveredCell.row >= MIN_PLACEABLE_ROW
-          ? hoveredCell
-          : selPiece && selPiece.rail !== null && selPiece.row !== null
-          ? { rail: selPiece.rail, row: selPiece.row }
-          : tutorialGuide?.nextTarget
+      // Update 3D Tactical Preview Group (vectors & deflection arrows) when dragging or touching a placed weapon
+      const activePreviewTarget =
+        previewCell ??
+        (tutorialGuide?.nextTarget && isPieceSelected
           ? { rail: tutorialGuide.nextTarget.rail, row: tutorialGuide.nextTarget.row }
-          : null;
+          : null);
 
-      if (selPiece && previewCell) {
+      if (selPiece && activePreviewTarget) {
         previewGroup.visible = true;
         previewGroup.position.set(
-          gridToWorldX(previewCell.rail),
+          gridToWorldX(activePreviewTarget.rail),
           0.14,
-          gridToWorldZ(previewCell.row)
+          gridToWorldZ(activePreviewTarget.row)
         );
         previewCones.forEach((c) => {
           c.visible = false;
@@ -1450,8 +1928,8 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
           const hasScourerAhead = piecesRef.current.some(
             (p) =>
               p.type === 'scourer_nanas' &&
-              p.rail === previewCell.rail &&
-              (p.row === previewCell.row - 1 || p.row === previewCell.row - 2)
+              p.rail === activePreviewTarget.rail &&
+              (p.row === activePreviewTarget.row - 1 || p.row === activePreviewTarget.row - 2)
           );
           if (hasScourerAhead) {
             const fanAngles = [-0.55, -0.26, 0, 0.26, 0.55];
@@ -1484,9 +1962,9 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
           for (let k = 0; k < 11; k++) {
             const node = previewBridgeBar.getObjectByName(`flame_node_${k}`);
             if (node) {
-              node.position.x = Math.sin(elapsed * 28 + k * 1.2) * 0.04;
-              node.position.y = Math.cos(elapsed * 34 + k * 0.9) * 0.04;
-              const pulseScale = 0.85 + Math.sin(elapsed * 30 + k * 1.5) * 0.22;
+              node.position.x = Math.sin(elapsed * 32 + k * 1.2) * 0.03;
+              node.position.y = Math.cos(elapsed * 38 + k * 0.9) * 0.03;
+              const pulseScale = 0.85 + Math.sin(elapsed * 30 + k * 1.5) * 0.2;
               node.scale.set(pulseScale, pulseScale, 1.0);
             }
           }
@@ -1494,12 +1972,29 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
           const cone = previewCones[0];
           cone.visible = true;
           (cone.material as THREE.MeshBasicMaterial).color.setHex(0xf472b6);
-          const dir = previewCell.rail < GRID_RAILS - 1 ? 1 : -1;
+          const dir = activePreviewTarget.rail < GRID_RAILS - 1 ? 1 : -1;
           cone.position.set(dir * 0.95, 0, 0);
           cone.rotation.set(-Math.PI / 2, 0, -dir * (Math.PI / 2));
         } else if (selPiece.type === 'mop_vortex') {
           previewVortexRing.visible = true;
           previewVortexRing.rotation.z = elapsed * 4;
+        } else if (selPiece.type === 'wc_shield') {
+          const cone = previewCones[2];
+          cone.visible = true;
+          (cone.material as THREE.MeshBasicMaterial).color.setHex(0x38bdf8);
+          cone.position.set(0, 0, -1.1);
+          cone.rotation.set(-Math.PI / 2, 0, 0);
+        } else if (selPiece.type === 'corner_square') {
+          const coneIn = previewCones[0];
+          const coneDown = previewCones[1];
+          coneIn.visible = true;
+          coneDown.visible = true;
+          (coneIn.material as THREE.MeshBasicMaterial).color.setHex(0xfacc15);
+          (coneDown.material as THREE.MeshBasicMaterial).color.setHex(0x22d3ee);
+          coneIn.position.set(-0.85, 0.1, 0);
+          coneIn.rotation.set(-Math.PI / 2, 0, -Math.PI / 2);
+          coneDown.position.set(0, 0.1, 1.05);
+          coneDown.rotation.set(Math.PI / 2, 0, 0);
         }
       } else {
         previewGroup.visible = false;
@@ -1513,11 +2008,15 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
         shieldWarnCooldown = Math.max(0, shieldWarnCooldown - dt);
       }
 
-      // CRITICAL RULE 2: Wave simulation is PAUSED during 'PREP' (inPlacementPhase) and during 3s inter-wave pause!
+      // Wave simulation is PAUSED during Strategic Mode (Level 4+ inPlacementPhase) and 3s inter-wave pause
       const waveSimDt = inPlacementPhase || prepTimer > 0 ? 0 : simDt;
       if (waveSimDt > 0 && combatComboWindowTimer > 0) {
         combatComboWindowTimer = Math.max(0, combatComboWindowTimer - waveSimDt);
         if (combatComboWindowTimer <= 0) combatComboStreak = 1;
+      }
+
+      if (waveSimDt > 0 && stateRef.current.level >= 5 && !gameEndedLock) {
+        levelTimer = Math.max(0, levelTimer - waveSimDt);
       }
 
       // Sync 3D Utensil Meshes on the board
@@ -1537,11 +2036,11 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
 
         const targetX = gridToWorldX(piece.rail);
         const targetZ = gridToWorldZ(piece.row);
-        const isBeingDragged = piece.id === selectedPieceIdRef.current;
+        const isBeingDragged = piece.id === activePieceId && isActivelyDragging;
         entry.bounce = Math.max(0, entry.bounce - dt * 4.5);
         const bounceY = Math.sin(entry.bounce * Math.PI) * 0.35;
 
-        const targetY = isBeingDragged ? 0.68 : bounceY;
+        const targetY = isBeingDragged ? 0.38 : bounceY;
         entry.group.position.x = THREE.MathUtils.damp(entry.group.position.x, targetX, 18, dt);
         entry.group.position.y = THREE.MathUtils.damp(entry.group.position.y, targetY, 18, dt);
         entry.group.position.z = THREE.MathUtils.damp(entry.group.position.z, targetZ, 18, dt);
@@ -1555,13 +2054,12 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
             animPart.rotation.y += dt * (piece.comboType === 'slip_vortex' ? 18 : 10);
           } else if (piece.type === 'aerosol_torch') {
             animPart.visible = piece.comboType !== 'bridge_uv';
-            animPart.rotation.y += dt * 3.5;
+            animPart.rotation.y += dt * 4.5;
           } else if (piece.type === 'scourer_nanas') {
             animPart.rotation.y += dt * 3.5;
           }
         }
 
-        // Advance piece timers & firing ONLY when waveSimDt > 0 (never during PREP phase!)
         if (waveSimDt > 0) {
           if (piece.gunkTimer > 0) {
             piece.gunkTimer = Math.max(0, piece.gunkTimer - waveSimDt);
@@ -1580,7 +2078,7 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
                 ? stateRef.current.hatId === 'duck_shower_cap'
                   ? 0.52
                   : 0.6
-                : 1.65 // Solo uncombined spray fires slowly so it cannot solo waves!
+                : 1.65
               : piece.type === 'bleach_cannon'
               ? isInCombo
                 ? 0.85
@@ -1596,6 +2094,10 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
 
             if (piece.type === 'spray_flus' || piece.type === 'bleach_cannon') {
               soundEngine.playSprayShot();
+              if (piece.type === 'spray_flus') {
+                // Directional cyan/emerald mist forward (-Z) in its own rail!
+                spawnForwardSprayMist(targetX, 0.52, targetZ);
+              }
               projectiles.push({
                 id: `proj-${piece.id}-${Date.now()}-${Math.random()}`,
                 x: piece.rail,
@@ -1606,6 +2108,7 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
                 isEnemy: false,
                 flavor: piece.type === 'bleach_cannon' ? 'bleach_glob' : 'water_drop',
                 pierceShield: false,
+                isExplosiveOrThermal: piece.type === 'bleach_cannon',
                 fromDiagonalFoam: false,
                 fromVortex: false,
                 life: 2.2,
@@ -1634,7 +2137,6 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
         }
       }
 
-      // Clean up removed utensil meshes
       for (const [id, entry] of utensilMeshes.entries()) {
         if (!activePieceIds.has(id)) {
           utensilsGroup.remove(entry.group);
@@ -1642,8 +2144,20 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
         }
       }
 
-      // Spawn new bugs according to current Level & Phase (progressive onboarding)
-      if (waveSimDt > 0 && !gameEndedLock) {
+      // Ensure Milestone Mini-Boss (X5) or Grand Boss (X0) spawns reliably when Phase 3 begins!
+      if (
+        waveSimDt > 0 &&
+        phase === 3 &&
+        !bossSpawnedForLevel &&
+        getBossTierForLevel(stateRef.current.level) !== null
+      ) {
+        spawnBossForMilestone(stateRef.current.level);
+      }
+
+      // Spawn new bugs according to current Level & Phase
+      const ventsClosed =
+        waveQuotaCompleted || (stateRef.current.level >= 5 && levelTimer <= 0);
+      if (waveSimDt > 0 && !gameEndedLock && !ventsClosed) {
         spawnTimer -= waveSimDt;
         const maxBugsOnScreen = stateRef.current.level <= 3 ? 3 : 5;
         if (spawnTimer <= 0 && bugs.length < maxBugsOnScreen) {
@@ -1654,7 +2168,6 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
           spawnTimer = baseInterval;
 
           const lvl = stateRef.current.level;
-          // On Level 1, focus Cockroaches on Rails 2 & 3 (0-indexed 1 & 2) so the player's Line Foam combo hits both!
           const rail =
             lvl === 1
               ? Math.random() < 0.5
@@ -1685,11 +2198,11 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
             bType = roll < 0.45 ? 'cap_beetle' : roll < 0.78 ? 'acid_wasp' : 'speed_ant';
           } else {
             bType =
-              roll < 0.22
+              roll < 0.18 && getBossTierForLevel(lvl) === null
                 ? 'king_crab'
-                : roll < 0.58
+                : roll < 0.55
                 ? 'cap_beetle'
-                : roll < 0.85
+                : roll < 0.82
                 ? 'acid_wasp'
                 : 'shift_roach';
           }
@@ -1699,16 +2212,25 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
             cap_beetle: 84,
             acid_wasp: 64,
             shift_roach: 60,
-            king_crab: 150,
+            king_crab: 145,
           };
-          const maxHp = hpMap[bType] * (1 + Math.max(0, lvl - 3) * 0.1);
+          const maxHp = hpMap[bType] * (1 + Math.max(0, lvl - 3) * 0.08);
+
+          const isLateralSpawn =
+            lvl === 31
+              ? Math.random() < 0.72
+              : lvl >= 32
+              ? Math.random() < 0.45
+              : false;
+          const lateralFromLeft = lvl === 31 ? true : Math.random() < 0.5;
+          const lateralRow = lvl === 31 ? 2 : 2 + Math.floor(Math.random() * 2);
 
           bugs.push({
             id: `bug-${Date.now()}-${Math.random()}`,
             type: bType,
-            rail,
+            rail: isLateralSpawn ? (lateralFromLeft ? -0.75 : 3.75) : rail,
             targetRail: rail,
-            yProgress: -0.35,
+            yProgress: isLateralSpawn ? lateralRow : -0.35,
             hp: maxHp,
             maxHp,
             hasShield: bType === 'cap_beetle' || bType === 'king_crab',
@@ -1721,19 +2243,122 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
             attackWindup: 0,
             koTimer: 0,
             koStar: 1,
+            isLateralInvasion: isLateralSpawn,
+            lateralDir: isLateralSpawn ? (lateralFromLeft ? 1 : -1) : 0,
+            redirectedBySquare: false,
           });
         }
       }
 
-      // Update Projectiles & Check Scourer Multiplication + Bug Hits
+      // Helper for real-time 3-phase Grand Boss transitions (66% and 33%) with mandatory 300ms micro-freeze & flash!
+      const evaluateGrandBossTransition = (bug: BugEnemy) => {
+        if (bug.bossTier !== 'grand' || bug.hp <= 0) return;
+        const nextPhase = getGrandBossPhase(bug.hp, bug.maxHp);
+        const prevPhase = bug.bossPhase ?? 1;
+        if (nextPhase <= prevPhase) return;
+
+        bug.bossPhase = nextPhase;
+        bug.bossArmorBroken = true;
+        bug.hasShield = false;
+        bug.bossPhaseFlashTimer = 0.35;
+        hitstopTimer = 0.3; // Mandatory 300ms impact micro-freeze!
+        cameraTrauma = 0.85;
+        soundEngine.playStarKill(3);
+        spawnParticles(
+          gridToWorldX(bug.rail),
+          0.75,
+          gridToWorldZ(bug.yProgress),
+          26,
+          nextPhase === 2 ? 0xe879f9 : 0xef4444,
+          3.5
+        );
+
+        if (nextPhase === 2) {
+          // Phase 2: Sabotage & Evasion (shift rail + start acid sabotage loop)
+          const curR = THREE.MathUtils.clamp(Math.round(bug.rail), 0, GRID_RAILS - 1);
+          bug.targetRail = curR < GRID_RAILS - 1 ? curR + 1 : curR - 1;
+          bug.bossEvadeTimer = 2.2;
+          stateRef.current.onComicPop({
+            id: `boss-p2-${bug.id}-${Date.now()}`,
+            title: '⚡ ¡CORAZA ROTA · FASE 2/3!',
+            subtitle: 'Sabotaje Ácido y Evasión · ¡Frénalo con 🧼+🌪️ o 🛡️!',
+            color: 'pink',
+            createdAt: Date.now(),
+          });
+        } else if (nextPhase === 3) {
+          // Phase 3: Frenzy (+30% speed) & Level 30+ Lateral Ambush / Fast Escorts
+          stateRef.current.onComicPop({
+            id: `boss-p3-${bug.id}-${Date.now()}`,
+            title: '🔥 ¡FRENESÍ FINAL · FASE 3/3!',
+            subtitle:
+              stateRef.current.level >= 30
+                ? '+30% Velocidad y Emboscada Lateral · ¡Usa 📐 o Ultimate!'
+                : '+30% Velocidad · ¡Remátalo con Ultimate o Combos!',
+            color: 'orange',
+            createdAt: Date.now(),
+          });
+          if (stateRef.current.level >= 30 && !bug.bossFrenzyTriggered) {
+            bug.bossFrenzyTriggered = true;
+            const lvl = stateRef.current.level;
+            const escortHp = 48 * (1 + Math.max(0, lvl - 3) * 0.06);
+            bugs.push(
+              {
+                id: `boss-escort-lat-${Date.now()}`,
+                type: 'shift_roach',
+                rail: -0.7,
+                targetRail: 1,
+                yProgress: 2.0,
+                hp: escortHp,
+                maxHp: escortHp,
+                hasShield: false,
+                isSlidingFromSoap: false,
+                hitByDiagonalFoam: false,
+                hitByBridgeBurn: false,
+                hitByVortexSpin: false,
+                slowTimer: 0,
+                flashTimer: 0,
+                attackWindup: 0,
+                koTimer: 0,
+                koStar: 1,
+                isLateralInvasion: true,
+                lateralDir: 1,
+                redirectedBySquare: false,
+              },
+              {
+                id: `boss-escort-fast-${Date.now()}`,
+                type: 'speed_ant',
+                rail: bug.rail < 2 ? 3 : 0,
+                targetRail: bug.rail < 2 ? 3 : 0,
+                yProgress: -0.2,
+                hp: escortHp * 0.85,
+                maxHp: escortHp * 0.85,
+                hasShield: false,
+                isSlidingFromSoap: false,
+                hitByDiagonalFoam: false,
+                hitByBridgeBurn: false,
+                hitByVortexSpin: false,
+                slowTimer: 0,
+                flashTimer: 0,
+                attackWindup: 0,
+                koTimer: 0,
+                koStar: 1,
+              }
+            );
+          }
+        }
+      };
+
+      // Update Projectiles & Check Scourer Multiplication + hazmat_epi Acid Immunity + Boss Non-Rigid Resistances
       const survivingProjectiles: Projectile[] = [];
       for (const proj of projectiles) {
         if (waveSimDt > 0) {
+          if (activeBiome.lateralWindForce > 0 && !proj.isEnemy) {
+            proj.vx += Math.sin(elapsed * 2.2) * activeBiome.lateralWindForce * waveSimDt;
+          }
           proj.x += proj.vx * waveSimDt;
           proj.y += proj.vy * waveSimDt;
           proj.life -= waveSimDt;
 
-          // Check if an allied straight droplet hits a Scourer ("Estropajo Nanas") to split into a 5-bullet Foam Fan!
           if (!proj.isEnemy && (proj.flavor === 'water_drop' || proj.flavor === 'bleach_glob')) {
             const scourer = piecesRef.current.find(
               (p) =>
@@ -1751,7 +2376,7 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
                 0.45,
                 gridToWorldZ(scourer.row),
                 6,
-                0xa3e635,
+                0x34d399,
                 2.0
               );
               const angles = [-0.55, -0.26, 0, 0.26, 0.55];
@@ -1767,6 +2392,7 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
                   isEnemy: false,
                   flavor: 'foam_fan',
                   pierceShield: Math.abs(ang) > 0.2,
+                  isExplosiveOrThermal: proj.flavor === 'bleach_glob',
                   fromDiagonalFoam: Math.abs(ang) > 0.2,
                   fromVortex: false,
                   life: 1.4,
@@ -1777,7 +2403,6 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
             }
           }
 
-          // Check if an Enemy Acid Glob hits a WC Shield or gunks a utensil
           if (proj.isEnemy) {
             const hitPiece = piecesRef.current.find(
               (p) =>
@@ -1792,9 +2417,39 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
                 proj.vy = -Math.abs(proj.vy) * 1.4;
                 proj.flavor = 'reflected_bubble';
                 proj.pierceShield = true;
+                proj.isExplosiveOrThermal = true;
                 proj.fromDiagonalFoam = true;
                 proj.damage = 45;
                 soundEngine.playFoamSplit();
+              } else if (hazmatShieldAvailable) {
+                // Traje EPI Amarillo (hazmat_epi): absorbs the 1st acid gunk of the level with visual feedback!
+                hazmatShieldAvailable = false;
+                proj.life = 0;
+                soundEngine.playFoamSplit();
+                spawnParticles(
+                  gridToWorldX(hitPiece.rail),
+                  0.55,
+                  gridToWorldZ(hitPiece.row),
+                  16,
+                  0xfacc15,
+                  2.8
+                );
+                const epiPos = projectWorldToScreenPct(
+                  gridToWorldX(hitPiece.rail),
+                  0.85,
+                  gridToWorldZ(hitPiece.row)
+                );
+                stateRef.current.onFloatingCombo?.({
+                  id: `hazmat-acid-${Date.now()}`,
+                  multiplier: 1,
+                  label: '☣️ ¡TRAJE EPI!',
+                  detail: '1er Ácido Absorbido',
+                  color: 'yellow',
+                  xPct: epiPos.xPct,
+                  yPct: epiPos.yPct,
+                  createdAt: Date.now(),
+                });
+                continue;
               } else {
                 hitPiece.gunkTimer = stateRef.current.hatId === 'bucket_helmet' ? 1.8 : 3.5;
                 proj.life = 0;
@@ -1809,8 +2464,50 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
                 Math.abs(bug.rail - proj.x) < 0.48 &&
                 Math.abs(bug.yProgress - proj.y) < 0.48
               ) {
-                if (bug.hasShield && !proj.pierceShield) {
-                  // 100% Frontal Shield Immunity! Bounces off completely with 0 damage!
+                if (bug.bossTier) {
+                  // Bosses NEVER have 100%-immunity hard locks: use computeBossDamageMultiplier!
+                  const isThermalOrExplosive = Boolean(
+                    proj.isExplosiveOrThermal ||
+                      proj.flavor === 'volcano_foam' ||
+                      proj.flavor === 'roomba_blade' ||
+                      proj.flavor === 'bleach_glob'
+                  );
+                  const isControlCombo = Boolean(
+                    proj.fromDiagonalFoam ||
+                      proj.fromVortex ||
+                      bug.isSlidingFromSoap ||
+                      bug.redirectedBySquare
+                  );
+                  const mult = computeBossDamageMultiplier({
+                    tier: bug.bossTier,
+                    phase: bug.bossPhase ?? 1,
+                    armorBroken: Boolean(bug.bossArmorBroken),
+                    isThermalOrExplosive,
+                    isControlCombo,
+                  });
+                  if (isThermalOrExplosive && !bug.bossArmorBroken) {
+                    bug.bossArmorBroken = true;
+                    bug.hasShield = false;
+                    spawnParticles(
+                      gridToWorldX(bug.rail),
+                      0.55,
+                      gridToWorldZ(bug.yProgress),
+                      14,
+                      proj.flavor === 'volcano_foam' ? 0xf97316 : 0xe879f9,
+                      2.9
+                    );
+                  } else if (mult < 0.6) {
+                    soundEngine.playShieldClink();
+                  }
+                  bug.hp -= proj.damage * mult;
+                  bug.flashTimer = 0.08;
+                  if (proj.fromDiagonalFoam) bug.hitByDiagonalFoam = true;
+                  if (proj.fromVortex) {
+                    bug.hitByVortexSpin = true;
+                    bug.slowTimer = Math.max(bug.slowTimer, 1.8);
+                  }
+                  evaluateGrandBossTransition(bug);
+                } else if (bug.hasShield && !proj.pierceShield && !proj.isExplosiveOrThermal) {
                   soundEngine.playShieldClink();
                   spawnParticles(
                     gridToWorldX(bug.rail),
@@ -1825,18 +2522,21 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
                     stateRef.current.onComicPop({
                       id: `shield-block-${Date.now()}`,
                       title: '🛡️ ¡BLINDADO! 0 DAÑO',
-                      subtitle: 'Une 2 Aerosoles UV 🔥 en paralelo o usa Jabón 🧼 para abrir su escudo',
-                      color: 'orange',
+                      subtitle: 'Une 2 Aerosoles UV ⚡ en paralelo o usa Jabón 🧼 para abrir su escudo',
+                      color: 'pink',
                       createdAt: Date.now(),
                     });
                   }
                 } else {
+                  if (proj.isExplosiveOrThermal) {
+                    bug.hasShield = false;
+                  }
                   bug.hp -= proj.damage;
                   bug.flashTimer = 0.08;
                   if (proj.fromDiagonalFoam) bug.hitByDiagonalFoam = true;
                   if (proj.fromVortex) bug.hitByVortexSpin = true;
                 }
-                if (proj.flavor !== 'roomba_blade') {
+                if (proj.flavor !== 'roomba_blade' && proj.flavor !== 'volcano_foam') {
                   proj.life = 0;
                 }
                 break;
@@ -1851,28 +2551,31 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
       }
       projectiles = survivingProjectiles;
 
-      // Sync Projectile Meshes
+      // Sync Projectile Meshes (orange/red reserved strictly for real fire volcano_foam / roomba_blade!)
       const activeProjIds = new Set<string>();
       for (const proj of projectiles) {
         activeProjIds.add(proj.id);
         let mesh = projMeshes.get(proj.id);
         if (!mesh) {
-          const isBlade = proj.flavor === 'roomba_blade';
-          const geo = isBlade
-            ? new THREE.CylinderGeometry(0.36, 0.36, 0.12, 28)
-            : new THREE.SphereGeometry(proj.isEnemy ? 0.14 : 0.12, 24, 24);
+          const isHeavyUlt =
+            proj.flavor === 'roomba_blade' || proj.flavor === 'volcano_foam';
+          const geo = isHeavyUlt
+            ? new THREE.CylinderGeometry(0.36, 0.36, 0.14, 24)
+            : new THREE.SphereGeometry(proj.isEnemy ? 0.14 : 0.12, 20, 20);
           const colorHex =
             proj.flavor === 'enemy_acid'
               ? 0xa855f7
+              : proj.flavor === 'volcano_foam'
+              ? 0xf97316 // Real chemical volcano fire = orange!
               : proj.flavor === 'foam_fan'
-              ? 0xa3e635
+              ? 0x34d399
               : proj.flavor === 'vortex_soap'
               ? 0x2dd4bf
               : proj.flavor === 'bleach_glob'
               ? 0xfacc15
               : proj.flavor === 'roomba_blade'
               ? 0xef4444
-              : 0x00d2ff;
+              : 0x00d2ff; // Flus-Flus = crisp cyan!
           const projGroup = new THREE.Group();
           const coreMesh = new THREE.Mesh(geo, createToonMaterial(colorHex));
           projGroup.add(coreMesh);
@@ -1890,13 +2593,17 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
         }
       }
 
-      // Update Bugs & Check Traps (Soap Bar, Horizontal UV Bridge, Mop Vortex) + KO Transitions
+      // Update Bugs & Check Traps + Boss Phase 2/3 Behaviors + KO Transitions
       const warningRails: (BugType | null)[] = [null, null, null, null];
       const survivingBugs: BugEnemy[] = [];
 
       for (const bug of bugs) {
         if (bug.yProgress < 0.35 && bug.koTimer <= 0) {
-          warningRails[Math.round(bug.rail)] = bug.type;
+          const rWarn = THREE.MathUtils.clamp(Math.round(bug.rail), 0, GRID_RAILS - 1);
+          warningRails[rWarn] = bug.type;
+        }
+        if (bug.bossPhaseFlashTimer && bug.bossPhaseFlashTimer > 0) {
+          bug.bossPhaseFlashTimer = Math.max(0, bug.bossPhaseFlashTimer - dt);
         }
 
         if (waveSimDt > 0) {
@@ -1914,23 +2621,111 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
             continue;
           }
 
-          // Smooth lateral slide when slipping on Soap Bar or shifting rails
-          bug.rail = THREE.MathUtils.damp(bug.rail, bug.targetRail, 9, waveSimDt);
+          if (bug.slowTimer > 0) {
+            bug.slowTimer = Math.max(0, bug.slowTimer - waveSimDt);
+          }
 
-          // Base advance speed reduced by 45% (0.55x) on Levels 1-4 via getLevelSpeedMultiplier!
+          if (bug.bossStunTimer && bug.bossStunTimer > 0) {
+            bug.bossStunTimer = Math.max(0, bug.bossStunTimer - waveSimDt);
+          }
+
+          const biomeFrictionSpeedFactor =
+            activeBiome.friction > 1.1
+              ? 0.88
+              : activeBiome.friction < 0.2
+              ? 1.06
+              : activeBiome.friction < 0.5
+              ? 1.04
+              : 1.0;
+
           const speedMap: Record<BugType, number> = {
-            speed_ant: 0.72,
-            cap_beetle: 0.5,
-            acid_wasp: 0.46,
-            shift_roach: 0.64,
-            king_crab: 0.4,
+            speed_ant: 0.68,
+            cap_beetle: 0.48,
+            acid_wasp: 0.44,
+            shift_roach: 0.6,
+            king_crab: 0.36,
           };
           const worldMult = WORLDS_CATALOG[stateRef.current.worldId].speedMult;
           const levelMult = getLevelSpeedMultiplier(stateRef.current.level);
-          bug.yProgress += speedMap[bug.type] * worldMult * levelMult * waveSimDt;
+          // Level 1 Wave 1 ONLY: 35% slower (0.65x) so live dynamic onboarding feels calm and intuitive!
+          const lvl1Wave1Factor =
+            stateRef.current.level === 1 && phase === 1 ? 0.65 : 1.0;
+          // Grand Boss Phase 3 Frenzy: +30% speed!
+          const bossFrenzyFactor =
+            bug.bossTier === 'grand' && (bug.bossPhase ?? 1) === 3 ? 1.3 : 1.0;
+          const controlSlowFactor = bug.slowTimer > 0 ? 0.55 : 1.0;
+          const isStunnedBoss = Boolean(bug.bossStunTimer && bug.bossStunTimer > 0);
+          const effectiveSpeed = isStunnedBoss
+            ? 0.08
+            : speedMap[bug.type] *
+              worldMult *
+              levelMult *
+              biomeFrictionSpeedFactor *
+              lvl1Wave1Factor *
+              bossFrenzyFactor *
+              controlSlowFactor;
+
+          if (bug.isLateralInvasion && bug.lateralDir) {
+            bug.rail += bug.lateralDir * effectiveSpeed * 0.92 * waveSimDt;
+            bug.targetRail = bug.rail;
+            bug.yProgress += effectiveSpeed * 0.22 * waveSimDt;
+            if (bug.lateralDir === 1 && bug.rail >= 3.0) {
+              bug.rail = 3;
+              bug.targetRail = 3;
+              bug.isLateralInvasion = false;
+              bug.lateralDir = 0;
+            } else if (bug.lateralDir === -1 && bug.rail <= 0.0) {
+              bug.rail = 0;
+              bug.targetRail = 0;
+              bug.isLateralInvasion = false;
+              bug.lateralDir = 0;
+            }
+          } else {
+            const slideDamp = activeBiome.friction < 0.5 ? 15 : 9;
+            bug.rail = THREE.MathUtils.damp(bug.rail, bug.targetRail, slideDamp, waveSimDt);
+            bug.yProgress += effectiveSpeed * waveSimDt;
+          }
+
+          // Grand Boss Phase 2+ Sabotage & Evasion: shifts rail & spits acid gunk (countered by control slow / Gel WC / hazmat_epi)
+          if (
+            bug.bossTier === 'grand' &&
+            (bug.bossPhase ?? 1) >= 2 &&
+            bug.yProgress > 0.2 &&
+            bug.yProgress < 4.6 &&
+            !isStunnedBoss
+          ) {
+            bug.bossEvadeTimer = (bug.bossEvadeTimer ?? 2.6) - waveSimDt * (bug.slowTimer > 0 ? 0.45 : 1.0);
+            if (bug.bossEvadeTimer <= 0) {
+              bug.bossEvadeTimer = (bug.bossPhase ?? 1) === 3 ? 2.4 : 3.0;
+              const curR = THREE.MathUtils.clamp(Math.round(bug.rail), 0, GRID_RAILS - 1);
+              const nextR =
+                curR === 0
+                  ? 1
+                  : curR === GRID_RAILS - 1
+                  ? GRID_RAILS - 2
+                  : Math.random() < 0.5
+                  ? curR - 1
+                  : curR + 1;
+              bug.targetRail = nextR;
+              projectiles.push({
+                id: `boss-acid-${bug.id}-${Date.now()}`,
+                x: curR,
+                y: bug.yProgress + 0.35,
+                vx: 0,
+                vy: 3.2,
+                damage: 10,
+                isEnemy: true,
+                flavor: 'enemy_acid',
+                pierceShield: false,
+                fromDiagonalFoam: false,
+                fromVortex: false,
+                life: 2.2,
+              });
+            }
+          }
 
           // Acid Wasp ranged attack telegraph & acid shot
-          if (bug.type === 'acid_wasp' && bug.yProgress > 0.5 && bug.yProgress < 3.6) {
+          if (bug.type === 'acid_wasp' && bug.yProgress > 0.5 && bug.yProgress < 3.6 && !isStunnedBoss) {
             bug.attackWindup += waveSimDt * 0.45;
             if (bug.attackWindup >= 1.0) {
               bug.attackWindup = 0;
@@ -1951,26 +2746,79 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
             }
           }
 
-          const currentRailInt = Math.round(bug.rail);
+          const currentRailInt = THREE.MathUtils.clamp(Math.round(bug.rail), 0, GRID_RAILS - 1);
           const currentRowInt = Math.round(bug.yProgress);
 
-          // 1. Check Horizontal Aerosol UV Bridge at (currentRowInt)
+          // 0. Check ESCUADRA DEFLECTORA 90° (`corner_square`)
+          const squareHere = piecesRef.current.find(
+            (p) =>
+              p.type === 'corner_square' &&
+              p.gunkTimer <= 0 &&
+              p.rail === currentRailInt &&
+              p.row === currentRowInt &&
+              Math.abs(bug.rail - currentRailInt) < 0.44 &&
+              Math.abs(bug.yProgress - currentRowInt) < 0.44
+          );
+          if (squareHere && (bug.isLateralInvasion || !bug.redirectedBySquare)) {
+            bug.isLateralInvasion = false;
+            bug.lateralDir = 0;
+            bug.rail = currentRailInt;
+            bug.targetRail = currentRailInt;
+            bug.redirectedBySquare = true;
+            bug.hasShield = false;
+            bug.bossArmorBroken = true;
+            if (bug.isPuzzleBoss && bug.bossPuzzleType === 'square_deflect') {
+              bug.bossStunTimer = 3.5;
+            }
+            const sqEntry = utensilMeshes.get(squareHere.id);
+            if (sqEntry) sqEntry.bounce = 1.0 * activeBiome.bounciness;
+            soundEngine.playSnapPiece(true);
+            spawnParticles(
+              gridToWorldX(currentRailInt),
+              0.45,
+              gridToWorldZ(currentRowInt),
+              14,
+              0xfacc15,
+              2.9
+            );
+            const sqPos = projectWorldToScreenPct(
+              gridToWorldX(currentRailInt),
+              0.85,
+              gridToWorldZ(currentRowInt)
+            );
+            stateRef.current.onFloatingCombo?.({
+              id: `combo-square-${bug.id}-${Date.now()}`,
+              multiplier: 2,
+              label: bug.bossTier ? '💫 ¡JEFE FRENADO!' : '📐 ¡REDIRIGIDO AL CARRIL!',
+              detail: '¡Giro 90° directo a tus trampas!',
+              color: 'yellow',
+              xPct: sqPos.xPct,
+              yPct: sqPos.yPct,
+              createdAt: Date.now(),
+            });
+          }
+
+          // 1. Check Horizontal Aerosol Neon Violet UV Bridge at (currentRowInt)
           const bridgeLink = comboEval.links.find(
             (l) =>
               l.kind === 'bridge_uv' &&
               l.fromRow === currentRowInt &&
               (l.fromRail === currentRailInt || l.toRail === currentRailInt)
           );
-          if (bridgeLink && Math.abs(bug.yProgress - currentRowInt) < 0.28) {
-            if (bug.hasShield) {
-              bug.hasShield = false; // Melts bottle-cap shield immediately!
+          if (bridgeLink && Math.abs(bug.yProgress - currentRowInt) < 0.3) {
+            if (bug.hasShield || (bug.bossTier && !bug.bossArmorBroken)) {
+              bug.hasShield = false;
+              bug.bossArmorBroken = true;
               bug.hitByBridgeBurn = true;
+              if (bug.bossTier === 'mini' && bug.bossPuzzleType === 'uv_overheat') {
+                bug.bossStunTimer = 3.2;
+              }
               spawnParticles(
                 gridToWorldX(bug.rail),
                 0.55,
                 gridToWorldZ(bug.yProgress),
-                12,
-                0xf97316,
+                14,
+                0xe879f9, // Neon Violet UV sparks!
                 2.8
               );
               const meltPos = projectWorldToScreenPct(
@@ -1981,16 +2829,26 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
               stateRef.current.onFloatingCombo?.({
                 id: `combo-melt-${bug.id}-${Date.now()}`,
                 multiplier: 2,
-                label: '¡Combo x2!',
-                detail: '🔥 ¡Escudo Fundido!',
-                color: 'orange',
+                label: bug.bossTier ? '⚡ ¡CORAZA FUNDIDA ×2.5!' : '¡Combo x2!',
+                detail: '⚡ ¡Láser UV Funde-Chapas!',
+                color: 'pink',
                 xPct: meltPos.xPct,
                 yPct: meltPos.yPct,
                 createdAt: Date.now(),
               });
             }
-            bug.hp -= 48 * waveSimDt;
+            const uvMult = bug.bossTier
+              ? computeBossDamageMultiplier({
+                  tier: bug.bossTier,
+                  phase: bug.bossPhase ?? 1,
+                  armorBroken: Boolean(bug.bossArmorBroken),
+                  isThermalOrExplosive: true,
+                  isControlCombo: false,
+                })
+              : 1.0;
+            bug.hp -= 48 * uvMult * waveSimDt;
             bug.hitByBridgeBurn = true;
+            evaluateGrandBossTransition(bug);
           }
 
           // 2. Check Soap Bar ("Pastilla de Jabón Resbalón") on current cell
@@ -2004,6 +2862,12 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
           );
           if (soapHere && !bug.isSlidingFromSoap) {
             bug.isSlidingFromSoap = true;
+            bug.slowTimer = Math.max(bug.slowTimer, 2.6);
+            if (bug.bossTier === 'mini' && bug.bossPuzzleType === 'soap_stun') {
+              bug.bossStunTimer = 3.5;
+              bug.hasShield = false;
+              bug.bossArmorBroken = true;
+            }
             soundEngine.playSoapSlip();
             const vortexNeighbor = piecesRef.current.find(
               (p) =>
@@ -2021,7 +2885,7 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
               stateRef.current.onFloatingCombo?.({
                 id: `combo-slip-${bug.id}-${Date.now()}`,
                 multiplier: 2,
-                label: '¡Combo x2!',
+                label: bug.bossTier ? '🧼 ¡JEFE CONTROLADO!' : '¡Combo x2!',
                 detail: '🧼 ¡Desvío al Vórtice!',
                 color: 'pink',
                 xPct: slipPos.xPct,
@@ -2041,7 +2905,7 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
             );
           }
 
-          // 3. Check if sliding bug enters a Mop Vortex cell -> Instant 3★ Centrifuge!
+          // 3. Check if bug enters a Mop Vortex cell
           const vortexHere = piecesRef.current.find(
             (p) =>
               p.type === 'mop_vortex' &&
@@ -2052,17 +2916,37 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
           );
           if (vortexHere) {
             bug.hitByVortexSpin = true;
-            bug.hp -= (bug.isSlidingFromSoap ? 240 : 65) * waveSimDt;
+            bug.slowTimer = Math.max(bug.slowTimer, 2.2);
+            const vortexMult = bug.bossTier
+              ? computeBossDamageMultiplier({
+                  tier: bug.bossTier,
+                  phase: bug.bossPhase ?? 1,
+                  armorBroken: Boolean(bug.bossArmorBroken),
+                  isThermalOrExplosive: false,
+                  isControlCombo: true,
+                })
+              : 1.0;
+            const rawVortexDps = bug.bossTier
+              ? bug.isSlidingFromSoap
+                ? 88
+                : 46
+              : bug.isSlidingFromSoap
+              ? 240
+              : 65;
+            bug.hp -= rawVortexDps * vortexMult * waveSimDt;
+            evaluateGrandBossTransition(bug);
           }
 
           // Check if Bug is defeated!
           if (bug.hp <= 0) {
             const elim = classifyBugElimination(bug);
-            bug.koTimer = 0.38;
+            bug.koTimer = bug.bossTier ? 0.55 : 0.38;
             bug.koStar = elim.stars;
-            phaseKills += 1;
+            phaseKills += bug.bossTier ? 3 : 1;
             totalBugsCleaned += 1;
-            const ptsAwarded = elim.stars === 3 ? 350 : elim.stars === 2 ? 180 : 100;
+            const ptsAwarded =
+              (elim.stars === 3 ? 350 : elim.stars === 2 ? 180 : 100) *
+              (bug.bossTier === 'grand' ? 3 : bug.bossTier === 'mini' ? 2 : 1);
             score += ptsAwarded;
             const pressureGain =
               stateRef.current.armorId === 'golden_scourer_mail' ? 24 : 18;
@@ -2073,15 +2957,15 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
               gridToWorldX(bug.rail),
               0.55,
               gridToWorldZ(bug.yProgress),
-              elim.stars === 3 ? 24 : 14,
-              elim.stars === 3 ? 0x2dd4bf : elim.stars === 2 ? 0xa3e635 : 0xfacc15,
+              bug.bossTier ? 30 : elim.stars === 3 ? 24 : 14,
+              elim.stars === 3 ? 0x2dd4bf : elim.stars === 2 ? 0x34d399 : 0xfacc15,
               3.2
             );
 
-            if (elim.stars >= 2) {
-              hitstopTimer = 0.045;
-              cameraTrauma = elim.stars === 3 ? 0.65 : 0.35;
-              chefCelebrateTimer = 0.75;
+            if (elim.stars >= 2 || bug.bossTier) {
+              hitstopTimer = bug.bossTier ? 0.14 : 0.045;
+              cameraTrauma = bug.bossTier ? 0.85 : elim.stars === 3 ? 0.65 : 0.35;
+              chefCelebrateTimer = 0.85;
             }
 
             if (elim.achievementId) {
@@ -2092,11 +2976,11 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
               );
             }
 
-            // RULE 4: Comic Pop-up + Floating Combo Toast when killed by a player-placed combo!
             const playerHasPlacedCombo = piecesRef.current.some(
               (p) => p.rail !== null && p.row !== null && p.comboType !== 'none'
             );
             const killedByComboAction =
+              Boolean(bug.bossTier) ||
               elim.stars >= 2 ||
               bug.hitByBridgeBurn ||
               bug.hitByDiagonalFoam ||
@@ -2117,7 +3001,7 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
               stateRef.current.onFloatingCombo?.({
                 id: `combo-kill-${bug.id}-${nowMs}`,
                 multiplier: combatComboStreak,
-                label: `¡Combo x${combatComboStreak}!`,
+                label: bug.bossTier ? '👑 ¡JEFE ABATIDO!' : `¡Combo x${combatComboStreak}!`,
                 detail: `+${ptsAwarded} PTS · ${'★'.repeat(elim.stars)}`,
                 color: elim.stars === 3 ? 'cyan' : elim.stars === 2 ? 'green' : 'yellow',
                 xPct: killPos.xPct,
@@ -2125,11 +3009,11 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
                 createdAt: nowMs,
               });
 
-              if (nowMs - lastKillComicPopAt >= 6000) {
+              if (nowMs - lastKillComicPopAt >= 6000 || bug.bossTier) {
                 lastKillComicPopAt = nowMs;
                 stateRef.current.onComicPop({
                   id: `kill-${bug.id}`,
-                  title: elim.comicTitle,
+                  title: bug.bossTier ? '👑 ¡JEFE DESINFECTADO!' : elim.comicTitle,
                   subtitle: elim.comicSubtitle,
                   stars: elim.stars,
                   color: elim.stars === 3 ? 'cyan' : elim.stars === 2 ? 'green' : 'yellow',
@@ -2138,24 +3022,19 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
               }
             }
 
-            // Check deterministic Phase Transition (Fase 1 -> Fase 2 -> Fase 3 -> Victory)
             const trans = checkPhaseTransition(phase, phaseKills, stateRef.current.level);
             if (trans.shouldAdvance) {
               if (trans.nextPhase === 'victory') {
-                gameEndedLock = true;
-                setTimeout(() => {
-                  stateRef.current.onGameEnd(true, {
-                    score,
-                    phaseReached: 3,
-                    remainingKillsToNext: 0,
-                    bugsCleaned: totalBugsCleaned,
-                  });
-                }, 450);
+                waveQuotaCompleted = true;
               } else {
                 phase = trans.nextPhase;
                 phaseKills = 0;
-                prepTimer = 3.0; // Real 3-second pause between phases showing incoming rails!
-                spawnWavePreviewBugs(stateRef.current.level, phase);
+                prepTimer = 3.0;
+                if (phase === 3 && getBossTierForLevel(stateRef.current.level) !== null) {
+                  spawnBossForMilestone(stateRef.current.level);
+                } else {
+                  spawnWavePreviewBugs(stateRef.current.level, phase);
+                }
                 if (trans.unlockedUtensilOnAdvance) {
                   stateRef.current.onUnlockUtensil(trans.unlockedUtensilOnAdvance);
                 }
@@ -2168,8 +3047,73 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
 
           // Check if Bug reaches the 4 White Gourmet Plates at the Bastion border (z = +4.18 -> yProgress >= 6.85)
           if (bug.yProgress >= 6.85) {
-            if (sanitationSeals > 0) {
-              // Bug eats the food on this rail's plate (leaving the empty white porcelain plate, matching Plate 3 in 1794109185461.jpg!)
+            if (hazmatShieldAvailable) {
+              // Traje EPI Amarillo (hazmat_epi): absorbs 1st plate impact of the level!
+              hazmatShieldAvailable = false;
+              soundEngine.playBleachWave();
+              cameraTrauma = 0.45;
+              spawnParticles(gridToWorldX(currentRailInt), 0.55, 4.18, 22, 0xfacc15, 3.2);
+              stateRef.current.onComicPop({
+                id: `hazmat-hit-${Date.now()}`,
+                title: '☣️ ¡TRAJE EPI ABSORBIÓ EL GOLPE!',
+                subtitle: 'Inmunidad del 1er impacto activada · Platos intactos',
+                color: 'yellow',
+                createdAt: Date.now(),
+              });
+              projectiles.push({
+                id: `epi-wave-${Date.now()}`,
+                x: currentRailInt,
+                y: 6.8,
+                vx: 0,
+                vy: -8.5,
+                damage: bug.bossTier ? 160 : 999,
+                isEnemy: false,
+                flavor: 'bleach_glob',
+                pierceShield: true,
+                isExplosiveOrThermal: true,
+                fromDiagonalFoam: false,
+                fromVortex: false,
+                life: 1.8,
+              });
+              if (bug.bossTier) {
+                bug.yProgress = 2.4;
+              } else {
+                continue;
+              }
+            } else if (armoredPlates > 0) {
+              // Coin Booster Plate Armor (Level 15+): absorbs 1 plate hit without losing a Sanitation Seal!
+              armoredPlates -= 1;
+              soundEngine.playBleachWave();
+              cameraTrauma = 0.45;
+              spawnParticles(gridToWorldX(currentRailInt), 0.55, 4.18, 20, 0x38bdf8, 3.0);
+              stateRef.current.onComicPop({
+                id: `armor-plate-${Date.now()}`,
+                title: '🛡️ ¡PLATO BLINDADO SALVADO!',
+                subtitle: 'El blindaje absorbió el impacto · 3/3 Sellos intactos',
+                color: 'cyan',
+                createdAt: Date.now(),
+              });
+              projectiles.push({
+                id: `shield-wave-${Date.now()}`,
+                x: currentRailInt,
+                y: 6.8,
+                vx: 0,
+                vy: -8.5,
+                damage: bug.bossTier ? 160 : 999,
+                isEnemy: false,
+                flavor: 'bleach_glob',
+                pierceShield: true,
+                isExplosiveOrThermal: true,
+                fromDiagonalFoam: false,
+                fromVortex: false,
+                life: 1.8,
+              });
+              if (bug.bossTier) {
+                bug.yProgress = 2.4;
+              } else {
+                continue;
+              }
+            } else if (sanitationSeals > 0) {
               const plateGroup = kitchenProps.bastionPlates[currentRailInt];
               if (plateGroup) {
                 const food = plateGroup.getObjectByName('food_content');
@@ -2191,15 +3135,20 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
                 y: 6.8,
                 vx: 0,
                 vy: -8.5,
-                damage: 999,
+                damage: bug.bossTier ? 180 : 999,
                 isEnemy: false,
                 flavor: 'bleach_glob',
                 pierceShield: true,
+                isExplosiveOrThermal: true,
                 fromDiagonalFoam: false,
                 fromVortex: false,
                 life: 1.8,
               });
-              continue;
+              if (bug.bossTier) {
+                bug.yProgress = 2.4; // Push Boss back up the countertop instead of vanishing for free!
+              } else {
+                continue;
+              }
             } else if (!gameEndedLock) {
               gameEndedLock = true;
               const trans = checkPhaseTransition(phase, phaseKills, stateRef.current.level);
@@ -2220,7 +3169,25 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
       }
       bugs = survivingBugs;
 
-      // Sync 3D Bug Meshes (with mandatory 0.75 scale!)
+      // Trigger Level Victory ONLY when vents are closed AND 0 live enemies (including Boss) remain on the countertop!
+      const liveBugsCount = bugs.filter((b) => b.koTimer <= 0).length;
+      const bossPending =
+        getBossTierForLevel(stateRef.current.level) !== null && !bossSpawnedForLevel;
+      const readyForVictory =
+        (waveQuotaCompleted || (stateRef.current.level >= 5 && levelTimer <= 0)) && !bossPending;
+      if (waveSimDt > 0 && !gameEndedLock && readyForVictory && liveBugsCount === 0) {
+        gameEndedLock = true;
+        setTimeout(() => {
+          stateRef.current.onGameEnd(true, {
+            score: score + (stateRef.current.level >= 5 ? 250 : 0),
+            phaseReached: 3,
+            remainingKillsToNext: 0,
+            bugsCleaned: totalBugsCleaned,
+          });
+        }, 450);
+      }
+
+      // Sync 3D Bug Meshes (0.75 normal scale; 1.02 Mini-Boss; 1.24 Grand Boss + phase-break flash!)
       const activeBugIds = new Set<string>();
       for (const bug of bugs) {
         activeBugIds.add(bug.id);
@@ -2234,7 +3201,14 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
         const wx = gridToWorldX(bug.rail);
         const wz = gridToWorldZ(bug.yProgress);
         const gaitBob = bug.koTimer > 0 ? 0 : Math.abs(Math.sin(bug.yProgress * 7)) * 0.1;
-        mesh.position.set(wx, gaitBob, wz);
+        const phaseShake =
+          bug.bossPhaseFlashTimer && bug.bossPhaseFlashTimer > 0
+            ? Math.sin(elapsed * 75) * 0.16
+            : 0;
+        mesh.position.set(wx + phaseShake, gaitBob, wz);
+
+        const baseBugScale =
+          bug.bossTier === 'grand' ? 1.24 : bug.bossTier === 'mini' ? 1.02 : 0.75;
 
         if (bug.koTimer > 0) {
           mesh.position.y += (0.4 - bug.koTimer) * 3.8;
@@ -2243,7 +3217,9 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
           mesh.scale.setScalar(Math.max(0.08, bug.koTimer * 1.8));
         } else {
           mesh.rotation.set(0, Math.sin(bug.yProgress * 5) * 0.09, 0);
-          mesh.scale.setScalar(0.75);
+          const flashPulse =
+            bug.bossPhaseFlashTimer && bug.bossPhaseFlashTimer > 0 ? 1.15 : 1.0;
+          mesh.scale.setScalar(baseBugScale * flashPulse);
 
           const legsObj = mesh.getObjectByName('anim_legs');
           if (legsObj) {
@@ -2276,17 +3252,26 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
         }
       }
 
-      // Update Warning Beacons at top of rails
+      // Update Warning Beacons at top of rails (in Strategic Mode Lv.4+, mark all forecast conduits!)
       warningBeacons.forEach((b, rIdx) => {
         const mat = b.material as THREE.MeshBasicMaterial;
-        if (warningRails[rIdx]) {
+        if (inPlacementPhase && stateRef.current.level >= 4 && levelForecast.activeRails.includes(rIdx)) {
+          mat.color.setHex(levelForecast.bossTier !== 'none' ? 0xf97316 : 0x38bdf8);
+          mat.opacity = 0.36 + Math.sin(elapsed * 7 + rIdx) * 0.2;
+        } else if (warningRails[rIdx]) {
+          mat.color.setHex(0xef4444);
           mat.opacity = 0.48 + Math.sin(elapsed * 12) * 0.32;
         } else {
           mat.opacity = 0;
         }
       });
 
-      // Animate 3D Chef Bastion at z = +4.72, y = -0.24 (standing clearly above the bottom Gunmetal Tray!)
+      // Subtle pulse on gourmet plates if armoredPlates > 0
+      kitchenProps.bastionPlates.forEach((plate) => {
+        plate.scale.setScalar(armoredPlates > 0 ? 0.9 + Math.sin(elapsed * 6) * 0.03 : 0.86);
+      });
+
+      // Animate 3D Chef Bastion at z = +4.72, y = -0.24 (kept 100% untouched in mesh/scale!)
       const targetChefX = stateRef.current.wardrobeOpen ? 0 : chefTargetX * 0.42;
       chefAnchor.position.x = THREE.MathUtils.damp(chefAnchor.position.x, targetChefX, 6, dt);
       chefAnchor.position.z = 4.72;
@@ -2347,6 +3332,39 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
       if (hudEmitTimer >= 0.1) {
         hudEmitTimer = 0;
         const trans = checkPhaseTransition(phase, phaseKills, stateRef.current.level);
+        const liveBoss = bugs.find((b) => Boolean(b.bossTier) && b.koTimer <= 0);
+        const bossHud: ActiveBossHudInfo | null =
+          liveBoss && liveBoss.bossTier
+            ? {
+                id: liveBoss.id,
+                tier: liveBoss.bossTier,
+                name:
+                  liveBoss.bossTier === 'grand'
+                    ? `GRAN JEFE NV.${stateRef.current.level} · REY DE LA OLLA`
+                    : `MINI-JEFE NV.${stateRef.current.level} · CAPATAZ BLINDADO`,
+                hpPct: Math.max(0, Math.min(100, (liveBoss.hp / liveBoss.maxHp) * 100)),
+                phase: liveBoss.bossPhase ?? 1,
+                phaseLabel: getGrandBossPhaseLabel(liveBoss.bossPhase ?? 1, liveBoss.bossTier),
+                armorMelted: Boolean(liveBoss.bossArmorBroken || !liveBoss.hasShield),
+                phaseJustBroke: Boolean((liveBoss.bossPhaseFlashTimer ?? 0) > 0),
+              }
+            : null;
+
+        let tutorialTargetScreen: HudSnapshot['tutorialTargetScreen'] = null;
+        if (tutorialGuide?.nextTarget) {
+          const tScr = projectWorldToScreenPct(
+            gridToWorldX(tutorialGuide.nextTarget.rail),
+            0.45,
+            gridToWorldZ(tutorialGuide.nextTarget.row)
+          );
+          tutorialTargetScreen = {
+            xPct: tScr.xPct,
+            yPct: tScr.yPct,
+            shortTag: tutorialGuide.nextTarget.shortTag,
+            pieceId: tutorialGuide.nextTarget.pieceId,
+          };
+        }
+
         stateRef.current.onHudUpdate({
           phase,
           inPlacementPhase,
@@ -2357,10 +3375,19 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
           pressurePct: Math.round(pressurePct),
           slowMoActive: isPieceSelected && !inPlacementPhase,
           prepTimer,
-          selectedPieceId: selectedPieceIdRef.current,
+          levelTimer: Math.ceil(levelTimer),
+          biome: activeBiome,
+          smartComboHintMessage: null, // Top floating orange tutorial banners removed so vents stay 100% clear!
+          selectedPieceId: activePieceId,
           hoveredCell,
           activeWarningRails: warningRails,
           pieces: piecesRef.current,
+          hazmatShieldReady: hazmatShieldAvailable,
+          armoredPlates,
+          lastStandActive: lastStandTimer > 0,
+          forecast: levelForecast,
+          bossHud,
+          tutorialTargetScreen,
         });
       }
 

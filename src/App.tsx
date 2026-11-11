@@ -1,26 +1,44 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ChefBastionCanvas, HudSnapshot } from './components/ChefBastionCanvas';
+import {
+  ChefBastionCanvas,
+  DragPointerState,
+  HudSnapshot,
+} from './components/ChefBastionCanvas';
 import {
   AchievementsCodexModal,
   ChefWardrobeModal,
   ComicPopBanner,
   FloatingComboLayer,
+  SettingsModal,
+  TacticalOnboardingModal,
 } from './components/GameModals';
-import { PWAInstallButton } from './components/PWAInstallButton';
 import { soundEngine } from './game/audio';
 import {
   ACHIEVEMENTS_CATALOG,
   createInitialBoardPieces,
   DEFAULT_PROGRESS,
+  DEFAULT_SETTINGS,
+  getBiomeForLevel,
+  getLevelForecast,
+  getTacticalOnboardingCard,
   getTutorialGuideForLevel,
+  isDynamicOnboardingLevel,
+  isWorldUnlocked,
+  LEVEL_DURATION_SECONDS,
   SPECIAL_WEAPONS_CATALOG,
+  STRATEGIC_BOOST_SHIELD_COST,
+  STRATEGIC_BOOST_ULTIMATE_COST,
   UTENSIL_CATALOG,
+  UTENSIL_MICRO_TIPS,
+  WORLD_UNLOCK_LEVELS,
   WORLDS_CATALOG,
 } from './game/rules';
 import {
   ArmorId,
+  BugType,
   ComicPopEvent,
   FloatingComboEvent,
+  GameSettings,
   GameState,
   HatId,
   KillStarRating,
@@ -32,6 +50,7 @@ import {
 } from './game/types';
 
 const SAVE_STORAGE_KEY = 'chef_bastion_save_v1';
+const SETTINGS_STORAGE_KEY = 'chef_bastion_settings_v1';
 const LEGACY_BOARD_STORAGE_KEY = 'chef_bastion_board_v1';
 
 function loadSavedProgress(): PlayerProgress {
@@ -44,6 +63,39 @@ function loadSavedProgress(): PlayerProgress {
   } catch {
     return DEFAULT_PROGRESS;
   }
+}
+
+function loadSavedSettings(): GameSettings {
+  try {
+    const raw = localStorage.getItem(SETTINGS_STORAGE_KEY);
+    if (!raw) return DEFAULT_SETTINGS;
+    return { ...DEFAULT_SETTINGS, ...JSON.parse(raw) };
+  } catch {
+    return DEFAULT_SETTINGS;
+  }
+}
+
+const BUG_FORECAST_ICONS: Record<BugType, { icon: string; label: string }> = {
+  speed_ant: { icon: '🐜', label: 'Hormiga' },
+  cap_beetle: { icon: '🐀', label: 'Blindada' },
+  acid_wasp: { icon: '🪰', label: 'Mosca Ácida' },
+  shift_roach: { icon: '🪳', label: 'Saltarraíl' },
+  king_crab: { icon: '🦀', label: 'Rey Plaga' },
+};
+
+function getTargetLeftClass(xPct: number): string {
+  if (xPct < 34) return 'left-[26%]';
+  if (xPct < 50) return 'left-[42%]';
+  if (xPct < 66) return 'left-[58%]';
+  return 'left-[74%]';
+}
+
+function getTargetTopClass(yPct: number): string {
+  if (yPct < 33) return 'top-[27%]';
+  if (yPct < 42) return 'top-[35%]';
+  if (yPct < 51) return 'top-[43%]';
+  if (yPct < 60) return 'top-[51%]';
+  return 'top-[58%]';
 }
 
 export default function App() {
@@ -63,28 +115,63 @@ export default function App() {
   const selectedPieceIdRef = useRef<string | null>(null);
   const triggerUltimateRef = useRef<boolean>(false);
   const startWaveRef = useRef<boolean>(false);
+  const dragPointerRef = useRef<DragPointerState>({
+    active: false,
+    pieceId: null,
+    clientX: 0,
+    clientY: 0,
+  });
+  const boostUltimateRef = useRef<boolean>(false);
+  const boostPlateShieldRef = useRef<boolean>(false);
 
-  const [hud, setHud] = useState<HudSnapshot>({
-    phase: 1,
-    inPlacementPhase: true,
-    phaseKills: 0,
-    phaseTargetKills: 4,
-    sanitationSeals: 3,
-    score: 0,
-    pressurePct: 45,
-    slowMoActive: false,
-    prepTimer: 0,
-    selectedPieceId: null,
-    hoveredCell: null,
-    activeWarningRails: [null, null, null, null],
-    pieces: piecesRef.current,
+  const [hud, setHud] = useState<HudSnapshot>(() => {
+    const initLvl = loadSavedProgress().currentLevel;
+    return {
+      phase: 1,
+      inPlacementPhase: !isDynamicOnboardingLevel(initLvl),
+      phaseKills: 0,
+      phaseTargetKills: 4,
+      sanitationSeals: 3,
+      score: 0,
+      pressurePct: 45,
+      slowMoActive: false,
+      prepTimer: 0,
+      levelTimer: LEVEL_DURATION_SECONDS,
+      biome: getBiomeForLevel(initLvl),
+      smartComboHintMessage: null,
+      selectedPieceId: null,
+      hoveredCell: null,
+      activeWarningRails: [null, null, null, null],
+      pieces: piecesRef.current,
+      hazmatShieldReady: loadSavedProgress().equippedArmor === 'hazmat_epi',
+      armoredPlates: 0,
+      lastStandActive: false,
+      forecast: getLevelForecast(initLvl),
+      bossHud: null,
+      tutorialTargetScreen: null,
+    };
   });
 
   const [resetSignal, setResetSignal] = useState(0);
-  const [muted, setMuted] = useState(false);
+  const [settings, setSettings] = useState<GameSettings>(loadSavedSettings);
   const [dockCollapsed, setDockCollapsed] = useState(false);
   const [showCodex, setShowCodex] = useState(false);
   const [showWardrobe, setShowWardrobe] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  const [showOnboardingModal, setShowOnboardingModal] = useState(false);
+  const [usedUltBoost, setUsedUltBoost] = useState(false);
+  const [usedShieldBoost, setUsedShieldBoost] = useState(false);
+  const [longPressTip, setLongPressTip] = useState<{ pieceId: string; text: string } | null>(null);
+  const trayPressRef = useRef<{
+    pieceId: string;
+    type: UtensilType;
+    startX: number;
+    startY: number;
+    dragged: boolean;
+    longPressed: boolean;
+    timerId: number | null;
+  } | null>(null);
+  const suppressNextTrayClickRef = useRef<boolean>(false);
   const [comicPop, setComicPop] = useState<ComicPopEvent | null>(null);
   const [floatingCombos, setFloatingCombos] = useState<FloatingComboEvent[]>([]);
   const [endOutcome, setEndOutcome] = useState<{
@@ -95,10 +182,30 @@ export default function App() {
     bugsCleaned: number;
   } | null>(null);
 
-  // Sync document.body.dataset.state per game shell contract
+  const handleUpdateSettings = useCallback((patch: Partial<GameSettings>) => {
+    setSettings((prev) => {
+      const next = { ...prev, ...patch };
+      soundEngine.applySettings(next);
+      return next;
+    });
+  }, []);
+
+  // Sync document.body.dataset.state, persist settings & sync establishment background music (changes every 10 levels)
   useEffect(() => {
     document.body.dataset.state = gameState;
-  }, [gameState]);
+    soundEngine.applySettings(settings);
+    soundEngine.syncBackgroundMusic(gameState === 'playing' && !settings.muted, progress.currentLevel);
+    try {
+      localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(settings));
+    } catch {
+      // ignore storage errors
+    }
+    return () => {
+      if (gameState !== 'playing') {
+        soundEngine.stopBackgroundMusic();
+      }
+    };
+  }, [gameState, progress.currentLevel, settings]);
 
   // Auto-save progress whenever it changes
   useEffect(() => {
@@ -263,10 +370,18 @@ export default function App() {
       setGameState('gameover');
       setProgress((prev) => {
         const nextLevel = victory ? prev.currentLevel + 1 : prev.currentLevel;
+        const nextHighest = Math.max(prev.highestLevel, nextLevel);
+        const nextWorlds = [...prev.unlockedWorlds];
+        (Object.keys(WORLD_UNLOCK_LEVELS) as WorldId[]).forEach((wId) => {
+          if (nextHighest >= WORLD_UNLOCK_LEVELS[wId] && !nextWorlds.includes(wId)) {
+            nextWorlds.push(wId);
+          }
+        });
         return {
           ...prev,
           currentLevel: nextLevel,
-          highestLevel: Math.max(prev.highestLevel, nextLevel),
+          highestLevel: nextHighest,
+          unlockedWorlds: nextWorlds,
           coins: prev.coins + (victory ? 120 : 40),
           bestScore: Math.max(prev.bestScore, finalStats.score),
           totalBugsCleaned: prev.totalBugsCleaned + finalStats.bugsCleaned,
@@ -283,12 +398,19 @@ export default function App() {
     // Always start the level with a 100% empty board (all pieces in the bottom tray)
     const initialPieces = createInitialBoardPieces(progress.currentLevel);
     piecesRef.current = initialPieces;
-    selectedPieceIdRef.current = initialPieces[0]?.id ?? null;
+    selectedPieceIdRef.current = null;
     startWaveRef.current = false;
+    boostUltimateRef.current = false;
+    boostPlateShieldRef.current = false;
+    dragPointerRef.current = { active: false, pieceId: null, clientX: 0, clientY: 0 };
+    setUsedUltBoost(false);
+    setUsedShieldBoost(false);
+    setLongPressTip(null);
     setEndOutcome(null);
     setFloatingCombos([]);
     setShowCodex(false);
     setShowWardrobe(false);
+    setShowOnboardingModal(false);
     setResetSignal((n) => n + 1);
     document.body.dataset.state = 'playing';
     setGameState('playing');
@@ -297,8 +419,14 @@ export default function App() {
   const resetBoardToDefault = useCallback(() => {
     const initialPieces = createInitialBoardPieces(progress.currentLevel);
     piecesRef.current = initialPieces;
-    selectedPieceIdRef.current = initialPieces[0]?.id ?? null;
+    selectedPieceIdRef.current = null;
     startWaveRef.current = false;
+    boostUltimateRef.current = false;
+    boostPlateShieldRef.current = false;
+    dragPointerRef.current = { active: false, pieceId: null, clientX: 0, clientY: 0 };
+    setUsedUltBoost(false);
+    setUsedShieldBoost(false);
+    setLongPressTip(null);
     setFloatingCombos([]);
     setResetSignal((n) => n + 1);
     setGameState('playing');
@@ -333,10 +461,11 @@ export default function App() {
   // Global keyboard shortcuts (Enter/Space on Title/GameOver, Esc/P for Pause, M for Mute)
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      if (showCodex || showWardrobe) {
+      if (showCodex || showWardrobe || showSettings) {
         if (e.code === 'Escape') {
           setShowCodex(false);
           setShowWardrobe(false);
+          setShowSettings(false);
         }
         return;
       }
@@ -353,10 +482,7 @@ export default function App() {
         e.preventDefault();
         setGameState((s) => (s === 'playing' ? 'paused' : s === 'paused' ? 'playing' : s));
       } else if (e.code === 'KeyM') {
-        setMuted((m) => {
-          soundEngine.muted = !m;
-          return !m;
-        });
+        handleUpdateSettings({ muted: !settings.muted });
       } else if (e.code === 'KeyH') {
         setDockCollapsed((c) => !c);
       } else if (e.code === 'KeyR' && gameState === 'playing') {
@@ -371,6 +497,8 @@ export default function App() {
 
     const onBlur = () => {
       selectedPieceIdRef.current = null;
+      dragPointerRef.current = { active: false, pieceId: null, clientX: 0, clientY: 0 };
+      setLongPressTip(null);
     };
 
     window.addEventListener('keydown', onKeyDown);
@@ -379,11 +507,106 @@ export default function App() {
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('blur', onBlur);
     };
-  }, [gameState, hud.pressurePct, showCodex, showWardrobe, startGame]);
+  }, [gameState, handleUpdateSettings, hud.pressurePct, settings.muted, showCodex, showSettings, showWardrobe, startGame]);
+
+  // Global Tray Pointer Move / Up listener for 350ms Long-Press Micro-Tip & Direct -45px Y Drag
+  useEffect(() => {
+    const onWinPointerMove = (e: PointerEvent) => {
+      const st = trayPressRef.current;
+      if (!st || st.dragged) return;
+      const dist = Math.hypot(e.clientX - st.startX, e.clientY - st.startY);
+      if (dist > 8) {
+        st.dragged = true;
+        suppressNextTrayClickRef.current = true;
+        if (st.timerId !== null) {
+          window.clearTimeout(st.timerId);
+          st.timerId = null;
+        }
+        setLongPressTip(null);
+        selectedPieceIdRef.current = st.pieceId;
+        dragPointerRef.current = {
+          active: true,
+          pieceId: st.pieceId,
+          clientX: e.clientX,
+          clientY: e.clientY,
+        };
+        soundEngine.playSlowMoEnter();
+      }
+    };
+
+    const finishTrayGesture = (cancelled: boolean) => {
+      const st = trayPressRef.current;
+      if (!st) return;
+      if (st.timerId !== null) {
+        window.clearTimeout(st.timerId);
+      }
+      if (st.dragged || st.longPressed) {
+        suppressNextTrayClickRef.current = true;
+      }
+      if (cancelled) {
+        dragPointerRef.current = { active: false, pieceId: null, clientX: 0, clientY: 0 };
+      }
+      trayPressRef.current = null;
+      setLongPressTip(null);
+    };
+
+    const onWinPointerUp = () => finishTrayGesture(false);
+    const onWinPointerCancel = () => finishTrayGesture(true);
+
+    window.addEventListener('pointermove', onWinPointerMove);
+    window.addEventListener('pointerup', onWinPointerUp);
+    window.addEventListener('pointercancel', onWinPointerCancel);
+    return () => {
+      window.removeEventListener('pointermove', onWinPointerMove);
+      window.removeEventListener('pointerup', onWinPointerUp);
+      window.removeEventListener('pointercancel', onWinPointerCancel);
+    };
+  }, []);
+
+  const handleBuyStrategicUltimateBoost = useCallback(() => {
+    if (usedUltBoost || progress.coins < STRATEGIC_BOOST_ULTIMATE_COST) return;
+    setProgress((p) => ({
+      ...p,
+      coins: Math.max(0, p.coins - STRATEGIC_BOOST_ULTIMATE_COST),
+    }));
+    boostUltimateRef.current = true;
+    setUsedUltBoost(true);
+    soundEngine.playSnapPiece(true);
+  }, [progress.coins, usedUltBoost]);
+
+  const handleBuyStrategicShieldBoost = useCallback(() => {
+    if (usedShieldBoost || progress.coins < STRATEGIC_BOOST_SHIELD_COST) return;
+    setProgress((p) => ({
+      ...p,
+      coins: Math.max(0, p.coins - STRATEGIC_BOOST_SHIELD_COST),
+    }));
+    boostPlateShieldRef.current = true;
+    setUsedShieldBoost(true);
+    soundEngine.playSnapPiece(true);
+  }, [progress.coins, usedShieldBoost]);
 
   const equippedSpecialMeta = SPECIAL_WEAPONS_CATALOG[progress.equippedSpecial];
   const tutorialGuide = getTutorialGuideForLevel(progress.currentLevel, hud.pieces);
+  const onboardingCard = getTacticalOnboardingCard(progress.currentLevel);
+  const activeBiome = getBiomeForLevel(progress.currentLevel);
   const placedCount = hud.pieces.filter((p) => p.rail !== null && p.row !== null).length;
+  const formatWaveTimer = (sec: number) => {
+    const m = Math.floor(sec / 60);
+    const s = sec % 60;
+    return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  };
+
+  // Compute approximate tray card start X% for the single-focus animated onboarding drag guide
+  const tutorialPieceIdx = hud.tutorialTargetScreen
+    ? hud.pieces.findIndex((p) => p.id === hud.tutorialTargetScreen?.pieceId)
+    : -1;
+  const traySpanPct = Math.min(48, Math.max(20, hud.pieces.length * 10));
+  const tutorialTrayStartXPct =
+    tutorialPieceIdx >= 0 && hud.pieces.length > 0
+      ? 46 -
+        traySpanPct / 2 +
+        ((tutorialPieceIdx + 0.5) / hud.pieces.length) * traySpanPct
+      : 45;
 
   return (
     <main className="relative w-full h-[100dvh] overflow-hidden select-none">
@@ -396,10 +619,14 @@ export default function App() {
         hatId={progress.equippedHat}
         armorId={progress.equippedArmor}
         specialWeaponId={progress.equippedSpecial}
+        settings={settings}
         piecesRef={piecesRef}
         selectedPieceIdRef={selectedPieceIdRef}
         triggerUltimateRef={triggerUltimateRef}
         startWaveRef={startWaveRef}
+        dragPointerRef={dragPointerRef}
+        boostUltimateRef={boostUltimateRef}
+        boostPlateShieldRef={boostPlateShieldRef}
         resetSignal={resetSignal}
         onHudUpdate={handleHudUpdate}
         onComicPop={triggerComicPop}
@@ -423,7 +650,7 @@ export default function App() {
           aria-label="Pantalla de Título de Chef Bastion"
           className="pointer-events-none fixed inset-0 z-20 flex flex-col justify-between p-5 sm:p-8 bg-gradient-to-b from-amber-950/80 via-transparent to-amber-950/90"
         >
-          {/* Top Bar: Auto-saved Coins, Reset from 0 & PWA Install */}
+          {/* Top Bar: Auto-saved Coins, Settings & Reset from 0 */}
           <div className="flex items-center justify-between gap-2 flex-wrap">
             <div className="pointer-events-auto flex items-center gap-2.5 bg-amber-950/90 border border-amber-600/60 px-3 py-2 rounded-xl text-xs font-extrabold text-amber-100">
               <span className="font-mono tabular-nums text-yellow-300">
@@ -438,12 +665,18 @@ export default function App() {
             <div className="pointer-events-auto flex items-center gap-2">
               <button
                 type="button"
+                onClick={() => setShowSettings(true)}
+                className="px-3 py-2 rounded-xl bg-amber-900/95 hover:bg-amber-800 border border-amber-500/70 text-amber-100 text-xs font-extrabold transition cursor-pointer whitespace-nowrap"
+              >
+                ⚙️ Ajustes
+              </button>
+              <button
+                type="button"
                 onClick={handleResetProgressFromZero}
                 className="px-3 py-2 rounded-xl bg-rose-950/90 hover:bg-rose-900 border border-rose-500/70 text-rose-100 text-xs font-extrabold transition cursor-pointer whitespace-nowrap"
               >
                 🔄 Empezar de 0
               </button>
-              <PWAInstallButton />
             </div>
           </div>
 
@@ -522,12 +755,13 @@ export default function App() {
               </text>
             </svg>
 
-            {/* World Selector Tabs */}
+            {/* World Selector Tabs (Locked with padlock by real progression; DEV_UNLOCK_ALL_WORLDS in rules.ts) */}
             <div className="pointer-events-auto flex flex-wrap items-center gap-1.5 bg-amber-950/90 border border-amber-600/60 p-1.5 rounded-xl">
               {(Object.keys(WORLDS_CATALOG) as WorldId[]).map((wId) => {
-                const unlocked = progress.unlockedWorlds.includes(wId);
+                const unlocked = isWorldUnlocked(wId, progress);
                 const active = progress.currentWorld === wId;
-                const label =
+                const reqLvl = WORLD_UNLOCK_LEVELS[wId];
+                const baseLabel =
                   wId === 'sunny_counter'
                     ? '1. Encimera'
                     : wId === 'fridge_vault'
@@ -535,25 +769,30 @@ export default function App() {
                     : wId === 'iron_stoves'
                     ? '3. Fogones 🔥'
                     : '4. Obrador 🧁';
+                const label = unlocked ? baseLabel : `🔒 ${baseLabel} (Nv.${reqLvl})`;
                 return (
                   <button
                     key={wId}
                     type="button"
-                    onClick={() =>
+                    disabled={!unlocked}
+                    aria-label={
+                      unlocked
+                        ? `Seleccionar mundo ${baseLabel}`
+                        : `Mundo bloqueado ${baseLabel}, requiere Nivel ${reqLvl}`
+                    }
+                    onClick={() => {
+                      if (!unlocked) return;
                       setProgress((p) => ({
                         ...p,
                         currentWorld: wId,
-                        unlockedWorlds: p.unlockedWorlds.includes(wId)
-                          ? p.unlockedWorlds
-                          : [...p.unlockedWorlds, wId],
-                      }))
-                    }
+                      }));
+                    }}
                     className={`px-2.5 py-1.5 rounded-lg text-xs font-extrabold transition whitespace-nowrap shrink-0 ${
                       active
-                        ? 'bg-yellow-400 text-slate-950 shadow'
+                        ? 'bg-yellow-400 text-slate-950 shadow cursor-pointer'
                         : unlocked
-                        ? 'text-amber-100 hover:bg-amber-800/60'
-                        : 'text-amber-300/70 hover:bg-amber-900/50'
+                        ? 'text-amber-100 hover:bg-amber-800/60 cursor-pointer'
+                        : 'text-amber-400/50 bg-black/30 border border-amber-900/50 cursor-not-allowed'
                     }`}
                   >
                     {label}
@@ -573,18 +812,18 @@ export default function App() {
                 ¡JUGAR NIVEL {progress.currentLevel}!
               </button>
 
-              <div className="flex items-center gap-2.5">
+              <div className="flex flex-wrap items-center gap-2">
                 <button
                   type="button"
                   onClick={() => setShowCodex(true)}
-                  className="flex-1 sm:flex-initial px-4 py-3.5 rounded-xl bg-amber-900/95 hover:bg-amber-800 text-amber-100 font-extrabold text-xs border-2 border-amber-500/70 transition whitespace-nowrap shrink-0"
+                  className="flex-1 sm:flex-initial px-3.5 py-3.5 rounded-xl bg-amber-900/95 hover:bg-amber-800 text-amber-100 font-extrabold text-xs border-2 border-amber-500/70 transition whitespace-nowrap shrink-0 cursor-pointer"
                 >
                   Álbum 3★ ({progress.unlockedAchievements.length}/{ACHIEVEMENTS_CATALOG.length})
                 </button>
                 <button
                   type="button"
                   onClick={() => setShowWardrobe(true)}
-                  className="flex-1 sm:flex-initial px-4 py-3.5 rounded-xl bg-cyan-950/95 hover:bg-cyan-900 text-cyan-200 font-extrabold text-xs border-2 border-cyan-500/70 transition whitespace-nowrap shrink-0"
+                  className="flex-1 sm:flex-initial px-3.5 py-3.5 rounded-xl bg-cyan-950/95 hover:bg-cyan-900 text-cyan-200 font-extrabold text-xs border-2 border-cyan-500/70 transition whitespace-nowrap shrink-0 cursor-pointer"
                 >
                   Vestuario 3D
                 </button>
@@ -594,7 +833,7 @@ export default function App() {
 
           {/* Single flat borderless mobile-first inline touch hint at bottom safe margin */}
           <div className="text-xs font-bold text-amber-100/90 tracking-wide">
-            Coloca tus armas en la encimera antes de cada oleada · Combina en Línea, Puente o Diagonal
+            Coloca tus armas en la encimera antes de cada oleada · Combina en Línea, Puente o Escuadra 90°
           </div>
         </section>
       )}
@@ -607,10 +846,23 @@ export default function App() {
           {/* Top Row: Left Status Cluster + Center/Right Blue Tactical Pill + Utility Controls */}
           <div className="flex flex-col gap-1.5">
             <div className="flex items-start justify-between gap-2">
-              {/* Top-Left Status Cluster matching 1794109185461.jpg */}
+              {/* Top-Left Status Cluster matching 1794109185461.jpg + 120s Wave Timer & Biome */}
               <div className="bg-stone-900/90 border-2 border-stone-950 rounded-xl px-2.5 py-1.5 shadow-[0_3px_0_#0f172a] flex flex-col gap-0.5 shrink-0">
-                <div className="text-[11px] sm:text-xs font-black tracking-wide text-white leading-none drop-shadow">
-                  NV.{progress.currentLevel} · FASE {hud.phase}/3
+                <div className="flex items-center gap-1.5 text-[11px] sm:text-xs font-black tracking-wide text-white leading-none drop-shadow">
+                  <span>
+                    NV.{progress.currentLevel} · FASE {hud.phase}/3
+                  </span>
+                  {progress.currentLevel >= 5 && (
+                    <span className="px-1.5 py-0.5 rounded bg-amber-500/25 border border-amber-400/60 font-mono text-[10px] text-yellow-300">
+                      {hud.levelTimer > 0
+                        ? `⏱️ ${formatWaveTimer(hud.levelTimer)}`
+                        : '🧹 ¡LIMPIA EL TABLERO!'}
+                    </span>
+                  )}
+                </div>
+                <div className="text-[9px] font-extrabold text-cyan-300 leading-none mt-0.5">
+                  {activeBiome.shortName}
+                  {progress.currentLevel >= 31 ? ' · 📐 Lateral' : ''}
                 </div>
                 <div className="flex items-center gap-1.5 mt-0.5">
                   <span className="text-[9px] font-black uppercase tracking-wider text-stone-200 leading-none">
@@ -649,17 +901,42 @@ export default function App() {
                   <span className="font-mono tabular-nums text-[10px] font-black text-amber-300 ml-0.5">
                     {hud.phaseKills}/{hud.phaseTargetKills}
                   </span>
+                  {hud.hazmatShieldReady && (
+                    <span
+                      title="Traje EPI Amarillo listo para absorber el 1er impacto o ácido"
+                      className="text-[9px] font-black text-yellow-300 ml-1"
+                    >
+                      · ☣️ EPI
+                    </span>
+                  )}
+                  {hud.armoredPlates > 0 && (
+                    <span
+                      title="Blindaje de plato activo"
+                      className="text-[9px] font-black text-cyan-300 ml-0.5"
+                    >
+                      · 🛡️×{hud.armoredPlates}
+                    </span>
+                  )}
                 </div>
-              </div>
-
-              {/* Center/Top Blue Metallic Tactical Pill Banner matching 1794109185461.jpg */}
-              <div className="hidden sm:flex items-center gap-1.5 bg-gradient-to-b from-blue-600 to-blue-800 border-2 border-slate-950 rounded-full px-3.5 py-1 shadow-[0_3px_0_#0f172a] text-white text-xs font-black tracking-wide">
-                <span>⏱️</span>
-                <span>MODO TÁCTICO · Toca una casilla para colocar</span>
               </div>
 
               {/* Top-Right Utility Controls */}
               <div className="pointer-events-auto flex items-center gap-1 shrink-0">
+                {onboardingCard && (
+                  <button
+                    type="button"
+                    tabIndex={-1}
+                    aria-label="Ver Tarjeta Táctica del Nivel"
+                    onClick={(e) => {
+                      e.currentTarget.blur();
+                      setShowOnboardingModal(true);
+                    }}
+                    className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-stone-900/95 border-2 border-stone-950 shadow-[0_2px_0_#0f172a] flex items-center justify-center text-cyan-300 hover:bg-stone-800 transition shrink-0 text-xs font-black cursor-pointer"
+                  >
+                    ?
+                  </button>
+                )}
+
                 <button
                   type="button"
                   tabIndex={-1}
@@ -676,18 +953,15 @@ export default function App() {
                 <button
                   type="button"
                   tabIndex={-1}
-                  aria-label={muted ? 'Activar Sonido' : 'Silenciar Sonido'}
+                  aria-label={settings.muted ? 'Activar Sonido' : 'Silenciar Sonido'}
                   onClick={(e) => {
                     e.currentTarget.blur();
-                    setMuted((m) => {
-                      soundEngine.muted = !m;
-                      return !m;
-                    });
+                    handleUpdateSettings({ muted: !settings.muted });
                   }}
                   className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-stone-900/95 border-2 border-stone-950 shadow-[0_2px_0_#0f172a] flex items-center justify-center text-stone-100 hover:bg-stone-800 transition shrink-0"
                 >
                   <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2.2">
-                    {muted ? (
+                    {settings.muted ? (
                       <path strokeLinecap="round" strokeLinejoin="round" d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2" />
                     ) : (
                       <path strokeLinecap="round" strokeLinejoin="round" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
@@ -727,51 +1001,241 @@ export default function App() {
               </div>
             </div>
 
-            {/* Placement Phase Banner OR Blue Tactical Pill on Mobile */}
-            <div className="flex items-center justify-between gap-2">
-              {hud.inPlacementPhase ? (
-                <div className="pointer-events-auto w-full max-w-md bg-gradient-to-b from-blue-600 to-blue-800 border-2 border-slate-950 rounded-xl px-2.5 py-1 shadow-[0_3px_0_#0f172a] flex items-center justify-between gap-2">
-                  <div className="min-w-0">
-                    <div className="text-[10px] font-black uppercase tracking-wider text-yellow-300 flex items-center gap-1">
-                      <span>⏱️</span>
-                      <span className="truncate">
-                        {tutorialGuide ? tutorialGuide.mechanicTitle : 'MODO TÁCTICO · Toca una casilla para colocar'}
+            {/* Segmented Top Boss HP Bar (Mini-Bosses X5 & 3-Phase Grand Bosses X0 with 33% & 66% notches) */}
+            {hud.bossHud && (
+              <div
+                data-testid="boss-hp-bar"
+                className={`mx-auto w-full max-w-md rounded-xl border-2 px-3 py-1.5 shadow-[0_3px_0_#0f172a] transition ${
+                  hud.bossHud.phaseJustBroke
+                    ? 'bg-fuchsia-950/95 border-yellow-300 scale-[1.02]'
+                    : 'bg-stone-950/92 border-amber-500/90'
+                }`}
+              >
+                <div className="flex items-center justify-between gap-2 text-[10px] sm:text-xs font-black text-white leading-tight">
+                  <span className="truncate text-amber-300">
+                    {hud.bossHud.tier === 'grand' ? '👑' : '🦀'} {hud.bossHud.name}
+                  </span>
+                  <span className="font-mono tabular-nums text-yellow-300 shrink-0">
+                    {hud.bossHud.hpPct}% HP
+                  </span>
+                </div>
+
+                {/* Continuous SVG Boss Bar with 2 Crisp Notches at 33% and 66% HP */}
+                <div className="mt-1">
+                  <svg
+                    viewBox="0 0 200 12"
+                    preserveAspectRatio="none"
+                    className="w-full h-3 rounded-md border border-slate-950 bg-slate-900 overflow-hidden"
+                    role="img"
+                    aria-label={`Vida del Jefe: ${hud.bossHud.hpPct}%`}
+                  >
+                    <rect
+                      x="0"
+                      y="0"
+                      width={Math.max(0, Math.min(200, hud.bossHud.hpPct * 2))}
+                      height="12"
+                      fill={
+                        hud.bossHud.phaseJustBroke
+                          ? '#fde047'
+                          : hud.bossHud.tier === 'grand' && hud.bossHud.phase === 1
+                          ? '#a855f7'
+                          : hud.bossHud.tier === 'grand' && hud.bossHud.phase === 2
+                          ? '#f59e0b'
+                          : '#ef4444'
+                      }
+                    />
+                    {hud.bossHud.tier === 'grand' && (
+                      <>
+                        <line
+                          x1="66"
+                          y1="0"
+                          x2="66"
+                          y2="12"
+                          stroke="#ffffff"
+                          strokeWidth="2"
+                        />
+                        <line
+                          x1="132"
+                          y1="0"
+                          x2="132"
+                          y2="12"
+                          stroke="#ffffff"
+                          strokeWidth="2"
+                        />
+                      </>
+                    )}
+                  </svg>
+                </div>
+
+                <div className="mt-0.5 flex items-center justify-between gap-2 text-[9px] font-extrabold text-amber-100/90 leading-tight">
+                  <span className="truncate">{hud.bossHud.phaseLabel}</span>
+                  {hud.bossHud.tier === 'grand' && (
+                    <span className="font-mono text-fuchsia-300 shrink-0">66% · 33%</span>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Strategic Placement Mode Forecast & Economy Boosters (Level 4+ ONLY; ultra-compact so upper vents stay 100% uncovered) */}
+            <div className="flex items-center justify-between gap-1.5">
+              {hud.inPlacementPhase && !isDynamicOnboardingLevel(progress.currentLevel) ? (
+                <div className="pointer-events-auto w-full max-w-lg bg-gradient-to-b from-blue-700 to-blue-900 border-2 border-slate-950 rounded-xl px-2 py-1 shadow-[0_2px_0_#0f172a] flex flex-col gap-1">
+                  <div className="flex items-center justify-between gap-1.5">
+                    <div className="min-w-0 flex flex-wrap items-center gap-1 text-[9px] sm:text-[10px] font-extrabold text-white leading-tight">
+                      <span className="font-black uppercase text-yellow-300 whitespace-nowrap">
+                        ⏱️ ESTRATÉGICO
+                      </span>
+                      <span aria-hidden="true" className="text-blue-300">
+                        ·
+                      </span>
+                      <span className="inline-flex items-center gap-0.5">
+                        {hud.forecast.bugTypes.map((bType) => (
+                          <span
+                            key={bType}
+                            title={BUG_FORECAST_ICONS[bType].label}
+                            className="text-[11px] leading-none"
+                          >
+                            {BUG_FORECAST_ICONS[bType].icon}
+                          </span>
+                        ))}
+                      </span>
+                      {hud.forecast.bossTier !== 'none' && (
+                        <span className="text-yellow-300 font-black whitespace-nowrap">
+                          {hud.forecast.bossTier === 'grand' ? '👑JEFE 3F' : '🦀MINI'}
+                        </span>
+                      )}
+                      <span className="font-mono text-emerald-300 whitespace-nowrap">
+                        [{hud.forecast.activeRails.map((r) => `R${r + 1}`).join(' ')}
+                        {hud.forecast.hasLateralConduits ? '+📐' : ''}]
+                      </span>
+                      <span className="font-mono tabular-nums text-amber-200 whitespace-nowrap">
+                        🪙{progress.coins}
                       </span>
                     </div>
-                    <div className="text-[10px] font-bold text-white leading-tight truncate">
-                      {tutorialGuide
-                        ? tutorialGuide.stepInstruction
-                        : 'Coloca tus armas en las casillas circulares antes de que bajen las plagas'}
-                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        startWaveRef.current = true;
+                        soundEngine.playSnapPiece(true);
+                      }}
+                      className={`px-2.5 py-1 rounded-lg font-display font-black text-[11px] border-2 shrink-0 transition cursor-pointer whitespace-nowrap ${
+                        placedCount > 0
+                          ? 'bg-emerald-400 hover:bg-emerald-300 text-slate-950 border-slate-950 shadow-[0_2px_0_#0f172a] animate-pulse'
+                          : 'bg-slate-950 hover:bg-slate-800 text-amber-300 border-amber-400/70'
+                      }`}
+                    >
+                      ▶️ ¡EMPEZAR!
+                    </button>
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={() => {
-                      startWaveRef.current = true;
-                      soundEngine.playSnapPiece(true);
-                    }}
-                    className={`px-2.5 py-1 rounded-lg font-display font-black text-xs border-2 shrink-0 transition cursor-pointer ${
-                      placedCount > 0
-                        ? 'bg-emerald-400 hover:bg-emerald-300 text-slate-950 border-slate-950 shadow-[0_2px_0_#0f172a] animate-pulse'
-                        : 'bg-slate-900/90 hover:bg-slate-800 text-amber-200 border-slate-950'
-                    }`}
-                  >
-                    ▶️ ¡EMPEZAR!
-                  </button>
+                  {/* Optional Coin Boosters for this attempt (Unlocked from Level 15+) */}
+                  {progress.currentLevel >= 15 && (
+                    <div className="flex items-center gap-1.5 pt-0.5 border-t border-blue-400/30">
+                      <button
+                        type="button"
+                        disabled={usedUltBoost || progress.coins < STRATEGIC_BOOST_ULTIMATE_COST}
+                        onClick={handleBuyStrategicUltimateBoost}
+                        className={`px-2 py-0.5 rounded-md text-[9px] sm:text-[10px] font-black border transition whitespace-nowrap cursor-pointer ${
+                          usedUltBoost
+                            ? 'bg-emerald-950 border-emerald-400 text-emerald-300 cursor-default'
+                            : progress.coins >= STRATEGIC_BOOST_ULTIMATE_COST
+                            ? 'bg-slate-950 hover:bg-slate-900 text-amber-300 border-amber-400'
+                            : 'bg-slate-900/60 border-slate-700 text-slate-400 cursor-not-allowed'
+                        }`}
+                      >
+                        {usedUltBoost
+                          ? '✓ +50% Ulti'
+                          : `⚡ +50% Ulti · ${STRATEGIC_BOOST_ULTIMATE_COST}🪙`}
+                      </button>
+
+                      <button
+                        type="button"
+                        disabled={usedShieldBoost || progress.coins < STRATEGIC_BOOST_SHIELD_COST}
+                        onClick={handleBuyStrategicShieldBoost}
+                        className={`px-2 py-0.5 rounded-md text-[9px] sm:text-[10px] font-black border transition whitespace-nowrap cursor-pointer ${
+                          usedShieldBoost
+                            ? 'bg-emerald-950 border-emerald-400 text-emerald-300 cursor-default'
+                            : progress.coins >= STRATEGIC_BOOST_SHIELD_COST
+                            ? 'bg-slate-950 hover:bg-slate-900 text-cyan-300 border-cyan-400'
+                            : 'bg-slate-900/60 border-slate-700 text-slate-400 cursor-not-allowed'
+                        }`}
+                      >
+                        {usedShieldBoost
+                          ? '✓ Plato Blindado'
+                          : `🛡️ Blindar Plato · ${STRATEGIC_BOOST_SHIELD_COST}🪙`}
+                      </button>
+                    </div>
+                  )}
                 </div>
               ) : hud.prepTimer > 0 ? (
                 <div className="bg-gradient-to-b from-blue-600 to-blue-800 border-2 border-slate-950 px-3 py-1 rounded-full text-[10px] font-black text-white shadow-[0_2px_0_#0f172a] whitespace-nowrap">
                   ⏳ SIGUIENTE OLEADA EN {Math.ceil(hud.prepTimer)}S · REVISA LOS CONDUCTOS
                 </div>
-              ) : (
-                <div className="sm:hidden bg-gradient-to-b from-blue-600 to-blue-800 border-2 border-slate-950 px-3 py-0.5 rounded-full flex items-center gap-1.5 text-[10px] font-black text-white shadow-[0_2px_0_#0f172a] whitespace-nowrap">
-                  <span>⏱️</span>
-                  <span>MODO TÁCTICO · Toca una casilla para colocar</span>
-                </div>
-              )}
+              ) : null}
             </div>
+
+            {/* Salvada In Extremis Banner Cue (1.2s slow-mo on last intact plate) */}
+            {hud.lastStandActive && (
+              <div className="mx-auto bg-rose-950/95 border-2 border-rose-400 px-3 py-1 rounded-xl text-[10px] font-black text-rose-100 shadow-[0_2px_0_#0f172a] whitespace-nowrap">
+                ⏱️ ¡ÚLTIMO PLATO · CÁMARA LENTA!
+              </div>
+            )}
           </div>
+
+          {/* Salvada In Extremis Soft Red Edge Pulse Vignette (Zero backdrop-filter) */}
+          {hud.lastStandActive && (
+            <div
+              aria-hidden="true"
+              className="pointer-events-none fixed inset-0 z-10 border-[6px] border-red-500/80 shadow-[inset_0_0_52px_rgba(239,68,68,0.75)] animate-pulse"
+            />
+          )}
+
+          {/* Single-Focus Animated Drag Guide + Minimal Floating Cell Label (Levels 1-3 & 31) */}
+          {hud.tutorialTargetScreen && !hud.selectedPieceId && !dockCollapsed && (
+            <div className="pointer-events-none fixed inset-0 z-20">
+              <svg
+                viewBox="0 0 100 100"
+                preserveAspectRatio="none"
+                className="w-full h-full"
+                aria-hidden="true"
+              >
+                <defs>
+                  <marker
+                    id="onboarding-arrow"
+                    markerWidth="5"
+                    markerHeight="5"
+                    refX="3.5"
+                    refY="2.5"
+                    orient="auto"
+                  >
+                    <polygon points="0 0, 5 2.5, 0 5" fill="#4ade80" />
+                  </marker>
+                </defs>
+                <line
+                  x1={tutorialTrayStartXPct}
+                  y1={88}
+                  x2={hud.tutorialTargetScreen.xPct}
+                  y2={hud.tutorialTargetScreen.yPct + 2}
+                  stroke="#4ade80"
+                  strokeWidth="0.65"
+                  strokeDasharray="2.2 1.6"
+                  markerEnd="url(#onboarding-arrow)"
+                />
+              </svg>
+
+              <div
+                data-testid="onboarding-short-tag"
+                className={`fixed ${getTargetLeftClass(
+                  hud.tutorialTargetScreen.xPct
+                )} ${getTargetTopClass(
+                  hud.tutorialTargetScreen.yPct
+                )} -translate-x-1/2 -translate-y-full -mt-2 bg-slate-950/95 border-2 border-lime-400 text-lime-300 px-2.5 py-0.5 rounded-lg text-[10px] font-black tracking-wide whitespace-nowrap shadow-[0_3px_0_#0f172a]`}
+              >
+                {hud.tutorialTargetScreen.shortTag}
+              </div>
+            </div>
+          )}
 
           {/* =================================================================
               GUNMETAL SERVING TRAY WITH METALLIC SIDE HANDLES + GOLDEN COIN ULTIMATE
@@ -797,10 +1261,13 @@ export default function App() {
                         const isSelected = hud.selectedPieceId === piece.id;
                         const isGunked = piece.gunkTimer > 0;
                         const inTray = piece.rail === null;
+                        // STRICT SINGLE FOCUS: never illuminate a second tray card while another piece is selected
                         const isTutorialNext =
-                          hud.inPlacementPhase &&
+                          !hud.selectedPieceId &&
                           inTray &&
                           tutorialGuide?.nextTarget?.pieceId === piece.id;
+                        const activeMicroTip =
+                          longPressTip?.pieceId === piece.id ? longPressTip.text : null;
                         const compactLabel =
                           piece.type === 'spray_flus'
                             ? 'Flus-Flus'
@@ -812,6 +1279,8 @@ export default function App() {
                             ? 'Jabón 45°'
                             : piece.type === 'mop_vortex'
                             ? 'Fregona'
+                            : piece.type === 'corner_square'
+                            ? 'Escuadra 90°'
                             : piece.type === 'wc_shield'
                             ? 'Gel WC'
                             : 'Lejía';
@@ -820,7 +1289,36 @@ export default function App() {
                           <button
                             key={piece.id}
                             type="button"
+                            onPointerDown={(e) => {
+                              suppressNextTrayClickRef.current = false;
+                              if (trayPressRef.current?.timerId) {
+                                window.clearTimeout(trayPressRef.current.timerId);
+                              }
+                              setLongPressTip(null);
+                              const timerId = window.setTimeout(() => {
+                                if (trayPressRef.current && !trayPressRef.current.dragged) {
+                                  trayPressRef.current.longPressed = true;
+                                  setLongPressTip({
+                                    pieceId: piece.id,
+                                    text: UTENSIL_MICRO_TIPS[piece.type],
+                                  });
+                                }
+                              }, 350);
+                              trayPressRef.current = {
+                                pieceId: piece.id,
+                                type: piece.type,
+                                startX: e.clientX,
+                                startY: e.clientY,
+                                dragged: false,
+                                longPressed: false,
+                                timerId,
+                              };
+                            }}
                             onClick={() => {
+                              if (suppressNextTrayClickRef.current) {
+                                suppressNextTrayClickRef.current = false;
+                                return;
+                              }
                               if (isGunked) {
                                 piece.gunkTimer = 0;
                                 soundEngine.playSnapPiece(true);
@@ -829,17 +1327,28 @@ export default function App() {
                               selectedPieceIdRef.current = isSelected ? null : piece.id;
                               soundEngine.playSlowMoEnter();
                             }}
-                            className={`relative flex-1 min-w-0 h-12 sm:h-14 rounded-xl border-2 flex flex-col items-center justify-between py-0.5 px-1 transition cursor-pointer ${
+                            className={`touch-none relative flex-1 min-w-0 h-12 sm:h-14 rounded-xl border-2 flex flex-col items-center justify-between py-0.5 px-1 transition cursor-pointer ${
                               isSelected
                                 ? 'bg-slate-700 border-cyan-400 scale-105 shadow-[0_0_10px_#22d3ee]'
                                 : isGunked
                                 ? 'bg-lime-950 border-lime-400'
                                 : isTutorialNext
-                                ? 'bg-slate-700 border-yellow-300 shadow-[0_0_8px_#facc15]'
+                                ? 'bg-slate-700 border-lime-400 shadow-[0_0_10px_#4ade80]'
                                 : 'bg-slate-700/90 border-slate-950 hover:bg-slate-600/90 shadow-inner'
                             }`}
                           >
-                            {isTutorialNext && !isSelected && (
+                            {/* 350ms Long-Press <= 4-Word Micro-Label */}
+                            {activeMicroTip && (
+                              <span
+                                role="tooltip"
+                                data-testid="tray-micro-tip"
+                                className="pointer-events-none absolute -top-8 left-1/2 -translate-x-1/2 z-40 bg-slate-950 border border-cyan-400 text-cyan-200 px-2 py-0.5 rounded-md text-[10px] font-extrabold whitespace-nowrap shadow-lg"
+                              >
+                                {activeMicroTip}
+                              </span>
+                            )}
+
+                            {isTutorialNext && !isSelected && !activeMicroTip && (
                               <span
                                 aria-hidden="true"
                                 className="absolute -top-2 right-0.5 text-[11px] animate-bounce"
@@ -875,6 +1384,12 @@ export default function App() {
                                   <rect x="6" y="12" width="32" height="17" rx="5" transform="rotate(-12 22 21)" fill="#f472b6" stroke="#0f172a" strokeWidth="2.5" />
                                   <rect x="11" y="15" width="22" height="11" rx="3" transform="rotate(-12 22 21)" fill="#fbcfe8" />
                                 </svg>
+                              ) : piece.type === 'corner_square' ? (
+                                <svg viewBox="0 0 44 44" className="w-full h-full drop-shadow">
+                                  <path d="M6 8 H36 V18 H18 V36 H6 Z" fill="#facc15" stroke="#0f172a" strokeWidth="2.5" />
+                                  <path d="M18 18 L34 34" stroke="#22d3ee" strokeWidth="4" strokeLinecap="round" />
+                                  <polygon points="24,36 36,36 36,24" fill="#22d3ee" stroke="#0f172a" strokeWidth="1.5" />
+                                </svg>
                               ) : (
                                 <svg viewBox="0 0 40 48" className="w-full h-full drop-shadow">
                                   <line x1="20" y1="5" x2="20" y2="30" stroke="#ef4444" strokeWidth="4" strokeLinecap="round" />
@@ -883,7 +1398,7 @@ export default function App() {
                               )}
                             </div>
 
-                            <span className="text-[9px] sm:text-[10px] font-black text-white truncate max-w-full leading-none drop-shadow-[0_1.5px_0_#0f172a]">
+                            <span className="text-[9px] sm:text-[10px] font-black text-white truncate max-w-full leading-tight pb-0.5 drop-shadow-[0_1.5px_0_#0f172a]">
                               {isGunked ? '🤢 Limpiar' : compactLabel}
                             </span>
                           </button>
@@ -938,6 +1453,7 @@ export default function App() {
           role="dialog"
           aria-modal="true"
           aria-label="Juego en Pausa"
+          data-testid="pause-modal"
           className="pointer-events-auto fixed inset-0 z-40 flex items-center justify-center bg-black/80 p-4"
         >
           <div className="w-full max-w-sm rounded-2xl bg-amber-950 border-4 border-amber-500 p-6 text-amber-50 shadow-2xl space-y-4">
@@ -964,16 +1480,23 @@ export default function App() {
               <button
                 type="button"
                 onClick={() => setGameState('playing')}
-                className="w-full py-3 rounded-xl bg-yellow-400 hover:bg-yellow-300 text-slate-950 font-black text-sm border-2 border-slate-950"
+                className="w-full py-3 rounded-xl bg-yellow-400 hover:bg-yellow-300 text-slate-950 font-black text-sm border-2 border-slate-950 shadow-[0_3px_0_#0f172a] cursor-pointer transition"
               >
-                Continuar Partida
+                ▶️ Continuar Partida
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowSettings(true)}
+                className="w-full py-2.5 rounded-xl bg-cyan-950 hover:bg-cyan-900 text-cyan-200 border border-cyan-400/70 font-extrabold text-xs cursor-pointer transition"
+              >
+                ⚙️ Ajustes y Audio
               </button>
               <button
                 type="button"
                 onClick={resetBoardToDefault}
-                className="w-full py-2.5 rounded-xl bg-amber-800 hover:bg-amber-700 text-amber-100 font-bold text-xs"
+                className="w-full py-2.5 rounded-xl bg-amber-800 hover:bg-amber-700 text-amber-100 font-bold text-xs cursor-pointer transition"
               >
-                Vaciar Encimera y Colocar de Nuevo
+                🧹 Vaciar Encimera y Colocar de Nuevo
               </button>
               <button
                 type="button"
@@ -981,16 +1504,16 @@ export default function App() {
                   handleResetProgressFromZero();
                   setGameState('title');
                 }}
-                className="w-full py-2.5 rounded-xl bg-rose-950 hover:bg-rose-900 text-rose-100 border border-rose-500/60 font-bold text-xs"
+                className="w-full py-2.5 rounded-xl bg-rose-950 hover:bg-rose-900 text-rose-100 border border-rose-500/60 font-bold text-xs cursor-pointer transition"
               >
                 🔄 Empezar de 0 (Volver a Nivel 1)
               </button>
               <button
                 type="button"
                 onClick={() => setGameState('title')}
-                className="w-full py-2.5 rounded-xl bg-amber-900/70 hover:bg-amber-900 text-amber-200 font-bold text-xs"
+                className="w-full py-2.5 rounded-xl bg-amber-900/70 hover:bg-amber-900 text-amber-200 font-bold text-xs cursor-pointer transition"
               >
-                Volver al Menú Principal
+                🚪 Salir al Menú Principal
               </button>
             </div>
           </div>
@@ -1076,7 +1599,13 @@ export default function App() {
         </div>
       )}
 
-      {/* Modals for 3★ Achievements Codex / Shop & 3D Chef Wardrobe */}
+      {/* Modals for On-Demand Tactical Help Card ('?'), 3★ Achievements Codex & 3D Chef Wardrobe */}
+      {gameState === 'playing' && onboardingCard && showOnboardingModal && (
+        <TacticalOnboardingModal
+          card={onboardingCard}
+          onDismiss={() => setShowOnboardingModal(false)}
+        />
+      )}
       {showCodex && (
         <AchievementsCodexModal
           progress={progress}
@@ -1091,6 +1620,14 @@ export default function App() {
           onEquipHat={(h) => setProgress((p) => ({ ...p, equippedHat: h }))}
           onEquipArmor={(a) => setProgress((p) => ({ ...p, equippedArmor: a }))}
           onEquipSpecial={(s) => setProgress((p) => ({ ...p, equippedSpecial: s }))}
+        />
+      )}
+      {showSettings && (
+        <SettingsModal
+          settings={settings}
+          onUpdateSettings={handleUpdateSettings}
+          onResetDefaults={() => setSettings(DEFAULT_SETTINGS)}
+          onClose={() => setShowSettings(false)}
         />
       )}
     </main>

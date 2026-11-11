@@ -612,13 +612,13 @@ export function buildUtensilMesh(type: UtensilType, _isSoftwareGl = false): THRE
     cap.position.y = 1.13;
     group.add(cap);
 
-    const flame = new THREE.Mesh(
-      new THREE.ConeGeometry(0.14, 0.32, 28),
-      createToonMaterial(0xfacc15, { emissive: 0xf97316, emissiveIntensity: 0.65 })
+    const uvEmitter = new THREE.Mesh(
+      new THREE.ConeGeometry(0.13, 0.3, 28),
+      createToonMaterial(0xe879f9, { emissive: 0xa855f7, emissiveIntensity: 0.85 })
     );
-    flame.position.set(0, 1.34, 0);
-    flame.name = 'anim_part';
-    group.add(flame);
+    uvEmitter.position.set(0, 1.33, 0);
+    uvEmitter.name = 'anim_part';
+    group.add(uvEmitter);
   } else if (type === 'soap_bar') {
     // 4. PASTILLA DE JABÓN RESBALÓN 45°
     const puddle = new THREE.Mesh(
@@ -685,6 +685,51 @@ export function buildUtensilMesh(type: UtensilType, _isSoftwareGl = false): THRE
     );
     gel.position.y = 0.32;
     group.add(holder, gel);
+  } else if (type === 'corner_square') {
+    // 7. ESCUADRA DEFLECTORA 90° (Nivel 31+): Escuadra metálica amarilla/negra a 90° con tope de goma y flecha de rebote
+    const squareGroup = new THREE.Group();
+    squareGroup.position.y = 0.24;
+
+    const yellowSteelMat = createToonMaterial(0xfacc15);
+    const hazardBlackMat = createToonMaterial(0x1e293b);
+    const bumperCyanMat = createToonMaterial(0x22d3ee, {
+      emissive: 0x06b6d4,
+      emissiveIntensity: 0.35,
+    });
+
+    // Brazo horizontal + Brazo vertical formando la L a 90°
+    const armX = new THREE.Mesh(new THREE.BoxGeometry(0.86, 0.36, 0.26), yellowSteelMat);
+    armX.position.set(0, 0, -0.24);
+    const armZ = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.36, 0.86), yellowSteelMat);
+    armZ.position.set(0.3, 0, 0.06);
+
+    // Tope diagonal de goma elástica a 45° que rebota los bichos 90° hacia el carril (+Z)
+    const diagonalBumper = new THREE.Mesh(
+      new THREE.BoxGeometry(0.82, 0.32, 0.16),
+      bumperCyanMat
+    );
+    diagonalBumper.position.set(0.02, 0.02, 0.02);
+    diagonalBumper.rotation.y = -Math.PI / 4;
+    diagonalBumper.name = 'anim_part';
+
+    // Franjas negras industriales sobre la escuadra
+    [-0.22, 0.12].forEach((bx) => {
+      const stripe = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.38, 0.28), hazardBlackMat);
+      stripe.position.set(bx, 0, -0.24);
+      stripe.userData.skipOutline = true;
+      squareGroup.add(stripe);
+    });
+
+    // Flecha indicadora hacia abajo (+Z)
+    const arrowCone = new THREE.Mesh(
+      new THREE.ConeGeometry(0.18, 0.32, 16),
+      createToonMaterial(0xffffff)
+    );
+    arrowCone.rotation.x = Math.PI / 2;
+    arrowCone.position.set(-0.08, 0.24, 0.26);
+
+    squareGroup.add(armX, armZ, diagonalBumper, arrowCone);
+    group.add(squareGroup);
   } else {
     const jug = new THREE.Mesh(
       new THREE.CylinderGeometry(0.34, 0.4, 0.78, 32),
@@ -713,6 +758,32 @@ export function buildUtensilMesh(type: UtensilType, _isSoftwareGl = false): THRE
   root.add(gunk);
 
   return root;
+}
+
+/**
+ * Builds a semi-transparent 3D Ghost (`opacity: 0.45`) of the target utensil for tutorial onboarding cells.
+ */
+export function buildGhostUtensilMesh(type: UtensilType, isSoftwareGl = false): THREE.Group {
+  const ghost = buildUtensilMesh(type, isSoftwareGl);
+  ghost.traverse((child) => {
+    if (child instanceof THREE.Mesh) {
+      if (child.userData.isInkOutline || child.name === 'contact_shadow' || child.name === 'gunk_overlay') {
+        child.visible = false;
+        return;
+      }
+      child.castShadow = false;
+      child.receiveShadow = false;
+      const oldMat = child.material as THREE.MeshToonMaterial;
+      child.material = new THREE.MeshToonMaterial({
+        color: oldMat?.color ? oldMat.color.clone().lerp(new THREE.Color(0x38bdf8), 0.28) : 0x38bdf8,
+        gradientMap: getToonGradientMap(),
+        transparent: true,
+        opacity: 0.45,
+        depthWrite: false,
+      });
+    }
+  });
+  return ghost;
 }
 
 // ============================================================================
@@ -1177,9 +1248,11 @@ export function buildChefBastionMesh(hat: HatId, armor: ArmorId): THREE.Group {
 export function buildOvercookedKitchenProps(railToWorldX: (r: number) => number): {
   root: THREE.Group;
   bastionPlates: THREE.Group[];
+  lateralVents: THREE.Group[];
 } {
   const root = new THREE.Group();
   const bastionPlates: THREE.Group[] = [];
+  const lateralVents: THREE.Group[] = [];
 
   // ===========================================================================
   // 4 REJILLAS DE VENTILACIÓN RECTANGULARES DE ACERO EN LA PARED DE AZULEJOS
@@ -1459,5 +1532,34 @@ export function buildOvercookedKitchenProps(railToWorldX: (r: number) => number)
   addInkOutline(towelGroup);
   root.add(towelGroup);
 
-  return { root, bastionPlates };
+  // ===========================================================================
+  // CONDUCTOS DE INVASIÓN LATERAL (NIVELES 31-60) EN LOS BORDES IZQUIERDO Y DERECHO
+  // ===========================================================================
+  const lateralRowsZ = [-5.0 + 2 * 1.32, -5.0 + 3 * 1.32, -5.0 + 4 * 1.32]; // Filas 3, 4 y 5
+  const conduitFrameMat = createToonMaterial(0xfacc15);
+  const conduitTunnelMat = new THREE.MeshBasicMaterial({ color: 0x090a0f });
+
+  for (const side of [-1, 1]) {
+    for (const rz of lateralRowsZ) {
+      const latVent = new THREE.Group();
+      latVent.position.set(side * 3.55, 0.24, rz);
+      latVent.visible = false; // Se activa a partir del Nivel 31 (level >= 31)
+
+      const frame = new THREE.Mesh(
+        new THREE.BoxGeometry(0.28, 0.56, 0.88),
+        conduitFrameMat
+      );
+      const tunnel = new THREE.Mesh(
+        new THREE.BoxGeometry(0.32, 0.4, 0.66),
+        conduitTunnelMat
+      );
+      tunnel.userData.skipOutline = true;
+      latVent.add(frame, tunnel);
+      addInkOutline(latVent);
+      root.add(latVent);
+      lateralVents.push(latVent);
+    }
+  }
+
+  return { root, bastionPlates, lateralVents };
 }
