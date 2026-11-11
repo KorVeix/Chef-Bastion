@@ -3,25 +3,38 @@ import {
   ArmorId,
   BiomeConfig,
   BiomeId,
+  BoardPartnerHighlight,
   BossPuzzleType,
   BossTier,
   BugEnemy,
   BugType,
+  FloatingComboEvent,
   GameSettings,
+  GameState,
   HatId,
   KillStarRating,
+  KitchenUpgradeId,
+  KitchenUpgradeLevel,
+  KitchenUpgrades,
   LevelForecast,
   LiveMenuBuffs,
   PlayerProgress,
   RangePreviewCell,
   SmartComboHint,
   SpecialWeaponId,
+  SupremeEvolutionId,
+  TacticalInspectionTarget,
+  TacticalInspectorCardData,
   TacticalOnboardingCardData,
   TileChemicalState,
   UtensilPiece,
   UtensilType,
   WorldId,
 } from './types';
+import {
+  matchSupremeEvolution,
+  SUPREME_EVOLUTIONS_CATALOG,
+} from './roguelite';
 
 export const GRID_RAILS = 4;
 export const GRID_ROWS = 7; // Row 0 = top (near conduits), Row 6 = bottom playable row (plates sit 1 step below at z = +4.2)
@@ -153,6 +166,20 @@ export const UTENSIL_MICRO_TIPS: Record<UtensilType, string> = {
   wc_shield: 'Rebota ácido enemigo',
   bleach_cannon: 'Chorro corrosivo pesado',
   corner_square: 'Gira laterales a 90°',
+};
+
+/**
+ * Ultra-short 1-2 word micro-role displayed under every weapon name in the 4-slot bottom tray.
+ */
+export const UTENSIL_ROLE_TAGS: Record<UtensilType, string> = {
+  spray_flus: 'Disparo',
+  scourer_nanas: 'Frena',
+  aerosol_torch: 'Rayo Par',
+  soap_bar: 'Rebote 45°',
+  mop_vortex: 'Empuje 360°',
+  wc_shield: 'Escudo',
+  bleach_cannon: 'Ola',
+  corner_square: 'Rebote 90°',
 };
 
 // ============================================================================
@@ -370,7 +397,7 @@ export const ACHIEVEMENTS_CATALOG: AchievementDef[] = [
     description: 'Elimina a la Hormiga Velocista con las burbujas diagonales del Abanico de Espuma ×5.',
     rewardType: 'hat',
     rewardId: 'bucket_helmet',
-    rewardLabel: 'Barreño Militar Volcado (-50% duración pringue)',
+    rewardLabel: 'Barreño Militar Volcado (-50% duración de pringue ácido en tus armas)',
     unlockCostCoins: 180,
   },
   {
@@ -394,7 +421,7 @@ export const ACHIEVEMENTS_CATALOG: AchievementDef[] = [
     description: 'Elimina a la Rata Blindada con espuma diagonal del Estropajo rodeando su chapa frontal.',
     rewardType: 'hat',
     rewardId: 'duck_shower_cap',
-    rewardLabel: 'Gorro de Ducha + Patito (+15% Cadencia)',
+    rewardLabel: 'Gorro de Ducha con Patito (+15% cadencia en Spray Flus-Flus)',
     unlockCostCoins: 220,
   },
   {
@@ -406,7 +433,7 @@ export const ACHIEVEMENTS_CATALOG: AchievementDef[] = [
     description: 'Haz patinar a la Rata Blindada en la Pastilla de Jabón directo hacia la Fregona Turbo-Spin.',
     rewardType: 'special_weapon',
     rewardId: 'knife_roomba',
-    rewardLabel: 'Roomba Kamikaze con Cuchillos + Mundo Nevera',
+    rewardLabel: 'Roomba Kamikaze con Cuchillos',
     unlockCostCoins: 350,
   },
   {
@@ -462,17 +489,17 @@ export const ACHIEVEMENTS_CATALOG: AchievementDef[] = [
 export const HATS_CATALOG: Record<HatId, { name: string; bonus: string; color: string }> = {
   classic_toque: {
     name: 'Gorro de Chef Clásico',
-    bonus: 'Equilibrio culinario base',
+    bonus: '+10% Monedas al salvar los 4 platos',
     color: '#ffffff',
   },
   duck_shower_cap: {
     name: 'Gorro de Ducha con Patito',
-    bonus: '+15% Cadencia de Spray Flus-Flus',
+    bonus: '+15% cadencia en Spray Flus-Flus',
     color: '#38bdf8',
   },
   bucket_helmet: {
     name: 'Barreño Militar Volcado',
-    bonus: 'Tus piezas duran 50% menos pringadas',
+    bonus: '-50% duración de pringue ácido en tus armas',
     color: '#94a3b8',
   },
   tp_gasmask: {
@@ -775,7 +802,7 @@ export function computeSmartComboHints(
             rail: candidateRail,
             row: anchor.row,
             pieceType: 'aerosol_torch',
-            message: '🔥 ¡Pon el 2º Aerosol aquí al lado para crear el Puente UV!',
+            message: '⚡ ¡Pon el 2º Aerosol aquí al lado para crear el Puente UV!',
             color: 'orange',
           });
         }
@@ -1835,6 +1862,13 @@ export function createInitialBoardPieces(level = 1): UtensilPiece[] {
   return evaluateBoardCombos(initial).updatedPieces;
 }
 
+export const DEFAULT_KITCHEN_UPGRADES: KitchenUpgrades = {
+  acidResistance: 0,
+  streakCoinBonus: 0,
+  whipCooldown: 0,
+  ultBaseCharge: 0,
+};
+
 export const DEFAULT_PROGRESS: PlayerProgress = {
   currentLevel: 1,
   highestLevel: 1,
@@ -1850,7 +1884,23 @@ export const DEFAULT_PROGRESS: PlayerProgress = {
   equippedSpecial: 'karcher_blast',
   bestScore: 0,
   totalBugsCleaned: 0,
+  kitchenUpgrades: { ...DEFAULT_KITCHEN_UPGRADES },
 };
+
+export function detectDefaultPrioritize60Fps(): boolean {
+  if (typeof window === 'undefined') return true;
+  try {
+    const coarse =
+      typeof window.matchMedia === 'function' &&
+      window.matchMedia('(pointer: coarse)').matches;
+    const touchPoints =
+      typeof navigator !== 'undefined' && (navigator.maxTouchPoints ?? 0) > 0;
+    const narrow = window.innerWidth <= 900;
+    return Boolean(coarse || touchPoints || narrow);
+  } catch {
+    return true;
+  }
+}
 
 export const DEFAULT_SETTINGS: GameSettings = {
   masterVolume: 80,
@@ -1860,7 +1910,9 @@ export const DEFAULT_SETTINGS: GameSettings = {
   gameSpeedMultiplier: 1.0,
   tacticalSlowMo: true,
   screenShake: true,
-  smartComboHints: 'onboarding',
+  hapticsEnabled: true,
+  smartComboHints: 'always',
+  prioritize60Fps: detectDefaultPrioritize60Fps(),
 };
 
 /**
@@ -1997,6 +2049,105 @@ export function computeVipVictoryCoins(
 }
 
 /**
+ * Computes final Strategic Mode match coins, applying:
+ * - VIP Critic Plate ×2 bonus on victory when VIP plate survived
+ * - Gorro de Chef Clásico (`classic_toque`) +10% bonus when all 4 plates survived intact on victory!
+ */
+export function computeStrategicMatchCoins(opts: {
+  victory: boolean;
+  vipSaved: boolean;
+  allFourPlatesIntact: boolean;
+  equippedHat: HatId;
+  baseVictoryCoins?: number;
+  baseDefeatCoins?: number;
+}): { coinsEarned: number; classicToqueBonusApplied: boolean } {
+  const {
+    victory,
+    vipSaved,
+    allFourPlatesIntact,
+    equippedHat,
+    baseVictoryCoins = 120,
+    baseDefeatCoins = 25,
+  } = opts;
+  if (!victory) {
+    return { coinsEarned: baseDefeatCoins, classicToqueBonusApplied: false };
+  }
+  const vipAdjusted = vipSaved ? baseVictoryCoins * 2 : baseVictoryCoins;
+  const classicToqueBonusApplied = allFourPlatesIntact && equippedHat === 'classic_toque';
+  const coinsEarned = classicToqueBonusApplied
+    ? Math.round(vipAdjusted * 1.1)
+    : vipAdjusted;
+  return { coinsEarned, classicToqueBonusApplied };
+}
+
+export interface StackedTrayGroup {
+  groupKey: string;
+  representative: UtensilPiece;
+  pieces: UtensilPiece[];
+  count: number;
+}
+
+/**
+ * Groups identical unplaced utensils in the bottom tray (`rail === null`) into a single stacked card
+ * with a `count` badge (`x2`, `x3`), freeing horizontal thumb width and preventing label truncation.
+ * Placed utensils stay on the 3D countertop where they can be moved/swapped/cleaned directly.
+ */
+export function groupTrayPiecesForDisplay(pieces: readonly UtensilPiece[]): StackedTrayGroup[] {
+  const groups = new Map<string, UtensilPiece[]>();
+  for (const p of pieces) {
+    if (p.rail !== null || p.row !== null) continue;
+    const key = `${p.type}_lv${p.level}_${p.evolutionId ?? 'base'}`;
+    const list = groups.get(key);
+    if (list) {
+      list.push(p);
+    } else {
+      groups.set(key, [p]);
+    }
+  }
+  const out: StackedTrayGroup[] = [];
+  for (const [groupKey, groupPieces] of groups.entries()) {
+    out.push({
+      groupKey,
+      representative: groupPieces[0],
+      pieces: groupPieces,
+      count: groupPieces.length,
+    });
+  }
+  return out;
+}
+
+/**
+ * Returns true iff the achievement can be purchased with coins in the 3★ Album
+ * (never allow buying an achievement whose reward is coins, preventing 100🪙 -> +150🪙 arbitrage).
+ */
+export function isAchievementPurchasableWithCoins(ach: AchievementDef): boolean {
+  return ach.rewardType !== 'coins';
+}
+
+/**
+ * Returns true iff the player still has at least one locked non-coin equipment/weapon achievement
+ * available to unlock in the 3★ Album.
+ */
+export function hasRemainingShopUnlocks(progress: PlayerProgress): boolean {
+  return ACHIEVEMENTS_CATALOG.some(
+    (ach) =>
+      isAchievementPurchasableWithCoins(ach) &&
+      !progress.unlockedAchievements.includes(ach.id)
+  );
+}
+
+/**
+ * Formats grammatically natural singular/plural near-miss defeat copy using "la Fase X/3".
+ */
+export function formatDefeatNearMissCopy(remainingKills: number, phaseReached: number): string {
+  const safeKills = Math.max(1, Math.round(remainingKills));
+  if (safeKills === 1) {
+    return `¡Casi lo logras! Te faltó solo 1 plaga para superar la Fase ${phaseReached}/3.`;
+  }
+  return `¡Casi lo logras! Te faltaron solo ${safeKills} plagas para superar la Fase ${phaseReached}/3.`;
+}
+
+/**
  * Combines active timeScales using Math.min() so Tactical Slow-Mo (0.20x) and
  * Salvada In Extremis (0.35x) NEVER multiply together (0.20x wins cleanly, never 0.07x).
  */
@@ -2007,18 +2158,27 @@ export function combineActiveTimeScales(
     hitstopActive: boolean;
     tacticalSlowMoActive: boolean;
     lastStandActive: boolean;
+    inspectorSlowMoActive?: boolean;
+    comandaSlowMoActive?: boolean;
   }
 ): number {
   if (!opts.isPlaying) return 0;
   if (opts.hitstopActive) return 0.04;
   const candidates: number[] = [baseSpeed];
-  if (opts.tacticalSlowMoActive) candidates.push(0.2);
+  if (opts.inspectorSlowMoActive) candidates.push(0.08);
+  if (opts.tacticalSlowMoActive || opts.comandaSlowMoActive) candidates.push(0.2);
   if (opts.lastStandActive) candidates.push(0.35);
   return Math.min(...candidates);
 }
 
+// Static scratch buffers for zero-GC 4x7 Conductive UV flood-fill
+const WET_GRID_SCRATCH = new Uint8Array(GRID_RAILS * GRID_ROWS);
+const VISITED_GRID_SCRATCH = new Uint8Array(GRID_RAILS * GRID_ROWS);
+const BFS_QUEUE_R = new Int8Array(GRID_RAILS * GRID_ROWS);
+const BFS_QUEUE_W = new Int8Array(GRID_RAILS * GRID_ROWS);
+
 /**
- * Conductive UV Chain Reaction:
+ * Conductive UV Chain Reaction (Zero-GC static typed-array BFS):
  * When a wet/soaped bug touches an electric/UV beam, propagates an electric arc
  * across contiguous wet/soaped countertop cells (8-way adjacent) to other live bugs.
  */
@@ -2027,67 +2187,87 @@ export function computeConductiveUvChainTargets(
   bugs: readonly BugEnemy[],
   chemTiles: readonly TileChemicalState[]
 ): string[] {
-  const source = bugs.find((b) => b.id === sourceBugId && b.koTimer <= 0);
+  let source: BugEnemy | undefined;
+  for (let i = 0; i < bugs.length; i++) {
+    const b = bugs[i];
+    if (b.id === sourceBugId && b.koTimer <= 0) {
+      source = b;
+      break;
+    }
+  }
   if (!source) return [];
 
-  const srcRail = Math.max(0, Math.min(GRID_RAILS - 1, Math.round(source.rail)));
-  const srcRow = Math.max(0, Math.min(GRID_ROWS - 1, Math.round(source.yProgress)));
+  WET_GRID_SCRATCH.fill(0);
+  VISITED_GRID_SCRATCH.fill(0);
 
-  const isBugWet = (b: BugEnemy) => {
+  for (let i = 0; i < chemTiles.length; i++) {
+    const t = chemTiles[i];
+    if (t.kind === 'wet_soap' && t.timer > 0) {
+      if (t.rail >= 0 && t.rail < GRID_RAILS && t.row >= 0 && t.row < GRID_ROWS) {
+        WET_GRID_SCRATCH[t.row * GRID_RAILS + t.rail] = 1;
+      }
+    }
+  }
+
+  const isBugWetFast = (b: BugEnemy): boolean => {
     if ((b.wetTimer ?? 0) > 0 || b.isSlidingFromSoap) return true;
     const br = Math.round(b.rail);
     const bw = Math.round(b.yProgress);
-    return chemTiles.some(
-      (t) => t.kind === 'wet_soap' && t.timer > 0 && t.rail === br && t.row === bw
-    );
+    if (br < 0 || br >= GRID_RAILS || bw < 0 || bw >= GRID_ROWS) return false;
+    return WET_GRID_SCRATCH[bw * GRID_RAILS + br] === 1;
   };
 
-  if (!isBugWet(source)) return [];
+  if (!isBugWetFast(source)) return [];
 
-  // Build wet cell set from active 4s wet_soap tiles + cells occupied by wet/soaped live bugs
-  const wetCellKeys = new Set<string>();
-  const keyOf = (r: number, rw: number) => `${r},${rw}`;
-  wetCellKeys.add(keyOf(srcRail, srcRow));
+  const srcRail = Math.max(0, Math.min(GRID_RAILS - 1, Math.round(source.rail)));
+  const srcRow = Math.max(0, Math.min(GRID_ROWS - 1, Math.round(source.yProgress)));
+  WET_GRID_SCRATCH[srcRow * GRID_RAILS + srcRail] = 1;
 
-  for (const t of chemTiles) {
-    if (t.kind === 'wet_soap' && t.timer > 0) {
-      wetCellKeys.add(keyOf(t.rail, t.row));
-    }
-  }
-  for (const b of bugs) {
-    if (b.koTimer <= 0 && isBugWet(b)) {
+  for (let i = 0; i < bugs.length; i++) {
+    const b = bugs[i];
+    if (b.koTimer <= 0 && isBugWetFast(b)) {
       const br = Math.max(0, Math.min(GRID_RAILS - 1, Math.round(b.rail)));
       const bw = Math.max(0, Math.min(GRID_ROWS - 1, Math.round(b.yProgress)));
-      wetCellKeys.add(keyOf(br, bw));
+      WET_GRID_SCRATCH[bw * GRID_RAILS + br] = 1;
     }
   }
 
-  // Flood-fill contiguous wet cells starting from (srcRail, srcRow)
-  const visited = new Set<string>([keyOf(srcRail, srcRow)]);
-  const queue: [number, number][] = [[srcRail, srcRow]];
-  while (queue.length > 0) {
-    const [cr, cw] = queue.shift()!;
+  let head = 0;
+  let tail = 0;
+  const startIdx = srcRow * GRID_RAILS + srcRail;
+  VISITED_GRID_SCRATCH[startIdx] = 1;
+  BFS_QUEUE_R[tail] = srcRail;
+  BFS_QUEUE_W[tail] = srcRow;
+  tail++;
+
+  while (head < tail) {
+    const cr = BFS_QUEUE_R[head];
+    const cw = BFS_QUEUE_W[head];
+    head++;
     for (let dr = -1; dr <= 1; dr++) {
       for (let dw = -1; dw <= 1; dw++) {
         if (dr === 0 && dw === 0) continue;
         const nr = cr + dr;
         const nw = cw + dw;
         if (nr < 0 || nr >= GRID_RAILS || nw < 0 || nw >= GRID_ROWS) continue;
-        const nk = keyOf(nr, nw);
-        if (!visited.has(nk) && wetCellKeys.has(nk)) {
-          visited.add(nk);
-          queue.push([nr, nw]);
+        const nIdx = nw * GRID_RAILS + nr;
+        if (VISITED_GRID_SCRATCH[nIdx] === 0 && WET_GRID_SCRATCH[nIdx] === 1) {
+          VISITED_GRID_SCRATCH[nIdx] = 1;
+          BFS_QUEUE_R[tail] = nr;
+          BFS_QUEUE_W[tail] = nw;
+          tail++;
         }
       }
     }
   }
 
   const targetIds: string[] = [];
-  for (const b of bugs) {
+  for (let i = 0; i < bugs.length; i++) {
+    const b = bugs[i];
     if (b.id === sourceBugId || b.koTimer > 0) continue;
     const br = Math.max(0, Math.min(GRID_RAILS - 1, Math.round(b.rail)));
     const bw = Math.max(0, Math.min(GRID_ROWS - 1, Math.round(b.yProgress)));
-    if (visited.has(keyOf(br, bw))) {
+    if (VISITED_GRID_SCRATCH[bw * GRID_RAILS + br] === 1) {
       targetIds.push(b.id);
     }
   }
@@ -2178,4 +2358,763 @@ export function applyPhysicalKnockback(
     nextTargetRail,
   };
 }
+
+// ============================================================================
+// APK PRODUCTION POLISH: META-PROGRESSION ("MEJORAS DE COCINA"), STREAK COINS,
+// 20:9 CAMERA PROJECTION, THERMAL THROTTLE, ANDROID BACK & BASE64 BACKUP
+// ============================================================================
+
+export const HEAVY_IMPACT_HITSTOP_SECONDS = 0.04; // 40ms micro-hitstop on heavy carapace melt / Ultimate hit
+export const ENEMY_WHITE_FLASH_SECONDS = 0.14;    // Crisp white flash duration on enemy mesh
+
+export interface KitchenUpgradeMeta {
+  id: KitchenUpgradeId;
+  icon: string;
+  title: string;
+  shortDesc: string;
+  costs: [number, number, number];
+  levelLabels: [string, string, string, string];
+}
+
+export const KITCHEN_UPGRADES_CATALOG: Record<KitchenUpgradeId, KitchenUpgradeMeta> = {
+  acidResistance: {
+    id: 'acidResistance',
+    icon: '🧪',
+    title: 'Resistencia al Ácido',
+    shortDesc: 'Reduce la duración del pringue ácido sobre tus armas.',
+    costs: [140, 260, 420],
+    levelLabels: ['Base (0%)', '-15% pringue', '-30% pringue', '-45% pringue'],
+  },
+  streakCoinBonus: {
+    id: 'streakCoinBonus',
+    icon: '🔥',
+    title: 'Bonus Monedas en Rachas',
+    shortDesc: 'Multiplica las monedas extra al superar rachas x8 y x15.',
+    costs: [150, 280, 440],
+    levelLabels: ['Base (+0%)', '+25% monedas', '+50% monedas', '+80% monedas'],
+  },
+  whipCooldown: {
+    id: 'whipCooldown',
+    icon: '🧣',
+    title: 'Recarga del Trapazo',
+    shortDesc: 'Reduce el enfriamiento del Trapazo defensivo del Chef.',
+    costs: [160, 300, 460],
+    levelLabels: ['18s recarga', '16s (-2s)', '14s (-4s)', '12s (-6s)'],
+  },
+  ultBaseCharge: {
+    id: 'ultBaseCharge',
+    icon: '⚡',
+    title: 'Carga Inicial Ultimate',
+    shortDesc: 'Empieza cada partida con más presión base en el Ultimate.',
+    costs: [180, 320, 480],
+    levelLabels: ['45% inicial', '57% (+12%)', '69% (+24%)', '81% (+36%)'],
+  },
+};
+
+function clampUpgradeLvl(val: unknown): KitchenUpgradeLevel {
+  if (typeof val !== 'number' || !Number.isFinite(val)) return 0;
+  const n = Math.max(0, Math.min(3, Math.floor(val)));
+  return n as KitchenUpgradeLevel;
+}
+
+export function normalizeKitchenUpgrades(
+  raw?: Partial<KitchenUpgrades> | null
+): KitchenUpgrades {
+  return {
+    acidResistance: clampUpgradeLvl(raw?.acidResistance),
+    streakCoinBonus: clampUpgradeLvl(raw?.streakCoinBonus),
+    whipCooldown: clampUpgradeLvl(raw?.whipCooldown),
+    ultBaseCharge: clampUpgradeLvl(raw?.ultBaseCharge),
+  };
+}
+
+export function computeKitchenUpgradeEffects(raw?: Partial<KitchenUpgrades> | null): {
+  acidDurationMult: number;
+  streakCoinMult: number;
+  effectiveWhipCooldownSec: number;
+  initialUltimatePct: number;
+} {
+  const u = normalizeKitchenUpgrades(raw);
+  const acidMultTable = [1.0, 0.85, 0.7, 0.55] as const;
+  const streakMultTable = [1.0, 1.25, 1.5, 1.8] as const;
+  const whipCdTable = [18.0, 16.0, 14.0, 12.0] as const;
+  const ultInitTable = [45, 57, 69, 81] as const;
+  return {
+    acidDurationMult: acidMultTable[u.acidResistance],
+    streakCoinMult: streakMultTable[u.streakCoinBonus],
+    effectiveWhipCooldownSec: whipCdTable[u.whipCooldown],
+    initialUltimatePct: ultInitTable[u.ultBaseCharge],
+  };
+}
+
+export function purchaseKitchenUpgrade(
+  progress: PlayerProgress,
+  upgradeId: KitchenUpgradeId
+): {
+  ok: boolean;
+  updatedProgress: PlayerProgress;
+  costPaid: number;
+  newLevel: KitchenUpgradeLevel;
+} {
+  const current = normalizeKitchenUpgrades(progress.kitchenUpgrades);
+  const curLvl = current[upgradeId];
+  if (curLvl === 3) {
+    return { ok: false, updatedProgress: progress, costPaid: 0, newLevel: curLvl };
+  }
+  const meta = KITCHEN_UPGRADES_CATALOG[upgradeId];
+  const cost = meta.costs[curLvl];
+  if (progress.coins < cost) {
+    return { ok: false, updatedProgress: progress, costPaid: 0, newLevel: curLvl };
+  }
+  const nextLvl = (curLvl + 1) as KitchenUpgradeLevel;
+  const nextUpgrades: KitchenUpgrades = {
+    ...current,
+    [upgradeId]: nextLvl,
+  };
+  return {
+    ok: true,
+    costPaid: cost,
+    newLevel: nextLvl,
+    updatedProgress: {
+      ...progress,
+      coins: Math.max(0, progress.coins - cost),
+      kitchenUpgrades: nextUpgrades,
+    },
+  };
+}
+
+/**
+ * Grants a coin bonus when an active combo/kill streak crosses x8 or x15.
+ */
+export function computeStreakMilestoneReward(
+  prevStreak: number,
+  nextStreak: number,
+  upgrades?: Partial<KitchenUpgrades> | null
+): { crossedThreshold: 8 | 15 | null; bonusCoins: number } {
+  const { streakCoinMult } = computeKitchenUpgradeEffects(upgrades);
+  if (prevStreak < 15 && nextStreak >= 15) {
+    return {
+      crossedThreshold: 15,
+      bonusCoins: Math.round(35 * streakCoinMult),
+    };
+  }
+  if (prevStreak < 8 && nextStreak >= 8) {
+    return {
+      crossedThreshold: 8,
+      bonusCoins: Math.round(15 * streakCoinMult),
+    };
+  }
+  return { crossedThreshold: null, bonusCoins: 0 };
+}
+
+/**
+ * Responsive 3D camera projection & pullback for ultra-tall 20:9 / 21:9 APK viewports (aspect < 0.5)
+ * so the leftmost (Rail 0) and rightmost (Rail 3) gourmet plates never clip off-screen.
+ */
+export function computeResponsiveCameraParams(
+  width: number,
+  height: number
+): {
+  aspect: number;
+  fov: number;
+  camY: number;
+  camZ: number;
+  lookY: number;
+  lookZ: number;
+} {
+  const safeW = Math.max(1, width);
+  const safeH = Math.max(1, height);
+  const aspect = safeW / safeH;
+  const lookY = -0.46;
+  const lookZ = 0.16;
+
+  if (aspect >= 0.85) {
+    return { aspect, fov: 46, camY: 9.5, camZ: 10.2, lookY, lookZ };
+  }
+
+  if (aspect >= 0.5) {
+    const halfVFov = Math.atan(0.24 / aspect);
+    const rawFov = (halfVFov * 2 * 180) / Math.PI;
+    const fov = Number(Math.min(55, Math.max(47, rawFov)).toFixed(2));
+    return { aspect, fov, camY: 9.5, camZ: 10.2, lookY, lookZ };
+  }
+
+  // Ultra-narrow mobile / 20:9 / 21:9 aspect (< 0.5): widen FOV & pull camera back so outer plates never clip
+  const narrowT = Math.min(1, Math.max(0, (0.5 - aspect) / 0.08));
+  const halfVFov = Math.atan(0.285 / Math.max(0.38, aspect));
+  const rawFov = (halfVFov * 2 * 180) / Math.PI;
+  const fov = Number(Math.min(62, Math.max(56.5, rawFov)).toFixed(2));
+  const camY = Number((9.5 + narrowT * 1.65).toFixed(3));
+  const camZ = Number((10.2 + narrowT * 2.35).toFixed(3));
+  return { aspect, fov, camY, camZ, lookY, lookZ };
+}
+
+/**
+ * Thermal & FPS safeguard for Survival Rush:
+ * Automatically halves decorative particle spawns (0.5x) if sustained frame time exceeds 24ms,
+ * with clean hysteresis recovery below 19.5ms.
+ */
+export function computeThermalParticleBudgetFactor(
+  isRushMode: boolean,
+  sustainedFrameMs: number,
+  currentlyReduced = false
+): number {
+  if (!isRushMode) return 1.0;
+  if (sustainedFrameMs > 24) return 0.5;
+  if (currentlyReduced && sustainedFrameMs > 19.5) return 0.5;
+  return 1.0;
+}
+
+export type AndroidBackResolution =
+  | 'close_quick_guide'
+  | 'close_onboarding'
+  | 'close_codex'
+  | 'close_wardrobe'
+  | 'close_settings'
+  | 'close_upgrades'
+  | 'close_strategic'
+  | 'open_pause'
+  | 'resume_from_pause'
+  | 'exit_gameover_to_title'
+  | 'noop';
+
+/**
+ * Resolves Android hardware/gesture "Back" (`popstate` / `backbutton`) so it closes any open modal
+ * or opens the Pause menu in-game instead of abruptly exiting the APK.
+ */
+export function resolveAndroidBackAction(ui: {
+  gameState: GameState;
+  showQuickGuide?: boolean;
+  showOnboardingModal: boolean;
+  showCodex: boolean;
+  showWardrobe: boolean;
+  showSettings: boolean;
+  showKitchenUpgrades: boolean;
+  showStrategicModal: boolean;
+}): AndroidBackResolution {
+  if (ui.showQuickGuide) return 'close_quick_guide';
+  if (ui.showOnboardingModal) return 'close_onboarding';
+  if (ui.showCodex) return 'close_codex';
+  if (ui.showWardrobe) return 'close_wardrobe';
+  if (ui.showSettings) return 'close_settings';
+  if (ui.showKitchenUpgrades) return 'close_upgrades';
+  if (ui.showStrategicModal) return 'close_strategic';
+  if (ui.gameState === 'playing') return 'open_pause';
+  if (ui.gameState === 'paused') return 'resume_from_pause';
+  if (ui.gameState === 'gameover') return 'exit_gameover_to_title';
+  return 'noop';
+}
+
+function fnv1aHex(input: string): string {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < input.length; i++) {
+    hash ^= input.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (hash >>> 0).toString(16).padStart(8, '0');
+}
+
+function utf8ToBase64(str: string): string {
+  const bytes = new TextEncoder().encode(str);
+  let binary = '';
+  for (let i = 0; i < bytes.length; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  if (typeof btoa === 'function') {
+    return btoa(binary);
+  }
+  return Buffer.from(bytes).toString('base64');
+}
+
+function base64ToUtf8(b64: string): string {
+  if (typeof atob === 'function') {
+    const binary = atob(b64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) {
+      bytes[i] = binary.charCodeAt(i);
+    }
+    return new TextDecoder().decode(bytes);
+  }
+  return Buffer.from(b64, 'base64').toString('utf8');
+}
+
+const VALID_WORLDS: readonly WorldId[] = [
+  'sunny_counter',
+  'fridge_vault',
+  'iron_stoves',
+  'pastry_marble',
+];
+const VALID_HATS: readonly HatId[] = [
+  'classic_toque',
+  'duck_shower_cap',
+  'bucket_helmet',
+  'tp_gasmask',
+];
+const VALID_ARMORS: readonly ArmorId[] = [
+  'white_apron',
+  'hazmat_epi',
+  'golden_scourer_mail',
+];
+const VALID_SPECIALS: readonly SpecialWeaponId[] = [
+  'karcher_blast',
+  'baking_volcano',
+  'knife_roomba',
+];
+
+/**
+ * Encodes account progress (and optional settings) into a checksummed Base64 backup code
+ * (`CB1:<checksum>:<base64>`) for serverless device-to-device transfer.
+ */
+export function exportProgressToBase64(
+  progress: PlayerProgress,
+  settings?: GameSettings
+): string {
+  const payload = JSON.stringify({
+    v: 1,
+    app: 'chef_bastion',
+    progress: {
+      ...progress,
+      kitchenUpgrades: normalizeKitchenUpgrades(progress.kitchenUpgrades),
+    },
+    ...(settings ? { settings } : {}),
+  });
+  const encoded = utf8ToBase64(payload);
+  const checksum = fnv1aHex(payload);
+  return `CB1:${checksum}:${encoded}`;
+}
+
+/**
+ * Strictly validates and decodes a Base64 backup string (`CB1:<checksum>:<base64>`).
+ * Rejects empty, malformed, tampered, or out-of-schema payloads without silent fallbacks.
+ */
+export function importProgressFromBase64(
+  rawCode: string
+):
+  | { ok: true; progress: PlayerProgress; settings?: GameSettings }
+  | { ok: false; error: string } {
+  const trimmed = (rawCode ?? '').trim();
+  if (!trimmed) {
+    return { ok: false, error: 'Pega un código de respaldo Base64 antes de importar.' };
+  }
+  const parts = trimmed.split(':');
+  if (parts.length !== 3 || parts[0] !== 'CB1' || !/^[0-9a-f]{8}$/i.test(parts[1]) || !parts[2]) {
+    return { ok: false, error: 'Formato inválido: el código debe empezar por CB1:.' };
+  }
+
+  let jsonStr = '';
+  try {
+    jsonStr = base64ToUtf8(parts[2]);
+  } catch {
+    return { ok: false, error: 'El código Base64 está corrupto o incompleto.' };
+  }
+
+  const expectedHash = fnv1aHex(jsonStr);
+  if (expectedHash.toLowerCase() !== parts[1].toLowerCase()) {
+    return { ok: false, error: 'Código alterado o incompleto (fallo de verificación).' };
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(jsonStr);
+  } catch {
+    return { ok: false, error: 'Datos internos no válidos en el respaldo.' };
+  }
+
+  if (
+    !parsed ||
+    typeof parsed !== 'object' ||
+    (parsed as { app?: string }).app !== 'chef_bastion' ||
+    !(parsed as { progress?: unknown }).progress ||
+    typeof (parsed as { progress?: unknown }).progress !== 'object'
+  ) {
+    return { ok: false, error: 'El código no pertenece a una partida de Chef Bastion.' };
+  }
+
+  const rawProg = (parsed as { progress: Record<string, unknown> }).progress;
+  if (
+    typeof rawProg.coins !== 'number' ||
+    !Number.isFinite(rawProg.coins) ||
+    rawProg.coins < 0 ||
+    typeof rawProg.currentLevel !== 'number' ||
+    !Number.isFinite(rawProg.currentLevel) ||
+    rawProg.currentLevel < 1
+  ) {
+    return { ok: false, error: 'Datos de nivel o monedas inválidos en el código.' };
+  }
+
+  const filterList = <T extends string>(arr: unknown, allowed: readonly T[], fallback: T[]): T[] => {
+    if (!Array.isArray(arr)) return fallback;
+    const valid = arr.filter((x): x is T => typeof x === 'string' && allowed.includes(x as T));
+    return valid.length > 0 ? Array.from(new Set(valid)) : fallback;
+  };
+
+  const unlockedWorlds = filterList(rawProg.unlockedWorlds, VALID_WORLDS, ['sunny_counter']);
+  const unlockedHats = filterList(rawProg.unlockedHats, VALID_HATS, ['classic_toque']);
+  const unlockedArmors = filterList(rawProg.unlockedArmors, VALID_ARMORS, ['white_apron']);
+  const unlockedSpecials = filterList(rawProg.unlockedSpecials, VALID_SPECIALS, ['karcher_blast']);
+
+  const currentWorld = VALID_WORLDS.includes(rawProg.currentWorld as WorldId)
+    ? (rawProg.currentWorld as WorldId)
+    : 'sunny_counter';
+  const equippedHat = VALID_HATS.includes(rawProg.equippedHat as HatId)
+    ? (rawProg.equippedHat as HatId)
+    : 'classic_toque';
+  const equippedArmor = VALID_ARMORS.includes(rawProg.equippedArmor as ArmorId)
+    ? (rawProg.equippedArmor as ArmorId)
+    : 'white_apron';
+  const equippedSpecial = VALID_SPECIALS.includes(rawProg.equippedSpecial as SpecialWeaponId)
+    ? (rawProg.equippedSpecial as SpecialWeaponId)
+    : 'karcher_blast';
+
+  const currentLevel = Math.max(1, Math.floor(rawProg.currentLevel));
+  const highestLevel =
+    typeof rawProg.highestLevel === 'number' && Number.isFinite(rawProg.highestLevel)
+      ? Math.max(currentLevel, Math.floor(rawProg.highestLevel))
+      : currentLevel;
+
+  const validatedProgress: PlayerProgress = {
+    currentLevel,
+    highestLevel,
+    currentWorld,
+    unlockedWorlds,
+    coins: Math.max(0, Math.floor(rawProg.coins)),
+    unlockedAchievements: Array.isArray(rawProg.unlockedAchievements)
+      ? rawProg.unlockedAchievements.filter((x): x is string => typeof x === 'string')
+      : [],
+    unlockedHats,
+    unlockedArmors,
+    unlockedSpecials,
+    equippedHat,
+    equippedArmor,
+    equippedSpecial,
+    bestScore:
+      typeof rawProg.bestScore === 'number' && Number.isFinite(rawProg.bestScore)
+        ? Math.max(0, Math.floor(rawProg.bestScore))
+        : 0,
+    totalBugsCleaned:
+      typeof rawProg.totalBugsCleaned === 'number' && Number.isFinite(rawProg.totalBugsCleaned)
+        ? Math.max(0, Math.floor(rawProg.totalBugsCleaned))
+        : 0,
+    bestRushSeconds:
+      typeof rawProg.bestRushSeconds === 'number' && Number.isFinite(rawProg.bestRushSeconds)
+        ? Math.max(0, Math.floor(rawProg.bestRushSeconds))
+        : 0,
+    unlockedRushMilestones: Array.isArray(rawProg.unlockedRushMilestones)
+      ? rawProg.unlockedRushMilestones.filter((x): x is string => typeof x === 'string')
+      : [],
+    kitchenUpgrades: normalizeKitchenUpgrades(
+      rawProg.kitchenUpgrades as Partial<KitchenUpgrades> | undefined
+    ),
+  };
+
+  let validatedSettings: GameSettings | undefined;
+  const rawSet = (parsed as { settings?: Record<string, unknown> }).settings;
+  if (rawSet && typeof rawSet === 'object') {
+    const clampVol = (v: unknown, def: number) =>
+      typeof v === 'number' && Number.isFinite(v) ? Math.max(0, Math.min(100, Math.round(v))) : def;
+    const speed =
+      rawSet.gameSpeedMultiplier === 0.75 ||
+      rawSet.gameSpeedMultiplier === 1.0 ||
+      rawSet.gameSpeedMultiplier === 1.25
+        ? rawSet.gameSpeedMultiplier
+        : DEFAULT_SETTINGS.gameSpeedMultiplier;
+    const hints =
+      rawSet.smartComboHints === 'onboarding' ||
+      rawSet.smartComboHints === 'always' ||
+      rawSet.smartComboHints === 'off'
+        ? rawSet.smartComboHints
+        : DEFAULT_SETTINGS.smartComboHints;
+    validatedSettings = {
+      masterVolume: clampVol(rawSet.masterVolume, DEFAULT_SETTINGS.masterVolume),
+      sfxVolume: clampVol(rawSet.sfxVolume, DEFAULT_SETTINGS.sfxVolume),
+      bgmVolume: clampVol(rawSet.bgmVolume, DEFAULT_SETTINGS.bgmVolume),
+      muted: typeof rawSet.muted === 'boolean' ? rawSet.muted : DEFAULT_SETTINGS.muted,
+      gameSpeedMultiplier: speed,
+      tacticalSlowMo:
+        typeof rawSet.tacticalSlowMo === 'boolean'
+          ? rawSet.tacticalSlowMo
+          : DEFAULT_SETTINGS.tacticalSlowMo,
+      screenShake:
+        typeof rawSet.screenShake === 'boolean' ? rawSet.screenShake : DEFAULT_SETTINGS.screenShake,
+      hapticsEnabled:
+        typeof rawSet.hapticsEnabled === 'boolean'
+          ? rawSet.hapticsEnabled
+          : DEFAULT_SETTINGS.hapticsEnabled,
+      smartComboHints: hints,
+      prioritize60Fps:
+        typeof rawSet.prioritize60Fps === 'boolean'
+          ? rawSet.prioritize60Fps
+          : DEFAULT_SETTINGS.prioritize60Fps,
+    };
+  }
+
+  return {
+    ok: true,
+    progress: validatedProgress,
+    settings: validatedSettings,
+  };
+}
+
+// ============================================================================
+// TACTICAL INSPECTOR (0.08x), LOGICAL TITLE ONBOARDING & FLOATING POOL
+// ============================================================================
+
+/**
+ * Recommends Strategic Mode first on the Title Screen until the player clears Level 2 (reaches Level 3),
+ * so new players learn each weapon step-by-step before diving into frantic Survival Rush.
+ */
+export function shouldRecommendStrategicFirst(
+  progress: Pick<PlayerProgress, 'highestLevel'>
+): boolean {
+  return (progress.highestLevel ?? 1) < 3;
+}
+
+const PLAIN_WEAPON_INSPECTOR_COPY: Record<
+  UtensilType,
+  { whatItDoes: string; combineOrMerge: string; accent: TacticalInspectorCardData['accent'] }
+> = {
+  spray_flus: {
+    whatItDoes: 'Disparo rápido frontal que moja plagas.',
+    combineOrMerge: 'Pon detrás de Estropajo para abanico ×5 · Arrastra sobre otra igual para Plata/Oro.',
+    accent: 'cyan',
+  },
+  scourer_nanas: {
+    whatItDoes: 'Espuma que frena a los bichos y divide disparos en ×5.',
+    combineOrMerge: 'Pon delante de Flus-Flus o Lejía · Arrastra sobre otra igual para Plata/Oro.',
+    accent: 'green',
+  },
+  aerosol_torch: {
+    whatItDoes: 'Conecta un rayo eléctrico con otro Aerosol UV en la misma fila.',
+    combineOrMerge: 'Pon 2 en la misma fila para fundir chapas · Arrastra sobre otro igual para Plata/Oro.',
+    accent: 'pink',
+  },
+  soap_bar: {
+    whatItDoes: 'Desvía tus disparos y plagas en diagonal hacia otro carril.',
+    combineOrMerge: 'Pon al lado de Fregona para centrifugar 3★ · Arrastra sobre otra igual para Plata/Oro.',
+    accent: 'pink',
+  },
+  mop_vortex: {
+    whatItDoes: 'Gira en 360° mojando y empujando plagas 1 casilla atrás.',
+    combineOrMerge: 'Recibe plagas desviadas por Jabón 45° · Arrastra sobre otra igual para Plata/Oro.',
+    accent: 'cyan',
+  },
+  wc_shield: {
+    whatItDoes: 'Escudo frontal que bloquea y rebota escupitajos ácidos.',
+    combineOrMerge: 'Pon en carriles con Moscas Ácidas · Arrastra sobre otro igual para Plata/Oro.',
+    accent: 'cyan',
+  },
+  bleach_cannon: {
+    whatItDoes: 'Chorro pesado corrosivo que arrasa su carril.',
+    combineOrMerge: 'Pon detrás de Estropajo para súper espuma · Arrastra sobre otro igual para Plata/Oro.',
+    accent: 'yellow',
+  },
+  corner_square: {
+    whatItDoes: 'Gira 90° hacia abajo a bichos laterales y rebota disparos.',
+    combineOrMerge: 'Pon arriba de Estropajo o Flus-Flus · En Oro + Flus-Flus Oro = Ricochet ×4.',
+    accent: 'yellow',
+  },
+};
+
+/**
+ * Builds the 2-line plain-language Tactical Inspector Card shown during 0.08x reading slow-mo.
+ */
+export function getTacticalInspectorCard(
+  target: TacticalInspectionTarget | null,
+  opts: {
+    pieces: readonly UtensilPiece[];
+    intactPlates: readonly boolean[];
+    vipPlateRail: number | null;
+    equippedSpecial: SpecialWeaponId;
+    ultimateCharge: number;
+    isRushMode: boolean;
+  }
+): TacticalInspectorCardData | null {
+  if (!target) return null;
+
+  if (target.kind === 'plate') {
+    const meta = MENU_PLATE_BUFF_META[target.rail] ?? MENU_PLATE_BUFF_META[0];
+    const intact = Boolean(opts.intactPlates[target.rail]);
+    const isVip = opts.vipPlateRail === target.rail;
+    return {
+      title: `${meta.icon} ${meta.name}${isVip ? ' · ⭐ VIP ×2' : ''}`,
+      badge: intact ? 'MENÚ VIVO ACTIVO' : 'PLATO DEVORADO',
+      whatItDoes: intact
+        ? `Intacto te da ${meta.desc}.`
+        : `Devorado: perdiste ${meta.desc}.`,
+      combineOrMerge: isVip
+        ? '¡Protégelo hasta el final para duplicar tus monedas (×2)!'
+        : 'Si pierdes los 4 platos termina la partida · Protégelo con combos.',
+      accent: intact ? 'green' : 'pink',
+    };
+  }
+
+  if (target.kind === 'ultimate') {
+    const spec = SPECIAL_WEAPONS_CATALOG[opts.equippedSpecial] ?? SPECIAL_WEAPONS_CATALOG.karcher_blast;
+    const pct = Math.min(100, Math.max(0, Math.round(opts.ultimateCharge)));
+    return {
+      title: `${spec.icon} ${spec.name}`,
+      badge: pct >= 100 ? '¡LISTO PARA LANZAR!' : `CARGA ${pct}%`,
+      whatItDoes: spec.desc,
+      combineOrMerge:
+        pct >= 100
+          ? '¡Toca el botón amarillo 100% para limpiar la encimera al instante!'
+          : 'Carga rápido logrando bajas de combo 2★/3★ y protegiendo el Plato 4 (Postre).',
+      accent: 'yellow',
+    };
+  }
+
+  // Piece target (from board or bottom tray)
+  const found = opts.pieces.find((p) => p.id === target.pieceId);
+  const pieceType: UtensilType = found?.type ?? target.pieceType ?? 'spray_flus';
+  const level = found?.level ?? target.level ?? 1;
+  const evolutionId: SupremeEvolutionId | undefined = found?.evolutionId ?? target.evolutionId;
+
+  if (evolutionId && SUPREME_EVOLUTIONS_CATALOG[evolutionId]) {
+    const evo = SUPREME_EVOLUTIONS_CATALOG[evolutionId];
+    return {
+      title: `${evo.icon} ${evo.name}`,
+      badge: 'EVOLUCIÓN SUPREMA NV.4',
+      whatItDoes: evo.description,
+      combineOrMerge: 'Súper-torreta definitiva en 1 sola casilla · Arrástrala libremente si necesitas reubicarla.',
+      accent: 'yellow',
+    };
+  }
+
+  const meta = UTENSIL_CATALOG[pieceType];
+  const copy = PLAIN_WEAPON_INSPECTOR_COPY[pieceType];
+  const tierLabel =
+    level >= 3 ? 'NV.3 ORO' : level === 2 ? 'NV.2 PLATA' : 'NV.1 BASE';
+
+  let combineLine = copy.combineOrMerge;
+  if (opts.isRushMode && level === 3) {
+    const evoRecipes = Object.values(SUPREME_EVOLUTIONS_CATALOG).filter(
+      (e) => e.recipeA === pieceType || e.recipeB === pieceType
+    );
+    if (evoRecipes.length > 0) {
+      const partnerNames = evoRecipes
+        .map((e) => {
+          const other = e.recipeA === pieceType ? e.recipeB : e.recipeA;
+          return `${UTENSIL_CATALOG[other].shortName} Oro ➔ ${e.shortName}`;
+        })
+        .join(' · ');
+      combineLine = `¡Une con ${partnerNames}!`;
+    }
+  } else if (!opts.isRushMode) {
+    // Strategic Mode focuses on positional combos without merge clutter
+    combineLine = meta.comboRecipe;
+  }
+
+  return {
+    title: `${meta.icon} ${meta.shortName}`,
+    badge: `${UTENSIL_ROLE_TAGS[pieceType].toUpperCase()} · ${tierLabel}`,
+    whatItDoes: copy.whatItDoes,
+    combineOrMerge: combineLine,
+    accent: copy.accent,
+  };
+}
+
+/**
+ * Computes which placed board pieces should pulse Gold ('merge' / 'evolve') or Green ('synergy')
+ * while a weapon is selected in the tray or on the countertop.
+ */
+export function computeBoardPartnerHighlights(
+  selectedPiece: Pick<UtensilPiece, 'id' | 'type' | 'level' | 'evolutionId'> | null,
+  boardPieces: readonly UtensilPiece[],
+  isRushMode: boolean
+): BoardPartnerHighlight[] {
+  if (!selectedPiece) return [];
+  const out: BoardPartnerHighlight[] = [];
+
+  const isSynergyPair = (a: UtensilType, b: UtensilType): boolean => {
+    if (
+      ((a === 'spray_flus' || a === 'bleach_cannon') && b === 'scourer_nanas') ||
+      (a === 'scourer_nanas' && (b === 'spray_flus' || b === 'bleach_cannon'))
+    ) {
+      return true;
+    }
+    if (a === 'aerosol_torch' && b === 'aerosol_torch') return true;
+    if ((a === 'soap_bar' && b === 'mop_vortex') || (a === 'mop_vortex' && b === 'soap_bar')) {
+      return true;
+    }
+    if (a === 'corner_square' || b === 'corner_square') return true;
+    return false;
+  };
+
+  for (let i = 0; i < boardPieces.length; i++) {
+    const other = boardPieces[i];
+    if (other.id === selectedPiece.id || other.rail === null || other.row === null) continue;
+
+    if (isRushMode && matchSupremeEvolution(selectedPiece, other)) {
+      out.push({
+        pieceId: other.id,
+        rail: other.rail,
+        row: other.row,
+        kind: 'evolve',
+      });
+      continue;
+    }
+
+    if (
+      isRushMode &&
+      selectedPiece.type === other.type &&
+      selectedPiece.level === other.level &&
+      selectedPiece.level < 3 &&
+      !selectedPiece.evolutionId &&
+      !other.evolutionId
+    ) {
+      out.push({
+        pieceId: other.id,
+        rail: other.rail,
+        row: other.row,
+        kind: 'merge',
+      });
+      continue;
+    }
+
+    if (isSynergyPair(selectedPiece.type, other.type)) {
+      out.push({
+        pieceId: other.id,
+        rail: other.rail,
+        row: other.row,
+        kind: 'synergy',
+      });
+    }
+  }
+
+  return out;
+}
+
+export const MAX_FLOATING_COMBO_POOL = 6;
+
+/**
+ * Inserts a floating "+180 · x4" event into a fixed-size pool (`<= 6`) while separating `yPct`
+ * so two simultaneous floating texts NEVER share the same vertical Y band or overlap.
+ */
+export function pushFloatingComboNonOverlapping(
+  existing: readonly FloatingComboEvent[],
+  incoming: FloatingComboEvent,
+  maxPool = MAX_FLOATING_COMBO_POOL
+): FloatingComboEvent[] {
+  const trimmed =
+    existing.length >= maxPool ? existing.slice(existing.length - (maxPool - 1)) : [...existing];
+
+  let adjustedY = Math.max(22, Math.min(68, incoming.yPct));
+  const minGapPct = 7.5;
+  for (let attempt = 0; attempt < 6; attempt++) {
+    const collides = trimmed.some((ev) => Math.abs(ev.yPct - adjustedY) < minGapPct);
+    if (!collides) break;
+    adjustedY -= 8;
+    if (adjustedY < 22) {
+      adjustedY = 66 - (attempt % 3) * 8;
+    }
+  }
+
+  trimmed.push({
+    ...incoming,
+    yPct: Number(adjustedY.toFixed(1)),
+  });
+  return trimmed;
+}
+
+
 

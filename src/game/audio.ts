@@ -1,25 +1,162 @@
 // Procedural Web Audio API synthesizer for CHEF BASTION (100% offline, zero external MP3 dependencies)
 
+import {
+  AdaptiveMusicEngine,
+  type AdaptiveMusicTelemetry,
+} from './musicEngine';
+import type { GameMode } from './types';
+
 class SoundEngine {
+  public static readonly HAPTIC_MIN_COOLDOWN_MS = 140;
+  public static readonly MAX_ACTIVE_SFX_VOICES = 6;
+  public static readonly SFX_TYPE_GATE_MS = 45;
+
   private ctx: AudioContext | null = null;
   public muted = false;
   public masterVolume = 0.8; // 0..1
   public sfxVolume = 0.9;    // 0..1
   public bgmVolume = 0.7;    // 0..1
+  public hapticsEnabled = true;
+  public readonly musicEngine: AdaptiveMusicEngine;
+  private lifecycleBound = false;
+  private lastHapticAtMs = -Infinity;
+  private voiceEndTimesSec = new Float64Array(SoundEngine.MAX_ACTIVE_SFX_VOICES);
+  private lastSfxTypeMs: Record<string, number> = {};
+
+  constructor() {
+    this.musicEngine = new AdaptiveMusicEngine(() => this.ensureContext());
+    this.bindMobileLifecycle();
+  }
+
+  private bindMobileLifecycle() {
+    if (this.lifecycleBound || typeof document === 'undefined' || typeof window === 'undefined') {
+      return;
+    }
+    this.lifecycleBound = true;
+
+    const handleVisibility = () => {
+      if (document.hidden) {
+        this.musicEngine.onVisibilityChange(true);
+        if (this.ctx && this.ctx.state === 'running') {
+          this.ctx.suspend().catch(() => {});
+        }
+      } else {
+        if (!this.muted && this.masterVolume > 0 && this.ctx && this.ctx.state === 'suspended') {
+          this.ctx.resume().catch(() => {});
+        }
+        this.musicEngine.onVisibilityChange(false);
+      }
+    };
+
+    const handlePageHide = () => {
+      this.musicEngine.onVisibilityChange(true);
+      if (this.ctx && this.ctx.state === 'running') {
+        this.ctx.suspend().catch(() => {});
+      }
+    };
+
+    const unlockAudioOnGesture = () => {
+      if (this.muted || document.hidden) return;
+      if (this.ctx && this.ctx.state === 'suspended') {
+        this.ctx.resume().catch(() => {});
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibility);
+    window.addEventListener('pagehide', handlePageHide);
+    window.addEventListener('pointerdown', unlockAudioOnGesture, { passive: true });
+    window.addEventListener('keydown', unlockAudioOnGesture, { passive: true });
+  }
 
   public applySettings(settings: {
     masterVolume: number;
     sfxVolume: number;
     bgmVolume: number;
     muted: boolean;
+    hapticsEnabled?: boolean;
+    gameSpeedMultiplier?: 0.75 | 1.0 | 1.25;
   }) {
     this.masterVolume = Math.max(0, Math.min(1, settings.masterVolume / 100));
     this.sfxVolume = Math.max(0, Math.min(1, settings.sfxVolume / 100));
     this.bgmVolume = Math.max(0, Math.min(1, settings.bgmVolume / 100));
     this.muted = settings.muted;
+    if (typeof settings.hapticsEnabled === 'boolean') {
+      this.hapticsEnabled = settings.hapticsEnabled;
+    }
+    this.musicEngine.setVolumeScale(this.getBgmScale());
+    if (settings.gameSpeedMultiplier) {
+      this.musicEngine.updateTelemetry({ gameSpeedMultiplier: settings.gameSpeedMultiplier });
+    }
     if (this.muted || this.masterVolume <= 0 || this.bgmVolume <= 0) {
       this.stopBackgroundMusic();
     }
+  }
+
+  public triggerHaptic(style: 'light' | 'medium' | 'heavy' = 'light', nowMs = Date.now()) {
+    if (!this.hapticsEnabled || typeof window === 'undefined') return;
+    if (typeof document !== 'undefined' && document.hidden) return;
+    if (nowMs - this.lastHapticAtMs < SoundEngine.HAPTIC_MIN_COOLDOWN_MS) return;
+    this.lastHapticAtMs = nowMs;
+    try {
+      const capHaptics = (
+        window as unknown as {
+          Capacitor?: {
+            Plugins?: {
+              Haptics?: {
+                impact?: (opts: { style: 'LIGHT' | 'MEDIUM' | 'HEAVY' }) => Promise<void>;
+              };
+            };
+          };
+        }
+      ).Capacitor?.Plugins?.Haptics;
+
+      if (capHaptics?.impact) {
+        const capStyle = style === 'heavy' ? 'HEAVY' : style === 'medium' ? 'MEDIUM' : 'LIGHT';
+        capHaptics.impact({ style: capStyle }).catch(() => {});
+        return;
+      }
+
+      if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
+        navigator.vibrate(style === 'heavy' ? [20, 16, 26] : style === 'medium' ? 14 : 8);
+      }
+    } catch {
+      // Ignore blocked vibration on desktop browsers without user gesture
+    }
+  }
+
+  private acquireSfxVoices(
+    ctx: AudioContext,
+    typeKey: string,
+    voicesNeeded: number,
+    durationSec: number
+  ): boolean {
+    const perfNow = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    const prevTypeMs = this.lastSfxTypeMs[typeKey] ?? -Infinity;
+    if (perfNow - prevTypeMs < SoundEngine.SFX_TYPE_GATE_MS) {
+      return false;
+    }
+
+    const nowSec = ctx.currentTime;
+    let freeCount = 0;
+    for (let i = 0; i < this.voiceEndTimesSec.length; i++) {
+      if (this.voiceEndTimesSec[i] <= nowSec) {
+        freeCount++;
+      }
+    }
+    if (freeCount < 1) {
+      return false;
+    }
+
+    const toClaim = Math.min(voicesNeeded, freeCount);
+    let claimed = 0;
+    for (let i = 0; i < this.voiceEndTimesSec.length && claimed < toClaim; i++) {
+      if (this.voiceEndTimesSec[i] <= nowSec) {
+        this.voiceEndTimesSec[i] = nowSec + durationSec;
+        claimed++;
+      }
+    }
+    this.lastSfxTypeMs[typeKey] = perfNow;
+    return true;
   }
 
   private getSfxScale(): number {
@@ -34,6 +171,7 @@ class SoundEngine {
 
   private ensureContext(): AudioContext | null {
     if (this.muted || typeof window === 'undefined') return null;
+    if (typeof document !== 'undefined' && document.hidden) return null;
     if (!this.ctx) {
       const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
       if (AudioCtx) {
@@ -50,7 +188,7 @@ class SoundEngine {
     const scale = this.getSfxScale();
     if (scale <= 0.001) return;
     const ctx = this.ensureContext();
-    if (!ctx) return;
+    if (!ctx || !this.acquireSfxVoices(ctx, 'spray', 1, 0.07)) return;
     const now = ctx.currentTime;
     const pitchVar = 0.94 + Math.random() * 0.14;
 
@@ -73,9 +211,9 @@ class SoundEngine {
     const scale = this.getSfxScale();
     if (scale <= 0.001) return;
     const ctx = this.ensureContext();
-    if (!ctx) return;
+    if (!ctx || !this.acquireSfxVoices(ctx, 'foam', 2, 0.09)) return;
     const now = ctx.currentTime;
-    [640, 880, 1120].forEach((freq, idx) => {
+    [640, 980].forEach((freq, idx) => {
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
       osc.type = 'sine';
@@ -94,7 +232,7 @@ class SoundEngine {
     const scale = this.getSfxScale();
     if (scale <= 0.001) return;
     const ctx = this.ensureContext();
-    if (!ctx) return;
+    if (!ctx || !this.acquireSfxVoices(ctx, 'clink', 1, 0.09)) return;
     const now = ctx.currentTime;
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
@@ -113,7 +251,7 @@ class SoundEngine {
     const scale = this.getSfxScale();
     if (scale <= 0.001) return;
     const ctx = this.ensureContext();
-    if (!ctx) return;
+    if (!ctx || !this.acquireSfxVoices(ctx, 'slip', 1, 0.24)) return;
     const now = ctx.currentTime;
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
@@ -130,10 +268,11 @@ class SoundEngine {
   }
 
   public playSnapPiece(isCombo: boolean) {
+    this.triggerHaptic(isCombo ? 'medium' : 'light');
     const scale = this.getSfxScale();
     if (scale <= 0.001) return;
     const ctx = this.ensureContext();
-    if (!ctx) return;
+    if (!ctx || !this.acquireSfxVoices(ctx, 'snap', 1, 0.11)) return;
     const now = ctx.currentTime;
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
@@ -152,7 +291,7 @@ class SoundEngine {
     const scale = this.getSfxScale();
     if (scale <= 0.001) return;
     const ctx = this.ensureContext();
-    if (!ctx) return;
+    if (!ctx || !this.acquireSfxVoices(ctx, 'slowmo', 1, 0.2)) return;
     const now = ctx.currentTime;
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
@@ -215,7 +354,7 @@ class SoundEngine {
     const scale = this.getSfxScale();
     if (scale <= 0.001) return;
     const ctx = this.ensureContext();
-    if (!ctx) return;
+    if (!ctx || !this.acquireSfxVoices(ctx, 'kill', stars >= 3 ? 3 : 2, 0.26)) return;
     const now = ctx.currentTime;
 
     // Primary ascending pentatonic bell note so chained kills sing upward musically
@@ -232,32 +371,33 @@ class SoundEngine {
 
     const baseNotes =
       stars === 3
-        ? [523.25, 659.25, 783.99, 1046.5, 1567.98] // High TV-ad sparkle DING!
+        ? [523.25, 783.99, 1567.98]
         : stars === 2
-        ? [440, 554.37, 659.25]
-        : [330, 440];
+        ? [440, 659.25]
+        : [330];
 
     const pitchShift = Math.min(1.85, 1 + chain.step * 0.08);
     baseNotes.forEach((freq, i) => {
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
       osc.type = stars === 3 && i === baseNotes.length - 1 ? 'sine' : 'triangle';
-      const t = now + i * 0.05;
+      const t = now + i * 0.045;
       osc.frequency.setValueAtTime(freq * pitchShift, t);
       gain.gain.setValueAtTime(Math.max(0.001, (stars === 3 ? 0.14 : 0.095) * scale), t);
-      gain.gain.exponentialRampToValueAtTime(0.0005, t + (stars === 3 ? 0.26 : 0.13));
+      gain.gain.exponentialRampToValueAtTime(0.0005, t + (stars === 3 ? 0.24 : 0.13));
       osc.connect(gain);
       gain.connect(ctx.destination);
       osc.start(t);
-      osc.stop(t + 0.28);
+      osc.stop(t + 0.26);
     });
   }
 
   public playTowelWhip() {
+    this.triggerHaptic('medium');
     const scale = this.getSfxScale();
     if (scale <= 0.001) return;
     const ctx = this.ensureContext();
-    if (!ctx) return;
+    if (!ctx || !this.acquireSfxVoices(ctx, 'whip', 2, 0.13)) return;
     const now = ctx.currentTime;
 
     // Fast cloth whoosh + crisp high-frequency snap crack
@@ -290,14 +430,14 @@ class SoundEngine {
     const scale = this.getSfxScale();
     if (scale <= 0.001) return;
     const ctx = this.ensureContext();
-    if (!ctx) return;
+    if (!ctx || !this.acquireSfxVoices(ctx, 'chain_shock', 2, 0.1)) return;
     const now = ctx.currentTime;
 
-    [920, 1380, 1760].forEach((freq, idx) => {
+    [920, 1560].forEach((freq, idx) => {
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
       osc.type = 'sawtooth';
-      const t = now + idx * 0.022;
+      const t = now + idx * 0.025;
       osc.frequency.setValueAtTime(freq, t);
       osc.frequency.exponentialRampToValueAtTime(freq * 0.62, t + 0.05);
       gain.gain.setValueAtTime(Math.max(0.001, 0.09 * scale), t);
@@ -310,10 +450,11 @@ class SoundEngine {
   }
 
   public playBleachWave() {
+    this.triggerHaptic('heavy');
     const scale = this.getSfxScale();
     if (scale <= 0.001) return;
     const ctx = this.ensureContext();
-    if (!ctx) return;
+    if (!ctx || !this.acquireSfxVoices(ctx, 'bleach_wave', 1, 0.4)) return;
     const now = ctx.currentTime;
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
@@ -328,141 +469,85 @@ class SoundEngine {
     osc.stop(now + 0.4);
   }
 
-  private bgmTimer: number | null = null;
-  private bgmStep = 0;
-  private bgmLevel = 1;
-  private bgmActive = false;
+  public playMergeUpgrade(newLevel: number) {
+    this.triggerHaptic(newLevel >= 4 ? 'heavy' : 'medium');
+    const scale = this.getSfxScale();
+    if (scale <= 0.001) return;
+    const ctx = this.ensureContext();
+    if (!ctx || !this.acquireSfxVoices(ctx, 'merge', 3, 0.3)) return;
+    const now = ctx.currentTime;
 
-  // 6 subtle musical motifs — changes every 10 levels (1 per Establishment)
-  private static readonly BGM_THEMES: {
-    wave: OscillatorType;
-    tempoMs: number;
-    notes: number[];
-    bass: number[];
-  }[] = [
-    // Nv. 1-10: Bistró La Encimera (Light French Bistro pizzicato in C Major)
-    {
-      wave: 'triangle',
-      tempoMs: 420,
-      notes: [261.63, 329.63, 392.0, 440.0, 392.0, 329.63, 293.66, 392.0],
-      bass: [130.81, 130.81, 196.0, 196.0, 146.83, 146.83, 196.0, 130.81],
-    },
-    // Nv. 11-20: Trattoria Vapor & Acero (Warm A minor tarantella walking pulse)
-    {
-      wave: 'triangle',
-      tempoMs: 390,
-      notes: [220.0, 261.63, 329.63, 349.23, 329.63, 293.66, 246.94, 329.63],
-      bass: [110.0, 110.0, 164.81, 164.81, 146.83, 146.83, 123.47, 164.81],
-    },
-    // Nv. 21-30: Gran Comedor Imperial (Elegant chamber arpeggio in G Major)
-    {
-      wave: 'sine',
-      tempoMs: 410,
-      notes: [196.0, 246.94, 293.66, 392.0, 369.99, 293.66, 246.94, 293.66],
-      bass: [98.0, 146.83, 123.47, 146.83, 110.0, 146.83, 98.0, 146.83],
-    },
-    // Nv. 31-40: Taberna Neón & Conductos (Cool D Dorian lounge synth-bass)
-    {
-      wave: 'triangle',
-      tempoMs: 360,
-      notes: [146.83, 174.61, 220.0, 261.63, 246.94, 220.0, 174.61, 196.0],
-      bass: [73.42, 73.42, 110.0, 130.81, 123.47, 110.0, 87.31, 98.0],
-    },
-    // Nv. 41-50: Bastión de Brasas Nocturno (Tactical E Phrygian tension pulse)
-    {
-      wave: 'triangle',
-      tempoMs: 340,
-      notes: [164.81, 174.61, 220.0, 246.94, 261.63, 246.94, 220.0, 196.0],
-      bass: [82.41, 87.31, 110.0, 123.47, 130.81, 123.47, 110.0, 98.0],
-    },
-    // Nv. 51-60+: Cámara Frigorífica Suprema (Crystalline F Lydian bell pulse)
-    {
-      wave: 'sine',
-      tempoMs: 370,
-      notes: [349.23, 440.0, 523.25, 493.88, 523.25, 659.25, 587.33, 440.0],
-      bass: [174.61, 174.61, 220.0, 246.94, 196.0, 196.0, 164.81, 174.61],
-    },
-  ];
+    const notes =
+      newLevel >= 4
+        ? [523.25, 783.99, 1046.5, 1567.98] // Supreme Evolution fanfare!
+        : newLevel === 3
+        ? [523.25, 659.25, 1046.5] // Gold Lv.3 chord
+        : [440, 554.37, 659.25]; // Silver Lv.2 chord
 
-  public syncBackgroundMusic(isPlaying: boolean, level: number) {
-    const establishmentIdx = Math.min(
-      SoundEngine.BGM_THEMES.length - 1,
-      Math.floor((Math.max(1, level) - 1) / 10)
-    );
-    const prevIdx = Math.min(
-      SoundEngine.BGM_THEMES.length - 1,
-      Math.floor((Math.max(1, this.bgmLevel) - 1) / 10)
-    );
-    this.bgmLevel = level;
+    notes.forEach((freq, idx) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = newLevel >= 4 ? 'sawtooth' : 'triangle';
+      const t = now + idx * 0.04;
+      osc.frequency.setValueAtTime(freq, t);
+      osc.frequency.exponentialRampToValueAtTime(freq * 1.06, t + 0.16);
+      gain.gain.setValueAtTime(Math.max(0.001, (newLevel >= 4 ? 0.15 : 0.12) * scale), t);
+      gain.gain.exponentialRampToValueAtTime(0.0005, t + (newLevel >= 4 ? 0.28 : 0.18));
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(t);
+      osc.stop(t + 0.3);
+    });
+  }
 
-    if (!isPlaying || this.getBgmScale() <= 0.001 || typeof window === 'undefined') {
+  public playChaosSiren() {
+    const scale = this.getSfxScale();
+    if (scale <= 0.001) return;
+    const ctx = this.ensureContext();
+    if (!ctx || !this.acquireSfxVoices(ctx, 'siren', 2, 0.32)) return;
+    const now = ctx.currentTime;
+
+    [0, 0.16].forEach((offset) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(620, now + offset);
+      osc.frequency.exponentialRampToValueAtTime(980, now + offset + 0.12);
+      gain.gain.setValueAtTime(Math.max(0.001, 0.13 * scale), now + offset);
+      gain.gain.exponentialRampToValueAtTime(0.0005, now + offset + 0.14);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(now + offset);
+      osc.stop(now + offset + 0.15);
+    });
+  }
+
+  public syncBackgroundMusic(isPlaying: boolean, level: number, gameMode?: GameMode) {
+    const bgmScale = this.getBgmScale();
+    this.musicEngine.setVolumeScale(bgmScale);
+    if (!isPlaying || bgmScale <= 0.001 || typeof window === 'undefined') {
       this.stopBackgroundMusic();
       return;
     }
+    this.musicEngine.updateTelemetry({
+      isPlaying: true,
+      level: Math.max(1, level),
+      ...(gameMode ? { gameMode } : {}),
+    });
+  }
 
-    if (this.bgmActive && establishmentIdx === prevIdx && this.bgmTimer !== null) {
+  public updateAdaptiveMusic(telemetry: Partial<AdaptiveMusicTelemetry>) {
+    const bgmScale = this.getBgmScale();
+    this.musicEngine.setVolumeScale(bgmScale);
+    if (this.muted || bgmScale <= 0.001) {
+      this.musicEngine.stop();
       return;
     }
-
-    this.stopBackgroundMusic();
-    this.bgmActive = true;
-    const theme = SoundEngine.BGM_THEMES[establishmentIdx];
-
-    const tickNote = () => {
-      const bgmScale = this.getBgmScale();
-      if (!this.bgmActive || bgmScale <= 0.001) return;
-      const ctx = this.ensureContext();
-      if (!ctx || ctx.state !== 'running') return;
-
-      const now = ctx.currentTime;
-      const step = this.bgmStep % theme.notes.length;
-      this.bgmStep += 1;
-
-      // Soft low-passed lead pluck (base gain 0.032 * bgmScale — stays well below SFX!)
-      const osc = ctx.createOscillator();
-      const filter = ctx.createBiquadFilter();
-      const gain = ctx.createGain();
-      osc.type = theme.wave;
-      osc.frequency.setValueAtTime(theme.notes[step], now);
-
-      filter.type = 'lowpass';
-      filter.frequency.setValueAtTime(880, now);
-
-      gain.gain.setValueAtTime(0.0005, now);
-      gain.gain.linearRampToValueAtTime(Math.max(0.001, 0.032 * bgmScale), now + 0.025);
-      gain.gain.exponentialRampToValueAtTime(0.0005, now + 0.28);
-
-      osc.connect(filter);
-      filter.connect(gain);
-      gain.connect(ctx.destination);
-      osc.start(now);
-      osc.stop(now + 0.3);
-
-      // Soft warm bass on even beats
-      if (step % 2 === 0) {
-        const bassOsc = ctx.createOscillator();
-        const bassGain = ctx.createGain();
-        bassOsc.type = 'sine';
-        bassOsc.frequency.setValueAtTime(theme.bass[step], now);
-        bassGain.gain.setValueAtTime(0.0005, now);
-        bassGain.gain.linearRampToValueAtTime(Math.max(0.001, 0.026 * bgmScale), now + 0.03);
-        bassGain.gain.exponentialRampToValueAtTime(0.0005, now + 0.34);
-        bassOsc.connect(bassGain);
-        bassGain.connect(ctx.destination);
-        bassOsc.start(now);
-        bassOsc.stop(now + 0.36);
-      }
-    };
-
-    this.bgmTimer = window.setInterval(tickNote, theme.tempoMs);
+    this.musicEngine.updateTelemetry(telemetry);
   }
 
   public stopBackgroundMusic() {
-    this.bgmActive = false;
-    if (this.bgmTimer !== null && typeof window !== 'undefined') {
-      window.clearInterval(this.bgmTimer);
-      this.bgmTimer = null;
-    }
+    this.musicEngine.stop();
   }
 }
 

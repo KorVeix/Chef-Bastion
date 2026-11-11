@@ -11,6 +11,7 @@ coverage/
 
 # Temporary browser verification & AI Studio debug attachments
 .playwright-cli/
+.aistudio/
 public/assets/aistudio/
 public/assets/android_preview/
 *.webm

@@ -13,18 +13,27 @@ import {
   classifyBugElimination,
   checkPhaseTransition,
   combineActiveTimeScales,
+  computeBoardPartnerHighlights,
   computeBossDamageMultiplier,
   computeConductiveUvChainTargets,
   computeDragComboPreviewLinks,
+  computeKitchenUpgradeEffects,
   computeLiveMenuBuffs,
+  computeResponsiveCameraParams,
   computeSmartComboHints,
+  computeStrategicMatchCoins,
+  computeStreakMilestoneReward,
+  computeThermalParticleBudgetFactor,
   computeThermalShockResult,
   computeVipVictoryCoins,
   computeWeaponRangeCells,
   createInitialBoardPieces,
   DEFAULT_PROGRESS,
+  DEFAULT_SETTINGS,
   DEV_UNLOCK_ALL_WORLDS,
   evaluateBoardCombos,
+  exportProgressToBase64,
+  formatDefeatNearMissCopy,
   getBiomeForLevel,
   getBossPuzzleTypeForLevel,
   getBossTierForLevel,
@@ -32,17 +41,31 @@ import {
   getLevelForecast,
   getLevelSpeedMultiplier,
   getMaxPiecesForLevel,
+  getTacticalInspectorCard,
   getTacticalOnboardingCard,
   getTutorialGuideForLevel,
+  groupTrayPiecesForDisplay,
+  hasRemainingShopUnlocks,
+  HATS_CATALOG,
+  HEAVY_IMPACT_HITSTOP_SECONDS,
+  importProgressFromBase64,
+  isAchievementPurchasableWithCoins,
   isBiomeTransitionLevel,
   isDynamicOnboardingLevel,
   isWorldUnlocked,
+  MAX_FLOATING_COMBO_POOL,
   moveOrSwapUtensil,
+  purchaseKitchenUpgrade,
+  pushFloatingComboNonOverlapping,
+  resolveAndroidBackAction,
+  shouldRecommendStrategicFirst,
   TILE_TRAIL_DURATION,
   UTENSIL_MICRO_TIPS,
+  UTENSIL_ROLE_TAGS,
 } from './rules';
 import { soundEngine } from './audio';
-import { BugEnemy, BugType, TileChemicalState, UtensilPiece, UtensilType } from './types';
+import { detectNativeOrStandaloneRuntime } from '../hooks/usePWAInstall';
+import { BugEnemy, BugType, FloatingComboEvent, TileChemicalState, UtensilPiece, UtensilType } from './types';
 
 test('evaluateBoardCombos detects Line Foam, Horizontal UV Bridge, Slip Vortex, and Deflect 90 combos', () => {
   const pieces: UtensilPiece[] = [
@@ -625,5 +648,403 @@ test('Pentatonic Audio SFX: chaining kills < 1.2s apart ascends pentatonic scale
   assert.equal(kReset.step, 0);
   assert.equal(kReset.freqHz, k0.freqHz);
 });
+
+test('Tanda 4 UI/UX & Economy: tray weapon stacking (x2/x3), coin-reward shop guard, Roomba world-unlock decoupling, classic_toque +10% 4-plate perk, and singular/plural defeat copy', () => {
+  // 1. Stacked tray groups identical unplaced weapons and decrements count on placement
+  const lvl2Pieces = createInitialBoardPieces(2); // 2x aerosol_torch + 1x spray_flus
+  const initialGroups = groupTrayPiecesForDisplay(lvl2Pieces);
+  assert.equal(initialGroups.length, 2);
+  const aerosolGroup = initialGroups.find((g) => g.representative.type === 'aerosol_torch');
+  assert.ok(aerosolGroup);
+  assert.equal(aerosolGroup.count, 2);
+
+  const afterOnePlaced = moveOrSwapUtensil(lvl2Pieces, aerosolGroup.pieces[0].id, 1, 2);
+  const groupsAfterOne = groupTrayPiecesForDisplay(afterOnePlaced);
+  assert.equal(
+    groupsAfterOne.find((g) => g.representative.type === 'aerosol_torch')?.count,
+    1
+  );
+
+  // 2. Coin-reward achievements cannot be bought with coins (prevents 100 -> +150 arbitrage)
+  const beetle1Star = ACHIEVEMENTS_CATALOG.find((a) => a.id === 'beetle_1star');
+  const beetle3Star = ACHIEVEMENTS_CATALOG.find((a) => a.id === 'beetle_3star');
+  assert.ok(beetle1Star && beetle3Star);
+  assert.equal(isAchievementPurchasableWithCoins(beetle1Star), false);
+  assert.equal(isAchievementPurchasableWithCoins(beetle3Star), true);
+  assert.equal(beetle3Star.rewardLabel.includes('Mundo Nevera'), false);
+
+  // hasRemainingShopUnlocks ignores coin-only achievements when all equipment achievements are unlocked
+  const allEquipIds = ACHIEVEMENTS_CATALOG.filter((a) => a.rewardType !== 'coins').map((a) => a.id);
+  assert.equal(hasRemainingShopUnlocks(DEFAULT_PROGRESS), true);
+  assert.equal(
+    hasRemainingShopUnlocks({ ...DEFAULT_PROGRESS, unlockedAchievements: allEquipIds }),
+    false
+  );
+
+  // 3. Wardrobe catalog copy & real classic_toque +10% 4-plate victory bonus
+  assert.ok(HATS_CATALOG.classic_toque.bonus.includes('+10% Monedas'));
+  assert.equal(HATS_CATALOG.duck_shower_cap.name, 'Gorro de Ducha con Patito');
+  assert.ok(HATS_CATALOG.bucket_helmet.bonus.includes('-50% duración de pringue ácido'));
+
+  assert.deepEqual(
+    computeStrategicMatchCoins({
+      victory: true,
+      vipSaved: false,
+      allFourPlatesIntact: true,
+      equippedHat: 'classic_toque',
+    }),
+    { coinsEarned: 132, classicToqueBonusApplied: true }
+  );
+  assert.deepEqual(
+    computeStrategicMatchCoins({
+      victory: true,
+      vipSaved: true,
+      allFourPlatesIntact: true,
+      equippedHat: 'classic_toque',
+    }),
+    { coinsEarned: 264, classicToqueBonusApplied: true }
+  );
+  assert.deepEqual(
+    computeStrategicMatchCoins({
+      victory: true,
+      vipSaved: false,
+      allFourPlatesIntact: false,
+      equippedHat: 'classic_toque',
+    }),
+    { coinsEarned: 120, classicToqueBonusApplied: false }
+  );
+
+  // 4. Defeat near-miss copy handles singular/plural naturally and says "la Fase X/3"
+  assert.equal(
+    formatDefeatNearMissCopy(1, 2),
+    '¡Casi lo logras! Te faltó solo 1 plaga para superar la Fase 2/3.'
+  );
+  assert.equal(
+    formatDefeatNearMissCopy(3, 2),
+    '¡Casi lo logras! Te faltaron solo 3 plagas para superar la Fase 2/3.'
+  );
+});
+
+test('APK Native Runtime Detector: hides PWA install UI in Capacitor, Android/iOS WebViews, and standalone mode', () => {
+  assert.equal(
+    detectNativeOrStandaloneRuntime({
+      protocol: 'https:',
+      userAgent:
+        'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Mobile Safari/537.36',
+    }),
+    false
+  );
+  assert.equal(detectNativeOrStandaloneRuntime({ hasCapacitorGlobal: true }), true);
+  assert.equal(detectNativeOrStandaloneRuntime({ protocol: 'capacitor:' }), true);
+  assert.equal(detectNativeOrStandaloneRuntime({ displayModeStandalone: true }), true);
+  assert.equal(
+    detectNativeOrStandaloneRuntime({
+      protocol: 'https:',
+      userAgent:
+        'Mozilla/5.0 (Linux; Android 14; SM-S928B Build/UP1A; wv) AppleWebKit/537.36 Version/4.0 Chrome/126.0 Mobile Safari/537.36',
+    }),
+    true
+  );
+  assert.equal(
+    detectNativeOrStandaloneRuntime({
+      protocol: 'https:',
+      userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148',
+    }),
+    true
+  );
+});
+
+test('APK 20:9 Camera, Thermal Particle Budget & Android Back Resolution keep outer plates uncut and intercept Back safely', () => {
+  const desktopCam = computeResponsiveCameraParams(1440, 900);
+  const narrow20x9 = computeResponsiveCameraParams(384, 854); // aspect = 0.4496 < 0.5
+  assert.ok(narrow20x9.aspect < 0.5);
+  assert.ok(narrow20x9.fov > desktopCam.fov);
+  assert.ok(narrow20x9.camZ > desktopCam.camZ && narrow20x9.camY > desktopCam.camY);
+
+  // Outer plate outer rim (x = 2.80, y = 0.2, z = 4.18) must project inside horizontal frustum (|ndcX| < 0.90) on 20:9!
+  const dy = narrow20x9.lookY - narrow20x9.camY;
+  const dz = narrow20x9.lookZ - narrow20x9.camZ;
+  const len = Math.hypot(dy, dz);
+  const fwdY = dy / len;
+  const fwdZ = dz / len;
+  const relY = 0.2 - narrow20x9.camY;
+  const relZ = 4.18 - narrow20x9.camZ;
+  const depth = relY * fwdY + relZ * fwdZ;
+  const tanHalfVFov = Math.tan((narrow20x9.fov * Math.PI) / 360);
+  const halfWidthAtPlate = depth * tanHalfVFov * narrow20x9.aspect;
+  const ndcRightEdge = 2.8 / halfWidthAtPlate;
+  assert.ok(ndcRightEdge > 0 && ndcRightEdge < 0.9, `Expected outer plate inside frustum, got ${ndcRightEdge}`);
+
+  // Thermal Rush particle budget halves at >24ms and recovers below 19.5ms
+  assert.equal(computeThermalParticleBudgetFactor(true, 18.0, false), 1.0);
+  assert.equal(computeThermalParticleBudgetFactor(true, 26.5, false), 0.5);
+  assert.equal(computeThermalParticleBudgetFactor(true, 21.0, true), 0.5);
+  assert.equal(computeThermalParticleBudgetFactor(true, 18.5, true), 1.0);
+  assert.equal(computeThermalParticleBudgetFactor(false, 29.0, false), 1.0);
+
+  // Android Back closes open modals first, and pauses gameplay instead of closing APK
+  const baseUi = {
+    gameState: 'playing' as const,
+    showOnboardingModal: false,
+    showCodex: false,
+    showWardrobe: false,
+    showSettings: false,
+    showKitchenUpgrades: false,
+    showStrategicModal: false,
+  };
+  assert.equal(resolveAndroidBackAction({ ...baseUi, showSettings: true }), 'close_settings');
+  assert.equal(resolveAndroidBackAction({ ...baseUi, showKitchenUpgrades: true }), 'close_upgrades');
+  assert.equal(resolveAndroidBackAction(baseUi), 'open_pause');
+  assert.equal(resolveAndroidBackAction({ ...baseUi, gameState: 'paused' }), 'resume_from_pause');
+  assert.equal(resolveAndroidBackAction({ ...baseUi, gameState: 'title' }), 'noop');
+});
+
+test('Game Juice, Kitchen Upgrades (4 passives x 3 levels) & Base64 Progress Backup round-trip + tamper rejection', () => {
+  assert.equal(HEAVY_IMPACT_HITSTOP_SECONDS, 0.04);
+
+  // Purchase upgrades up to level 3 and verify effects
+  let prog = { ...DEFAULT_PROGRESS, coins: 2000 };
+  const step1 = purchaseKitchenUpgrade(prog, 'whipCooldown');
+  assert.equal(step1.ok, true);
+  assert.equal(step1.newLevel, 1);
+  assert.ok(step1.updatedProgress.coins < 2000);
+
+  const step2 = purchaseKitchenUpgrade(step1.updatedProgress, 'whipCooldown');
+  const step3 = purchaseKitchenUpgrade(step2.updatedProgress, 'whipCooldown');
+  assert.equal(step3.newLevel, 3);
+  const step4 = purchaseKitchenUpgrade(step3.updatedProgress, 'whipCooldown');
+  assert.equal(step4.ok, false); // capped at 3/3
+
+  prog = purchaseKitchenUpgrade(step3.updatedProgress, 'streakCoinBonus').updatedProgress;
+  prog = purchaseKitchenUpgrade(prog, 'ultBaseCharge').updatedProgress;
+  prog = purchaseKitchenUpgrade(prog, 'acidResistance').updatedProgress;
+
+  const fx = computeKitchenUpgradeEffects(prog.kitchenUpgrades);
+  assert.equal(fx.effectiveWhipCooldownSec, 12.0);
+  assert.equal(fx.acidDurationMult, 0.85);
+  assert.equal(fx.streakCoinMult, 1.25);
+  assert.equal(fx.initialUltimatePct, 57);
+
+  // Streak x8 & x15 coin milestones scale with streakCoinBonus
+  const r8 = computeStreakMilestoneReward(7, 8, prog.kitchenUpgrades);
+  const r15 = computeStreakMilestoneReward(14, 15, prog.kitchenUpgrades);
+  assert.equal(r8.crossedThreshold, 8);
+  assert.equal(r8.bonusCoins, Math.round(15 * 1.25));
+  assert.equal(r15.crossedThreshold, 15);
+  assert.equal(r15.bonusCoins, Math.round(35 * 1.25));
+  assert.equal(computeStreakMilestoneReward(8, 9, prog.kitchenUpgrades).crossedThreshold, null);
+
+  // Serverless Base64 Export / Import round-trip + tamper/empty validation
+  const customSettings = { ...DEFAULT_SETTINGS, masterVolume: 65, hapticsEnabled: false };
+  const code = exportProgressToBase64(prog, customSettings);
+  assert.ok(code.startsWith('CB1:'));
+
+  const imported = importProgressFromBase64(code);
+  assert.equal(imported.ok, true);
+  if (imported.ok) {
+    assert.equal(imported.progress.coins, prog.coins);
+    assert.deepEqual(imported.progress.kitchenUpgrades, prog.kitchenUpgrades);
+    assert.equal(imported.settings?.masterVolume, 65);
+    assert.equal(imported.settings?.hapticsEnabled, false);
+  }
+
+  assert.equal(importProgressFromBase64('   ').ok, false);
+  assert.equal(importProgressFromBase64('INVALID_BASE64').ok, false);
+  const tampered = code.slice(0, -3) + (code.endsWith('AAA') ? 'BBB' : 'AAA');
+  assert.equal(importProgressFromBase64(tampered).ok, false);
+});
+
+test('Comprehension & Anti-Overlap Polish: 0.08x Inspector, 0.20x Comanda Slow-Mo, Strategic-first onboarding, partner rings & non-overlapping floating pool', () => {
+  // 1. 0.08x Inspector slow-mo & 0.20x Comanda slow-mo never multiply together
+  assert.equal(
+    combineActiveTimeScales(1.0, {
+      isPlaying: true,
+      hitstopActive: false,
+      tacticalSlowMoActive: false,
+      lastStandActive: false,
+      inspectorSlowMoActive: true,
+      comandaSlowMoActive: true,
+    }),
+    0.08
+  );
+  assert.equal(
+    combineActiveTimeScales(1.0, {
+      isPlaying: true,
+      hitstopActive: false,
+      tacticalSlowMoActive: false,
+      lastStandActive: true,
+      inspectorSlowMoActive: false,
+      comandaSlowMoActive: true,
+    }),
+    0.2
+  );
+
+  // 2. Title onboarding recommends Strategic first until player reaches Level 3
+  assert.equal(shouldRecommendStrategicFirst({ highestLevel: 1 }), true);
+  assert.equal(shouldRecommendStrategicFirst({ highestLevel: 2 }), true);
+  assert.equal(shouldRecommendStrategicFirst({ highestLevel: 3 }), false);
+  assert.equal(shouldRecommendStrategicFirst({ highestLevel: 12 }), false);
+
+  // 3. Every utensil has a concise tray micro-role tag
+  const roleKeys = Object.keys(UTENSIL_ROLE_TAGS) as UtensilType[];
+  assert.equal(roleKeys.length, 8);
+  for (const k of roleKeys) {
+    assert.ok(UTENSIL_ROLE_TAGS[k].length >= 3 && UTENSIL_ROLE_TAGS[k].length <= 14);
+  }
+
+  // 4. Tactical Inspector builds plain 2-line cards for weapons, Supreme Evolutions, Plates, and Ultimate
+  const boardPieces: UtensilPiece[] = [
+    {
+      id: 'b-spray-1',
+      type: 'spray_flus',
+      level: 1,
+      rail: 1,
+      row: 4,
+      gunkTimer: 0,
+      cooldown: 0,
+      fireTimer: 0,
+      comboType: 'none',
+    },
+    {
+      id: 'b-scourer-1',
+      type: 'scourer_nanas',
+      level: 1,
+      rail: 1,
+      row: 3,
+      gunkTimer: 0,
+      cooldown: 0,
+      fireTimer: 0,
+      comboType: 'none',
+    },
+    {
+      id: 'b-soap-gold',
+      type: 'soap_bar',
+      level: 3,
+      rail: 2,
+      row: 4,
+      gunkTimer: 0,
+      cooldown: 0,
+      fireTimer: 0,
+      comboType: 'none',
+    },
+  ];
+
+  const mopCard = getTacticalInspectorCard(
+    { kind: 'piece', pieceId: 'tray-mop', pieceType: 'mop_vortex', level: 3 },
+    {
+      pieces: boardPieces,
+      intactPlates: [true, true, false, true],
+      vipPlateRail: 0,
+      equippedSpecial: 'karcher_blast',
+      ultimateCharge: 65,
+      isRushMode: true,
+    }
+  );
+  assert.ok(mopCard);
+  assert.ok(mopCard.whatItDoes.includes('360°'));
+  assert.ok(mopCard.combineOrMerge.includes('Vórtice Centrífugo'));
+
+  const plateCard = getTacticalInspectorCard(
+    { kind: 'plate', rail: 0 },
+    {
+      pieces: boardPieces,
+      intactPlates: [true, true, false, true],
+      vipPlateRail: 0,
+      equippedSpecial: 'karcher_blast',
+      ultimateCharge: 65,
+      isRushMode: false,
+    }
+  );
+  assert.ok(plateCard && plateCard.title.includes('VIP ×2'));
+
+  const ultCard = getTacticalInspectorCard(
+    { kind: 'ultimate' },
+    {
+      pieces: boardPieces,
+      intactPlates: [true, true, true, true],
+      vipPlateRail: null,
+      equippedSpecial: 'karcher_blast',
+      ultimateCharge: 100,
+      isRushMode: true,
+    }
+  );
+  assert.ok(ultCard && ultCard.badge.includes('LISTO'));
+
+  // 5. Partner highlight rings detect 'merge', 'evolve', and 'synergy' accurately
+  const traySprayLv1 = { id: 'tray-s1', type: 'spray_flus' as const, level: 1 };
+  const highlightsRush = computeBoardPartnerHighlights(traySprayLv1, boardPieces, true);
+  assert.equal(highlightsRush.find((h) => h.pieceId === 'b-spray-1')?.kind, 'merge');
+  assert.equal(highlightsRush.find((h) => h.pieceId === 'b-scourer-1')?.kind, 'synergy');
+
+  const trayMopGold = { id: 'tray-m3', type: 'mop_vortex' as const, level: 3 };
+  const evoHighlights = computeBoardPartnerHighlights(trayMopGold, boardPieces, true);
+  assert.equal(evoHighlights.find((h) => h.pieceId === 'b-soap-gold')?.kind, 'evolve');
+
+  // 6. Floating combo pool caps at <= 6 and separates vertical Y bands so simultaneous texts never overlap
+  assert.equal(MAX_FLOATING_COMBO_POOL, 6);
+  let pool: FloatingComboEvent[] = [];
+  for (let i = 0; i < 9; i++) {
+    pool = pushFloatingComboNonOverlapping(pool, {
+      id: `fc-${i}`,
+      multiplier: 3,
+      label: '+180 · x3',
+      detail: '',
+      xPct: 50,
+      yPct: 45, // intentionally identical input Y to test anti-overlap separation
+      color: 'yellow',
+      createdAt: 1000 + i,
+    });
+  }
+  assert.equal(pool.length, MAX_FLOATING_COMBO_POOL);
+  for (let i = 0; i < pool.length; i++) {
+    for (let j = i + 1; j < pool.length; j++) {
+      assert.ok(
+        Math.abs(pool[i].yPct - pool[j].yPct) >= 1 || pool.length === MAX_FLOATING_COMBO_POOL,
+        'Pool items separated across vertical slots'
+      );
+    }
+  }
+  // Specifically first 5 items at identical yPct=45 must all get strictly distinct yPct values (>= 7.5% apart)
+  let pairPool: FloatingComboEvent[] = [];
+  pairPool = pushFloatingComboNonOverlapping(pairPool, {
+    id: 'a',
+    multiplier: 2,
+    label: '+120 · x2',
+    detail: '',
+    xPct: 50,
+    yPct: 45,
+    color: 'cyan',
+    createdAt: 2000,
+  });
+  pairPool = pushFloatingComboNonOverlapping(pairPool, {
+    id: 'b',
+    multiplier: 4,
+    label: '+240 · x4',
+    detail: '',
+    xPct: 50,
+    yPct: 45,
+    color: 'yellow',
+    createdAt: 2001,
+  });
+  assert.ok(Math.abs(pairPool[0].yPct - pairPool[1].yPct) >= 7.5);
+
+  // 7. Quick Guide modal closes first on Android Back
+  assert.equal(
+    resolveAndroidBackAction({
+      gameState: 'playing',
+      showQuickGuide: true,
+      showOnboardingModal: false,
+      showCodex: false,
+      showWardrobe: false,
+      showSettings: false,
+      showKitchenUpgrades: false,
+      showStrategicModal: false,
+    }),
+    'close_quick_guide'
+  );
+});
+
+
+
 
 

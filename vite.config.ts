@@ -14,12 +14,12 @@ export default defineConfig(() => {
         includeAssets: ['icon.svg', 'apple-touch-icon.png'],
         manifest: {
           id: '/',
-          name: 'Chef Bastion: Higiene Letal 3D',
-          short_name: 'ChefBastion',
+          name: 'Chef Bastion',
+          short_name: 'Chef Bastion',
           description:
-            'Juego casual 3D de estrategia por raíles, Bullet-Hell de desinfección y puzzles tácticos.',
-          theme_color: '#451a03',
-          background_color: '#451a03',
+            'Chef Bastion por CritFuse Mobile Games — Defiende tu cocina 3D combinando armas de limpieza en tiempo real.',
+          theme_color: '#0B0F17',
+          background_color: '#0B0F17',
           display: 'standalone',
           orientation: 'portrait',
           start_url: '/',

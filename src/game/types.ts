@@ -1,4 +1,5 @@
 export type GameState = 'title' | 'playing' | 'paused' | 'gameover';
+export type GameMode = 'rush' | 'strategic';
 
 export type WorldId = 'sunny_counter' | 'fridge_vault' | 'iron_stoves' | 'pastry_marble';
 
@@ -55,10 +56,18 @@ export type HatId = 'classic_toque' | 'duck_shower_cap' | 'bucket_helmet' | 'tp_
 export type ArmorId = 'white_apron' | 'hazmat_epi' | 'golden_scourer_mail';
 export type SpecialWeaponId = 'karcher_blast' | 'baking_volcano' | 'knife_roomba';
 
+export type SupremeEvolutionId =
+  | 'centrifuge_vortex'   // Jabón 45° (Nv.3) + Fregona (Nv.3)
+  | 'plasma_uv_cannon'    // Aerosol UV (Nv.3) + Estropajo (Nv.3)
+  | 'ricochet_washer'     // Flus-Flus (Nv.3) + Escuadra (Nv.3)
+  | 'tesla_sanitary_coil' // Aerosol UV (Nv.3) + Aerosol UV (Nv.3)
+  | 'foam_mortar';        // Flus-Flus (Nv.3) + Jabón 45° (Nv.3)
+
 export interface UtensilPiece {
   id: string;
   type: UtensilType;
-  level: number;
+  level: number;       // 1 = Base, 2 = Plata, 3 = Oro, 4 = Evolución Suprema
+  evolutionId?: SupremeEvolutionId;
   rail: number | null; // 0..3 when on board, null when in tray
   row: number | null;  // 0..6 when on board (0 = top near bugs, 6 = bottom near Chef)
   gunkTimer: number;   // > 0 means "Pringada de Mugre" (disabled until tapped/moved or timer expires)
@@ -191,11 +200,16 @@ export interface Projectile {
     | 'enemy_acid'
     | 'reflected_bubble'
     | 'roomba_blade'
-    | 'volcano_foam';
+    | 'volcano_foam'
+    | 'plasma_wave'
+    | 'ricochet_jet'
+    | 'mortar_shell';
   pierceShield: boolean;
   isExplosiveOrThermal?: boolean;
   fromDiagonalFoam: boolean;
   fromVortex: boolean;
+  bouncesLeft?: number;
+  aoeRadius?: number;
   life: number;
 }
 
@@ -232,6 +246,21 @@ export interface AchievementDef {
   unlockCostCoins: number;
 }
 
+export type KitchenUpgradeId =
+  | 'acidResistance'
+  | 'streakCoinBonus'
+  | 'whipCooldown'
+  | 'ultBaseCharge';
+
+export type KitchenUpgradeLevel = 0 | 1 | 2 | 3;
+
+export interface KitchenUpgrades {
+  acidResistance: KitchenUpgradeLevel;
+  streakCoinBonus: KitchenUpgradeLevel;
+  whipCooldown: KitchenUpgradeLevel;
+  ultBaseCharge: KitchenUpgradeLevel;
+}
+
 export interface PlayerProgress {
   currentLevel: number;         // 1..60+ (auto-saved!)
   highestLevel: number;
@@ -247,6 +276,9 @@ export interface PlayerProgress {
   equippedSpecial: SpecialWeaponId;
   bestScore: number;
   totalBugsCleaned: number;
+  bestRushSeconds?: number;
+  unlockedRushMilestones?: string[];
+  kitchenUpgrades?: KitchenUpgrades;
 }
 
 export interface GameSettings {
@@ -257,5 +289,34 @@ export interface GameSettings {
   gameSpeedMultiplier: 0.75 | 1.0 | 1.25;
   tacticalSlowMo: boolean;
   screenShake: boolean;
+  hapticsEnabled: boolean;
   smartComboHints: 'onboarding' | 'always' | 'off';
+  prioritize60Fps?: boolean;
 }
+
+export type TacticalInspectionTarget =
+  | {
+      kind: 'piece';
+      pieceId: string;
+      pieceType?: UtensilType;
+      level?: number;
+      evolutionId?: SupremeEvolutionId;
+    }
+  | { kind: 'plate'; rail: number }
+  | { kind: 'ultimate' };
+
+export interface TacticalInspectorCardData {
+  title: string;
+  badge: string;
+  whatItDoes: string;
+  combineOrMerge: string;
+  accent: 'cyan' | 'yellow' | 'pink' | 'green';
+}
+
+export interface BoardPartnerHighlight {
+  pieceId: string;
+  rail: number;
+  row: number;
+  kind: 'merge' | 'evolve' | 'synergy';
+}
+

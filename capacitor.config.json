@@ -1,8 +1,8 @@
 {
-  "appId": "com.chefbastion.game",
+  "appId": "com.critfuse.chefbastion",
   "appName": "Chef Bastion",
   "webDir": "dist",
-  "backgroundColor": "#451a03",
+  "backgroundColor": "#0B0F17",
   "android": {
     "allowMixedContent": false,
     "captureInput": true,

@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { ArmorId, BugType, HatId, UtensilType } from './types';
+import { ArmorId, BugType, HatId, SpecialWeaponId, SupremeEvolutionId, UtensilType } from './types';
 
 // ============================================================================
 // 1. MOTOR DE TINTA NEGRA Y CEL-SHADING PURO (ESTILO ILUSTRACIÓN 3D)
@@ -39,6 +39,7 @@ export function createToonMaterial(
     emissiveIntensity?: number;
     transparent?: boolean;
     opacity?: number;
+    depthWrite?: boolean;
   }
 ): THREE.MeshToonMaterial {
   return new THREE.MeshToonMaterial({
@@ -52,6 +53,7 @@ export function createToonMaterial(
     emissiveIntensity: options?.emissiveIntensity ?? 0,
     transparent: options?.transparent ?? false,
     opacity: options?.opacity ?? 1,
+    depthWrite: options?.depthWrite ?? true,
   });
 }
 
@@ -63,7 +65,8 @@ export function createToonMaterial(
 export function addInkOutline(
   groupOrMesh: THREE.Object3D,
   _thickness = 0.028,
-  color = INK_COLOR_HEX
+  color = INK_COLOR_HEX,
+  enableDynamicShadows = false
 ): void {
   const outlineMat = new THREE.MeshBasicMaterial({
     color,
@@ -93,8 +96,8 @@ export function addInkOutline(
   });
 
   for (const mesh of meshesToOutline) {
-    mesh.castShadow = true;
-    mesh.receiveShadow = true;
+    mesh.castShadow = enableDynamicShadows;
+    mesh.receiveShadow = enableDynamicShadows;
     const scaleFactor =
       typeof mesh.userData.outlineScale === 'number'
         ? mesh.userData.outlineScale
@@ -490,17 +493,171 @@ function createBottleLabelTexture(
 // 3. ARSENAL "HIGIENE LETAL" 3D (FIEL A LA IMAGEN 1794109185461.jpg)
 // ============================================================================
 
-export function buildUtensilMesh(type: UtensilType, _isSoftwareGl = false): THREE.Group {
+export function buildUtensilMesh(
+  type: UtensilType,
+  _isSoftwareGl = false,
+  level = 1,
+  evolutionId?: SupremeEvolutionId
+): THREE.Group {
   const root = new THREE.Group();
-  root.scale.setScalar(0.75);
-  root.add(createComicContactShadow(0.54, 0.46, 0.14));
+  const tierScale = evolutionId ? 0.92 : level >= 3 ? 0.86 : level === 2 ? 0.81 : 0.75;
+  root.scale.setScalar(tierScale);
+  root.add(createComicContactShadow(evolutionId ? 0.68 : 0.54, evolutionId ? 0.62 : 0.46, 0.14));
 
   // Tilt -18° back toward the camera so front labels, triggers, and nozzles pop clearly
   const group = new THREE.Group();
   group.rotation.x = -THREE.MathUtils.degToRad(18);
   root.add(group);
 
-  if (type === 'spray_flus') {
+  // Silver Lv.2 / Gold Lv.3 / Supreme Lv.4 Pedestal Ring on Countertop
+  if (evolutionId || level >= 2) {
+    const ringHex = evolutionId ? 0xfde047 : level >= 3 ? 0xfacc15 : 0xe2e8f0;
+    const emissiveHex = evolutionId ? 0xe879f9 : level >= 3 ? 0xd97706 : 0x64748b;
+    const tierCollar = new THREE.Mesh(
+      new THREE.TorusGeometry(evolutionId ? 0.52 : 0.44, evolutionId ? 0.075 : 0.055, 14, 28),
+      createToonMaterial(ringHex, { emissive: emissiveHex, emissiveIntensity: evolutionId ? 0.55 : 0.35 })
+    );
+    tierCollar.rotation.x = Math.PI / 2;
+    tierCollar.position.y = 0.07;
+    root.add(tierCollar);
+
+    const crestCount = evolutionId ? 4 : level >= 3 ? 3 : 2;
+    for (let cIdx = 0; cIdx < crestCount; cIdx++) {
+      const ang = (cIdx / crestCount) * Math.PI * 2;
+      const crest = new THREE.Mesh(
+        new THREE.ConeGeometry(0.08, evolutionId ? 0.24 : 0.18, 12),
+        createToonMaterial(ringHex, { emissive: emissiveHex, emissiveIntensity: 0.4 })
+      );
+      const rDist = evolutionId ? 0.52 : 0.44;
+      crest.position.set(Math.cos(ang) * rDist, 0.16, Math.sin(ang) * rDist);
+      root.add(crest);
+    }
+  }
+
+  if (evolutionId === 'centrifuge_vortex') {
+    // EVOLUCIÓN 1: VÓRTICE CENTRÍFUGO (Jabón 45° + Fregona -> Turbina remolino turquesa/rosa)
+    const baseDrum = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.46, 0.52, 0.38, 28),
+      createToonMaterial(0x0f766e)
+    );
+    baseDrum.position.y = 0.22;
+    group.add(baseDrum);
+
+    const rotor = new THREE.Group();
+    rotor.position.y = 0.48;
+    rotor.name = 'anim_part';
+    for (let i = 0; i < 6; i++) {
+      const ang = (i / 6) * Math.PI * 2;
+      const blade = new THREE.Mesh(
+        new THREE.BoxGeometry(0.16, 0.22, 0.52),
+        createToonMaterial(i % 2 === 0 ? 0x2dd4bf : 0xf472b6)
+      );
+      blade.position.set(Math.cos(ang) * 0.28, 0, Math.sin(ang) * 0.28);
+      blade.rotation.y = -ang + 0.55;
+      rotor.add(blade);
+    }
+    const core = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.16, 0.2, 0.62, 20),
+      createToonMaterial(0xfacc15, { emissive: 0xd97706, emissiveIntensity: 0.35 })
+    );
+    core.position.y = 0.12;
+    rotor.add(core);
+    group.add(rotor);
+  } else if (evolutionId === 'plasma_uv_cannon') {
+    // EVOLUCIÓN 2: CAÑÓN DE PLASMA UV (Aerosol UV + Estropajo -> Cañón ancho de ondas violetas)
+    const chassis = new THREE.Mesh(
+      new THREE.BoxGeometry(0.86, 0.44, 0.72),
+      createToonMaterial(0x581c87)
+    );
+    chassis.position.y = 0.28;
+    group.add(chassis);
+
+    const emitterArc = new THREE.Mesh(
+      new THREE.TorusGeometry(0.36, 0.09, 14, 24, Math.PI),
+      createToonMaterial(0xe879f9, { emissive: 0xa855f7, emissiveIntensity: 0.75 })
+    );
+    emitterArc.position.set(0, 0.56, -0.26);
+    emitterArc.name = 'anim_part';
+    group.add(emitterArc);
+
+    const twinBarrels = new THREE.Group();
+    [-0.24, 0.24].forEach((bx) => {
+      const barrel = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.12, 0.14, 0.58, 20),
+        createToonMaterial(0x22c55e)
+      );
+      barrel.rotation.x = Math.PI / 2;
+      barrel.position.set(bx, 0.46, -0.26);
+      twinBarrels.add(barrel);
+    });
+    group.add(twinBarrels);
+  } else if (evolutionId === 'ricochet_washer') {
+    // EVOLUCIÓN 3: HIDROLIMPIADORA RICOCHET (Flus-Flus + Escuadra -> Metralleta rotativa cian/amarilla)
+    const turretBase = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.42, 0.48, 0.34, 24),
+      createToonMaterial(0xfacc15)
+    );
+    turretBase.position.y = 0.2;
+    group.add(turretBase);
+
+    const gatling = new THREE.Group();
+    gatling.position.set(0, 0.56, -0.08);
+    gatling.name = 'anim_part';
+    for (let b = 0; b < 4; b++) {
+      const ang = (b / 4) * Math.PI * 2;
+      const pipe = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.075, 0.075, 0.72, 16),
+        createToonMaterial(0x06b6d4)
+      );
+      pipe.rotation.x = Math.PI / 2;
+      pipe.position.set(Math.cos(ang) * 0.14, Math.sin(ang) * 0.14, -0.22);
+      gatling.add(pipe);
+    }
+    group.add(gatling);
+  } else if (evolutionId === 'tesla_sanitary_coil') {
+    // EVOLUCIÓN 4: BOBINA TESLA SANITARIA (Aerosol UV + Aerosol UV -> Torre autónoma de rayos encadenados)
+    const coilPedestal = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.36, 0.46, 0.36, 24),
+      createToonMaterial(0x4c1d95)
+    );
+    coilPedestal.position.y = 0.2;
+    group.add(coilPedestal);
+
+    for (let rIdx = 0; rIdx < 3; rIdx++) {
+      const ring = new THREE.Mesh(
+        new THREE.TorusGeometry(0.32 - rIdx * 0.05, 0.045, 12, 24),
+        createToonMaterial(0xe879f9, { emissive: 0xa855f7, emissiveIntensity: 0.7 })
+      );
+      ring.rotation.x = Math.PI / 2;
+      ring.position.y = 0.48 + rIdx * 0.22;
+      group.add(ring);
+    }
+
+    const orb = new THREE.Mesh(
+      new THREE.OctahedronGeometry(0.24, 1),
+      createToonMaterial(0x38bdf8, { emissive: 0xa855f7, emissiveIntensity: 0.9 })
+    );
+    orb.position.y = 1.12;
+    orb.name = 'anim_part';
+    group.add(orb);
+  } else if (evolutionId === 'foam_mortar') {
+    // EVOLUCIÓN 5: MORTERO ESPUMOSO (Flus-Flus + Jabón 45° -> Cañón parabólico rosa/turquesa)
+    const carriage = new THREE.Mesh(
+      new THREE.BoxGeometry(0.76, 0.28, 0.68),
+      createToonMaterial(0xf472b6)
+    );
+    carriage.position.y = 0.18;
+    group.add(carriage);
+
+    const mortarTube = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.28, 0.22, 0.78, 24),
+      createToonMaterial(0x06b6d4)
+    );
+    mortarTube.position.set(0, 0.62, -0.06);
+    mortarTube.rotation.x = -0.52;
+    mortarTube.name = 'anim_part';
+    group.add(mortarTube);
+  } else if (type === 'spray_flus') {
     // 1. SPRAY "FLUS-FLUS" TÁCTICO: Turquoise-Cyan sculpted bottle + Pink/Coral "Flus-Flus" label + Red Trigger Spray Head
     const bottleMat = createToonMaterial(0xffffff, {
       map: createBottleLabelTexture('#22d3ee', '#fb7185', 'Flus-', 'Flus'),
@@ -563,14 +720,18 @@ export function buildUtensilMesh(type: UtensilType, _isSoftwareGl = false): THRE
 
     const foamGroup = new THREE.Group();
     foamGroup.name = 'anim_part';
-    const bubbleMat = createToonMaterial(0xe0f2fe, { transparent: true, opacity: 0.9 });
+    // Max 4 stylized opaque low-poly foam spheres (zero alpha overdraw on mobile GPUs)
+    const bubbleMat = createToonMaterial(0xe0f2fe);
     [
-      [-0.24, 0.52, 0.12, 0.12],
-      [0.22, 0.54, -0.1, 0.14],
-      [0.02, 0.58, 0.15, 0.11],
+      [-0.24, 0.48, 0.12, 0.11],
+      [0.22, 0.5, -0.1, 0.12],
+      [0.02, 0.52, 0.15, 0.1],
+      [-0.08, 0.47, -0.16, 0.09],
     ].forEach(([bx, by, bz, br]) => {
-      const b = new THREE.Mesh(new THREE.SphereGeometry(br, 28, 28), bubbleMat);
+      const b = new THREE.Mesh(new THREE.SphereGeometry(br, 8, 6), bubbleMat);
       b.position.set(bx, by, bz);
+      b.castShadow = false;
+      b.receiveShadow = false;
       foamGroup.add(b);
     });
     group.add(foamGroup);
@@ -763,8 +924,13 @@ export function buildUtensilMesh(type: UtensilType, _isSoftwareGl = false): THRE
 /**
  * Builds a semi-transparent 3D Ghost (`opacity: 0.45`) of the target utensil for tutorial onboarding cells.
  */
-export function buildGhostUtensilMesh(type: UtensilType, isSoftwareGl = false): THREE.Group {
-  const ghost = buildUtensilMesh(type, isSoftwareGl);
+export function buildGhostUtensilMesh(
+  type: UtensilType,
+  isSoftwareGl = false,
+  level = 1,
+  evolutionId?: SupremeEvolutionId
+): THREE.Group {
+  const ghost = buildUtensilMesh(type, isSoftwareGl, level, evolutionId);
   ghost.traverse((child) => {
     if (child instanceof THREE.Mesh) {
       if (child.userData.isInkOutline || child.name === 'contact_shadow' || child.name === 'gunk_overlay') {
@@ -784,6 +950,67 @@ export function buildGhostUtensilMesh(type: UtensilType, isSoftwareGl = false): 
     }
   });
   return ghost;
+}
+
+/**
+ * Builds the 3D "Roomba Kamikaze con Cuchillos" autonomous horizontal patrol bot
+ * deployed in front of the 4 plates when defeating the Min 3:00 Rush Boss or picking its Comanda!
+ */
+export function buildKnifeRoombaMesh(): THREE.Group {
+  const root = new THREE.Group();
+  root.scale.setScalar(0.78);
+  root.add(createComicContactShadow(0.62, 0.62, 0.08));
+
+  const bodyGroup = new THREE.Group();
+  root.add(bodyGroup);
+
+  const chassis = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.48, 0.52, 0.2, 28),
+    createToonMaterial(0x1e293b)
+  );
+  chassis.position.y = 0.14;
+  bodyGroup.add(chassis);
+
+  const bumperRing = new THREE.Mesh(
+    new THREE.TorusGeometry(0.49, 0.05, 12, 28),
+    createToonMaterial(0xef4444, { emissive: 0xdc2626, emissiveIntensity: 0.35 })
+  );
+  bumperRing.rotation.x = Math.PI / 2;
+  bumperRing.position.y = 0.14;
+  bodyGroup.add(bumperRing);
+
+  const ledDome = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.18, 0.22, 0.09, 20),
+    createToonMaterial(0x22d3ee, { emissive: 0x06b6d4, emissiveIntensity: 0.65 })
+  );
+  ledDome.position.y = 0.27;
+  bodyGroup.add(ledDome);
+
+  const bladesGroup = new THREE.Group();
+  bladesGroup.position.y = 0.18;
+  bladesGroup.name = 'anim_blades';
+  const steelMat = createToonMaterial(0xf8fafc);
+  const handleMat = createToonMaterial(0xfacc15);
+
+  for (let i = 0; i < 4; i++) {
+    const ang = (i / 4) * Math.PI * 2;
+    const knifeArm = new THREE.Group();
+    knifeArm.rotation.y = ang;
+
+    const handle = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.06, 0.22), handleMat);
+    handle.position.set(0, 0, 0.46);
+    const blade = new THREE.Mesh(new THREE.ConeGeometry(0.11, 0.44, 4), steelMat);
+    blade.rotation.x = Math.PI / 2;
+    blade.scale.set(1.2, 1, 0.28);
+    blade.position.set(0, 0, 0.74);
+
+    knifeArm.add(handle, blade);
+    bladesGroup.add(knifeArm);
+  }
+  bodyGroup.add(bladesGroup);
+
+  addInkOutline(bodyGroup);
+  return root;
 }
 
 // ============================================================================
@@ -1568,3 +1795,81 @@ export function buildOvercookedKitchenProps(railToWorldX: (r: number) => number)
 
   return { root, bastionPlates, lateralVents };
 }
+
+/**
+ * Builds a 3D showcase prop for the Wardrobe "⚔️ Armas Élite" tab so players can inspect
+ * their equipped or previewed Ultimate weapon (Kärcher, Volcán Químico, or Roomba Kamikaze) in 3D.
+ */
+export function buildWardrobeSpecialShowcaseMesh(specialId: SpecialWeaponId): THREE.Group {
+  const root = new THREE.Group();
+
+  // Pedestal disc
+  const pedestal = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.62, 0.7, 0.14, 28),
+    createToonMaterial(0x1e293b)
+  );
+  pedestal.position.y = 0.07;
+  const goldRim = new THREE.Mesh(
+    new THREE.TorusGeometry(0.64, 0.04, 12, 28),
+    createToonMaterial(0xfacc15)
+  );
+  goldRim.rotation.x = Math.PI / 2;
+  goldRim.position.y = 0.14;
+  root.add(pedestal, goldRim);
+
+  if (specialId === 'knife_roomba') {
+    const roomba = buildKnifeRoombaMesh();
+    roomba.position.y = 0.16;
+    roomba.scale.setScalar(0.95);
+    root.add(roomba);
+    return root;
+  }
+
+  if (specialId === 'baking_volcano') {
+    const volcanoGroup = new THREE.Group();
+    const cone = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.22, 0.52, 0.72, 24),
+      createToonMaterial(0x9a3412)
+    );
+    cone.position.y = 0.5;
+    const craterRim = new THREE.Mesh(
+      new THREE.TorusGeometry(0.22, 0.055, 12, 24),
+      createToonMaterial(0xf97316)
+    );
+    craterRim.rotation.x = Math.PI / 2;
+    craterRim.position.y = 0.86;
+    const lavaFoam = new THREE.Mesh(
+      new THREE.SphereGeometry(0.2, 20, 18),
+      createToonMaterial(0xfef08a)
+    );
+    lavaFoam.position.y = 0.92;
+    volcanoGroup.add(cone, craterRim, lavaFoam);
+    addInkOutline(volcanoGroup);
+    root.add(volcanoGroup);
+    return root;
+  }
+
+  // Default: karcher_blast ("Hidrolimpiadora Kärcher Alta Presión")
+  const karcherGroup = new THREE.Group();
+  const tank = new THREE.Mesh(
+    new THREE.BoxGeometry(0.5, 0.68, 0.42),
+    createToonMaterial(0xfacc15)
+  );
+  tank.position.y = 0.48;
+  const cap = new THREE.Mesh(
+    new THREE.BoxGeometry(0.52, 0.14, 0.44),
+    createToonMaterial(0x0f172a)
+  );
+  cap.position.y = 0.84;
+  const lance = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.045, 0.055, 0.82, 16),
+    createToonMaterial(0x38bdf8)
+  );
+  lance.position.set(0.26, 0.76, 0.12);
+  lance.rotation.z = -0.35;
+  karcherGroup.add(tank, cap, lance);
+  addInkOutline(karcherGroup);
+  root.add(karcherGroup);
+  return root;
+}
+

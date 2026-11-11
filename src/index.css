@@ -5,6 +5,7 @@
   body,
   #root {
     width: 100%;
+    height: 100%;
     height: 100dvh;
     margin: 0;
     padding: 0;
@@ -30,30 +31,62 @@
   }
 }
 
+/* Native APK / iOS / 20:9 Safe-Area & Gesture-Guard Utilities */
+.app-viewport-shell {
+  width: 100%;
+  height: 100%;
+  height: 100dvh;
+  overflow: hidden;
+  overscroll-behavior: none;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
+}
+
+.apk-safe-top {
+  padding-top: max(env(safe-area-inset-top, 0px), 12px);
+}
+
+@media (max-width: 768px), (pointer: coarse) {
+  .apk-safe-top {
+    padding-top: max(env(safe-area-inset-top, 0px), 36px);
+  }
+}
+
+.apk-safe-bottom {
+  padding-bottom: max(env(safe-area-inset-bottom, 0px), 14px);
+  touch-action: none;
+  overscroll-behavior: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.apk-touch-target {
+  min-width: 44px;
+  min-height: 44px;
+  pointer-events: auto;
+  touch-action: manipulation;
+}
+
 @keyframes combo-float {
   0% {
     opacity: 0;
-    transform: translate(-50%, 10px) scale(0.65) rotate(-4deg);
+    transform: translate(-50%, 6px) scale(0.84);
   }
-  18% {
+  20% {
     opacity: 1;
-    transform: translate(-50%, -6px) scale(1.12) rotate(-2deg);
+    transform: translate(-50%, -4px) scale(1.06);
   }
-  32% {
+  72% {
     opacity: 1;
-    transform: translate(-50%, -12px) scale(1) rotate(-2deg);
-  }
-  82% {
-    opacity: 1;
-    transform: translate(-50%, -26px) scale(1) rotate(-1deg);
+    transform: translate(-50%, -18px) scale(1);
   }
   100% {
     opacity: 0;
-    transform: translate(-50%, -38px) scale(0.92) rotate(0deg);
+    transform: translate(-50%, -28px) scale(0.95);
   }
 }
 
 .animate-combo-float {
-  animation: combo-float 1.45s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  animation: combo-float 0.65s cubic-bezier(0.22, 1, 0.36, 1) forwards;
 }
-
