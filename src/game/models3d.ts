@@ -1112,11 +1112,15 @@ export function buildChefBastionMesh(hat: HatId, armor: ArmorId): THREE.Group {
     chef.add(armGroup);
   });
 
-  // 4. Smooth 32-Segment Head + Dark Brown Hair on the Back/Nape (matching 1794109185461.jpg!)
+  // 4. Smooth 32-Segment Head + Dark Brown Hair on the Back/Nape (wrapped in zero-offset chef_head_pivot for reactive threat gaze)
+  const headPivot = new THREE.Group();
+  headPivot.name = 'chef_head_pivot';
+  chef.add(headPivot);
+
   const head = new THREE.Mesh(new THREE.SphereGeometry(0.56, 32, 32), skinMat);
   head.scale.set(1.06, 0.96, 1.0);
   head.position.set(0, 1.62, 0.0);
-  chef.add(head);
+  headPivot.add(head);
 
   // Dark Brown Hair cap covering the back of the head (-Z)
   const hairBack = new THREE.Mesh(
@@ -1125,13 +1129,13 @@ export function buildChefBastionMesh(hat: HatId, armor: ArmorId): THREE.Group {
   );
   hairBack.rotation.x = -Math.PI * 0.54;
   hairBack.position.set(0, 1.64, -0.05);
-  chef.add(hairBack);
+  headPivot.add(hairBack);
 
   // Prominent Peach Ears on Left & Right
   [-0.6, 0.6].forEach((ex) => {
     const ear = new THREE.Mesh(new THREE.SphereGeometry(0.15, 24, 24), plainSkinMat);
     ear.position.set(ex, 1.6, -0.04);
-    chef.add(ear);
+    headPivot.add(ear);
   });
 
   // ICONIC CURVED HANDLEBAR MUSTACHE TIPS STICKING OUT PAST BOTH CHEEKS!
@@ -1145,7 +1149,7 @@ export function buildChefBastionMesh(hat: HatId, armor: ArmorId): THREE.Group {
     stacheCenterLobe.position.set(side * 0.18, 1.44, 0.52);
     stacheCenterLobe.rotation.z = side * -0.18;
     stacheCenterLobe.userData.skipOutline = true;
-    chef.add(stacheCenterLobe);
+    headPivot.add(stacheCenterLobe);
 
     // Wide curled mustache tips extending past `x = ±0.76` so they silhouette out on both sides of the head!
     const curledTip = new THREE.Mesh(
@@ -1154,7 +1158,7 @@ export function buildChefBastionMesh(hat: HatId, armor: ArmorId): THREE.Group {
     );
     curledTip.position.set(side * 0.66, 1.48, -0.06);
     curledTip.rotation.z = side === 1 ? -0.32 : Math.PI + 0.32;
-    chef.add(curledTip);
+    headPivot.add(curledTip);
   });
 
   // Front Eyes & Nose (for Wardrobe 3D live preview)
@@ -1174,7 +1178,7 @@ export function buildChefBastionMesh(hat: HatId, armor: ArmorId): THREE.Group {
     brow.rotation.z = idx === 0 ? 0.14 : -0.14;
     brow.userData.skipOutline = true;
 
-    chef.add(pupil, catchlight, brow);
+    headPivot.add(pupil, catchlight, brow);
   });
 
   const nose = new THREE.Mesh(
@@ -1182,10 +1186,11 @@ export function buildChefBastionMesh(hat: HatId, armor: ArmorId): THREE.Group {
     createToonMaterial(0xeb9b78)
   );
   nose.position.set(0, 1.58, 0.58);
-  chef.add(nose);
+  headPivot.add(nose);
 
   // 5. Tall Pleated White Chef Toque Hat (upright from 3/4 rear camera angle matching 1794109185461.jpg!)
   const hatGroup = new THREE.Group();
+  hatGroup.name = 'chef_hat_group';
   hatGroup.position.set(0, 2.0, -0.04);
   hatGroup.rotation.x = -0.16;
 
@@ -1234,7 +1239,7 @@ export function buildChefBastionMesh(hat: HatId, armor: ArmorId): THREE.Group {
     hatGroup.add(duck);
   }
 
-  chef.add(hatGroup);
+  headPivot.add(hatGroup);
 
   addInkOutline(chef);
 

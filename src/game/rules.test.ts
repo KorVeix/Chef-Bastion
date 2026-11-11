@@ -2,13 +2,24 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   ACHIEVEMENTS_CATALOG,
+  applyPhysicalKnockback,
   ARMORS_CATALOG,
+  BOSS_PHASE_BREAK_FLASH_SECONDS,
+  BOSS_PHASE_BREAK_HITSTOP_SECONDS,
   buildPlacementComboNotification,
+  CHEF_WHIP_COOLDOWN,
+  CHEF_WHIP_PUSH_CELLS,
+  CHEF_WHIP_STUN_SECONDS,
   classifyBugElimination,
   checkPhaseTransition,
+  combineActiveTimeScales,
   computeBossDamageMultiplier,
+  computeConductiveUvChainTargets,
   computeDragComboPreviewLinks,
+  computeLiveMenuBuffs,
   computeSmartComboHints,
+  computeThermalShockResult,
+  computeVipVictoryCoins,
   computeWeaponRangeCells,
   createInitialBoardPieces,
   DEFAULT_PROGRESS,
@@ -27,9 +38,11 @@ import {
   isDynamicOnboardingLevel,
   isWorldUnlocked,
   moveOrSwapUtensil,
+  TILE_TRAIL_DURATION,
   UTENSIL_MICRO_TIPS,
 } from './rules';
-import { BugEnemy, BugType, UtensilPiece, UtensilType } from './types';
+import { soundEngine } from './audio';
+import { BugEnemy, BugType, TileChemicalState, UtensilPiece, UtensilType } from './types';
 
 test('evaluateBoardCombos detects Line Foam, Horizontal UV Bridge, Slip Vortex, and Deflect 90 combos', () => {
   const pieces: UtensilPiece[] = [
@@ -311,8 +324,14 @@ test('isDynamicOnboardingLevel is active ONLY on Levels 1-3 and tutorial targets
   const l1Init = createInitialBoardPieces(1);
   const g1Step1 = getTutorialGuideForLevel(1, l1Init);
   assert.equal(g1Step1?.nextTarget?.shortTag, '🧽 ESTROPAJO');
-  const g1Step2 = getTutorialGuideForLevel(1, moveOrSwapUtensil(l1Init, 'u-scourer-1', 1, 2));
+  const g1Step2 = getTutorialGuideForLevel(1, moveOrSwapUtensil(l1Init, 'u-scourer-1', 1, 3));
   assert.equal(g1Step2?.nextTarget?.shortTag, '🫧 ABANICO ×5');
+  const g1Done = getTutorialGuideForLevel(
+    1,
+    moveOrSwapUtensil(moveOrSwapUtensil(l1Init, 'u-scourer-1', 1, 3), 'u-spray-1', 1, 4)
+  );
+  assert.equal(g1Done?.nextTarget, null);
+  assert.equal(g1Done?.allTargetsPlaced, true);
 
   const l2Init = createInitialBoardPieces(2);
   const g2Step1 = getTutorialGuideForLevel(2, l2Init);
@@ -475,4 +494,136 @@ test('Boss Architecture: X5 Mini-Bosses and X0 3-Phase Grand Bosses enforce 66%/
     }) > 0
   );
 });
+
+test('Emergent Chemistry & Knockback: 4s trails, Conductive UV chain across wet cells, Thermal Shock +50% carapace + shrapnel, and 1-cell Knockback', () => {
+  assert.equal(TILE_TRAIL_DURATION, 4.0);
+
+  const makeBug = (id: string, rail: number, yProgress: number, overrides: Partial<BugEnemy> = {}): BugEnemy => ({
+    id,
+    type: 'speed_ant',
+    rail,
+    targetRail: rail,
+    yProgress,
+    hp: 60,
+    maxHp: 60,
+    hasShield: false,
+    isSlidingFromSoap: false,
+    hitByDiagonalFoam: false,
+    hitByBridgeBurn: false,
+    hitByVortexSpin: false,
+    slowTimer: 0,
+    flashTimer: 0,
+    attackWindup: 0,
+    koTimer: 0,
+    koStar: 1,
+    ...overrides,
+  });
+
+  // 1. Conductive UV chain across contiguous wet_soap tiles (skips dry isolated bugs)
+  const bSrc = makeBug('b-src', 1, 2, { wetTimer: 3.0 });
+  const bWetChain = makeBug('b-wet-2', 2, 3);
+  const bDryFar = makeBug('b-dry-far', 0, 5);
+  const chemTiles: TileChemicalState[] = [
+    { rail: 2, row: 2, kind: 'wet_soap', timer: 4.0 },
+    { rail: 2, row: 3, kind: 'wet_soap', timer: 3.5 },
+  ];
+  const chainIds = computeConductiveUvChainTargets('b-src', [bSrc, bWetChain, bDryFar], chemTiles);
+  assert.deepEqual(chainIds, ['b-wet-2']);
+
+  // 2. Thermal Shock ("Choque Térmico"): slowed/chilled bug hit by thermal/UV breaks +50% extra carapace & blasts 1-cell shrapnel
+  const chilledBeetle = makeBug('b-chilled', 1, 3, {
+    type: 'cap_beetle',
+    hp: 100,
+    maxHp: 100,
+    slowTimer: 1.5,
+  });
+  const nearbyAnt = makeBug('b-near', 2, 3);
+  const distantAnt = makeBug('b-far', 3, 6);
+  const shock = computeThermalShockResult(chilledBeetle, [chilledBeetle, nearbyAnt, distantAnt], false);
+  assert.equal(shock.triggered, true);
+  assert.equal(shock.bonusCarapaceDamage, 50);
+  assert.deepEqual(shock.shrapnelTargetIds, ['b-near']);
+
+  // 3. Physical Knockback: light/medium bugs pushed 1 cell back (e.g. re-entering UV Bridge), Grand Boss resists
+  const pushed = applyPhysicalKnockback(makeBug('b-push', 1, 3.2), {
+    pushCells: 1.0,
+    deflectToNeighbor: true,
+  });
+  assert.equal(pushed.applied, true);
+  assert.equal(pushed.nextYProgress, 2.2);
+  assert.equal(pushed.nextTargetRail, 2);
+
+  const grandBoss = makeBug('b-grand', 1, 3.0, { bossTier: 'grand' });
+  assert.equal(applyPhysicalKnockback(grandBoss).applied, false);
+});
+
+test('Menú Vivo & Plato VIP: 4 independent passive plate buffs deactivate when devoured and VIP plate doubles victory coins', () => {
+  const allIntact = computeLiveMenuBuffs([true, true, true, true]);
+  assert.equal(allIntact.thermalRateMult, 1.15);
+  assert.equal(allIntact.controlDurationMult, 1.15);
+  assert.equal(allIntact.frontalDamageMult, 1.15);
+  assert.equal(allIntact.ultChargeMult, 1.2);
+
+  const pizzaAndDessertEaten = computeLiveMenuBuffs([false, true, true, false]);
+  assert.equal(pizzaAndDessertEaten.thermalRateMult, 1.0);
+  assert.equal(pizzaAndDessertEaten.controlDurationMult, 1.15);
+  assert.equal(pizzaAndDessertEaten.frontalDamageMult, 1.15);
+  assert.equal(pizzaAndDessertEaten.ultChargeMult, 1.0);
+
+  // Level 6+ VIP Critic Plate doubles coins ONLY if that specific plate survives intact
+  assert.deepEqual(computeVipVictoryCoins(120, 2, [false, false, true, false]), {
+    coinsEarned: 240,
+    vipSaved: true,
+  });
+  assert.deepEqual(computeVipVictoryCoins(120, 2, [true, true, false, true]), {
+    coinsEarned: 120,
+    vipSaved: false,
+  });
+  assert.deepEqual(computeVipVictoryCoins(120, null, [true, true, true, true]), {
+    coinsEarned: 120,
+    vipSaved: false,
+  });
+});
+
+test('TimeScale Safeguards, Active Chef Constants & Boss Phase Hitstop: Math.min prevents 0.20x * 0.35x multiplication and Boss freeze is 60ms', () => {
+  assert.equal(CHEF_WHIP_COOLDOWN, 18.0);
+  assert.equal(CHEF_WHIP_PUSH_CELLS, 2.0);
+  assert.equal(CHEF_WHIP_STUN_SECONDS, 1.0);
+  assert.equal(BOSS_PHASE_BREAK_HITSTOP_SECONDS, 0.06);
+  assert.equal(BOSS_PHASE_BREAK_FLASH_SECONDS, 0.30);
+
+  // Both Tactical Slow-Mo (0.20x) and Salvada In Extremis (0.35x) active -> Math.min = 0.20 (NEVER 0.07!)
+  const combined = combineActiveTimeScales(1.0, {
+    isPlaying: true,
+    hitstopActive: false,
+    tacticalSlowMoActive: true,
+    lastStandActive: true,
+  });
+  assert.equal(combined, 0.2);
+
+  const lastStandOnly = combineActiveTimeScales(1.0, {
+    isPlaying: true,
+    hitstopActive: false,
+    tacticalSlowMoActive: false,
+    lastStandActive: true,
+  });
+  assert.equal(lastStandOnly, 0.35);
+});
+
+test('Pentatonic Audio SFX: chaining kills < 1.2s apart ascends pentatonic scale and >= 1.2s resets to root note', () => {
+  soundEngine.resetKillChain();
+  const k0 = soundEngine.registerKillChainStep(1000);
+  const k1 = soundEngine.registerKillChainStep(1800); // +800ms (< 1200ms)
+  const k2 = soundEngine.registerKillChainStep(2950); // +1150ms (< 1200ms)
+  assert.equal(k0.step, 0);
+  assert.equal(k1.step, 1);
+  assert.equal(k2.step, 2);
+  assert.ok(k2.freqHz > k1.freqHz && k1.freqHz > k0.freqHz);
+
+  // Waiting >= 1200ms resets back to root note (step 0)
+  const kReset = soundEngine.registerKillChainStep(4200); // +1250ms (>= 1200ms)
+  assert.equal(kReset.step, 0);
+  assert.equal(kReset.freqHz, k0.freqHz);
+});
+
 

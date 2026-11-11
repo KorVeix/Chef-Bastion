@@ -11,11 +11,13 @@ import {
   HatId,
   KillStarRating,
   LevelForecast,
+  LiveMenuBuffs,
   PlayerProgress,
   RangePreviewCell,
   SmartComboHint,
   SpecialWeaponId,
   TacticalOnboardingCardData,
+  TileChemicalState,
   UtensilPiece,
   UtensilType,
   WorldId,
@@ -28,15 +30,23 @@ export const MAX_CAMPAIGN_LEVELS = 60;
 export const LEVEL_DURATION_SECONDS = 120; // 2 minutos (120s) por nivel a partir del Nivel 5
 export const DEV_UNLOCK_ALL_WORLDS = false;
 
+export const STRATEGIC_BOOST_ULTIMATE_COST = 60;
+export const STRATEGIC_BOOST_SHIELD_COST = 80;
+
+// Emergent Chemistry, Menú Vivo & Active Chef Constants
+export const TILE_TRAIL_DURATION = 4.0;
+export const CHEF_WHIP_COOLDOWN = 18.0;
+export const CHEF_WHIP_PUSH_CELLS = 2.0;
+export const CHEF_WHIP_STUN_SECONDS = 1.0;
+export const BOSS_PHASE_BREAK_HITSTOP_SECONDS = 0.06; // 60ms physical hitstop
+export const BOSS_PHASE_BREAK_FLASH_SECONDS = 0.30;   // 300ms visual flash
+
 export const WORLD_UNLOCK_LEVELS: Record<WorldId, number> = {
   sunny_counter: 1,
   fridge_vault: 11,
   iron_stoves: 21,
   pastry_marble: 31,
 };
-
-export const STRATEGIC_BOOST_ULTIMATE_COST = 60;
-export const STRATEGIC_BOOST_SHIELD_COST = 80;
 
 export interface CircuitLink {
   fromRail: number;
@@ -881,7 +891,21 @@ export function getTutorialGuideForLevel(
   level: number,
   pieces: UtensilPiece[]
 ): TutorialLevelGuide | null {
+  const isInTray = (pieceId: string, pieceType: UtensilType) => {
+    const found = pieces.find((p) => p.id === pieceId) ?? pieces.find((p) => p.type === pieceType);
+    return !found || found.rail === null || found.row === null;
+  };
+
   if (level === 1) {
+    const placedScourer = pieces.find(
+      (p) => (p.id === 'u-scourer-1' || p.type === 'scourer_nanas') && p.rail !== null && p.row !== null
+    );
+    const sprayRail = placedScourer?.rail ?? 1;
+    const sprayRow =
+      placedScourer && placedScourer.row !== null
+        ? Math.min(GRID_ROWS - 1, placedScourer.row + (placedScourer.row <= 4 ? 2 : 1))
+        : 4;
+
     const targets: TutorialTargetCell[] = [
       {
         pieceId: 'u-scourer-1',
@@ -894,17 +918,13 @@ export function getTutorialGuideForLevel(
       {
         pieceId: 'u-spray-1',
         pieceType: 'spray_flus',
-        rail: 1,
-        row: 4,
-        label: '🔫 Flus-Flus detrás en [Raíl 2, Fila 5]',
+        rail: sprayRail,
+        row: sprayRow,
+        label: '🔫 Flus-Flus detrás en el mismo raíl',
         shortTag: '🫧 ABANICO ×5',
       },
     ];
-    const nextTarget =
-      targets.find((t) => {
-        const found = pieces.find((p) => p.id === t.pieceId || p.type === t.pieceType);
-        return !found || found.rail !== t.rail || found.row !== t.row;
-      }) ?? null;
+    const nextTarget = targets.find((t) => isInTray(t.pieceId, t.pieceType)) ?? null;
 
     return {
       level: 1,
@@ -917,6 +937,11 @@ export function getTutorialGuideForLevel(
   }
 
   if (level === 2) {
+    const firstUv = pieces.find((p) => p.id === 'u-aerosol-1' && p.rail !== null && p.row !== null);
+    const bridgeRail =
+      firstUv && firstUv.rail !== null ? (firstUv.rail < GRID_RAILS - 1 ? firstUv.rail + 1 : firstUv.rail - 1) : 2;
+    const bridgeRow = firstUv?.row ?? 2;
+
     const targets: TutorialTargetCell[] = [
       {
         pieceId: 'u-aerosol-1',
@@ -929,25 +954,21 @@ export function getTutorialGuideForLevel(
       {
         pieceId: 'u-aerosol-2',
         pieceType: 'aerosol_torch',
-        rail: 2,
-        row: 2,
+        rail: bridgeRail,
+        row: bridgeRow,
         label: '⚡ Aerosol UV 2 al lado en [Raíl 3, Fila 3]',
         shortTag: '⚡ PUENTE UV',
       },
       {
         pieceId: 'u-spray-1',
         pieceType: 'spray_flus',
-        rail: 1,
-        row: 4,
+        rail: firstUv?.rail ?? 1,
+        row: Math.min(GRID_ROWS - 1, bridgeRow + 2),
         label: '🔫 Flus-Flus detrás en [Raíl 2, Fila 5]',
         shortTag: '🔫 REMATAR',
       },
     ];
-    const nextTarget =
-      targets.find((t) => {
-        const found = pieces.find((p) => p.id === t.pieceId);
-        return !found || found.rail !== t.rail || found.row !== t.row;
-      }) ?? null;
+    const nextTarget = targets.find((t) => isInTray(t.pieceId, t.pieceType)) ?? null;
 
     return {
       level: 2,
@@ -960,6 +981,11 @@ export function getTutorialGuideForLevel(
   }
 
   if (level === 3) {
+    const placedSoap = pieces.find((p) => p.id === 'u-soap-1' && p.rail !== null && p.row !== null);
+    const mopRail =
+      placedSoap && placedSoap.rail !== null ? (placedSoap.rail > 0 ? placedSoap.rail - 1 : placedSoap.rail + 1) : 1;
+    const mopRow = placedSoap?.row ?? 2;
+
     const targets: TutorialTargetCell[] = [
       {
         pieceId: 'u-soap-1',
@@ -972,25 +998,21 @@ export function getTutorialGuideForLevel(
       {
         pieceId: 'u-mop-1',
         pieceType: 'mop_vortex',
-        rail: 1,
-        row: 2,
+        rail: mopRail,
+        row: mopRow,
         label: '🌪️ Fregona 360° al lado en [Raíl 2, Fila 3]',
         shortTag: '🌪️ VÓRTICE 3★',
       },
       {
         pieceId: 'u-spray-1',
         pieceType: 'spray_flus',
-        rail: 1,
-        row: 4,
+        rail: mopRail,
+        row: Math.min(GRID_ROWS - 1, mopRow + 2),
         label: '🔫 Flus-Flus de apoyo en [Raíl 2, Fila 5]',
         shortTag: '🔫 APOYO',
       },
     ];
-    const nextTarget =
-      targets.find((t) => {
-        const found = pieces.find((p) => p.id === t.pieceId);
-        return !found || found.rail !== t.rail || found.row !== t.row;
-      }) ?? null;
+    const nextTarget = targets.find((t) => isInTray(t.pieceId, t.pieceType)) ?? null;
 
     return {
       level: 3,
@@ -1029,11 +1051,7 @@ export function getTutorialGuideForLevel(
         shortTag: '🫧 ABANICO ×5',
       },
     ];
-    const nextTarget =
-      targets.find((t) => {
-        const found = pieces.find((p) => p.id === t.pieceId || p.type === t.pieceType);
-        return !found || found.rail !== t.rail || found.row !== t.row;
-      }) ?? null;
+    const nextTarget = targets.find((t) => isInTray(t.pieceId, t.pieceType)) ?? null;
 
     return {
       level: 31,
@@ -1899,3 +1917,265 @@ export function buildPlacementComboNotification(
     row: moved.row,
   };
 }
+
+// ============================================================================
+// EMERGENT CHEMISTRY, PHYSICAL KNOCKBACK, "MENÚ VIVO" & TIME SAFEGUARDS
+// ============================================================================
+
+export const MENU_PLATE_BUFF_META: readonly {
+  rail: number;
+  icon: string;
+  shortTag: string;
+  name: string;
+  desc: string;
+  accentHex: number;
+}[] = [
+  {
+    rail: 0,
+    icon: '🍕',
+    shortTag: '🍕+15%⚡',
+    name: 'Plato 1 (Pizza)',
+    desc: '+15% cadencia en armas térmicas y UV',
+    accentHex: 0xa855f7,
+  },
+  {
+    rail: 1,
+    icon: '🧀',
+    shortTag: '🧀+15%❄️',
+    name: 'Plato 2 (Queso/Uvas)',
+    desc: '+15% duración de ralentización y control',
+    accentHex: 0x38bdf8,
+  },
+  {
+    rail: 2,
+    icon: '🍖',
+    shortTag: '🍖+15%🎯',
+    name: 'Plato 3 (Principal)',
+    desc: '+15% daño directo de proyectiles frontales',
+    accentHex: 0x22c55e,
+  },
+  {
+    rail: 3,
+    icon: '🧁',
+    shortTag: '🧁+20%Ult',
+    name: 'Plato 4 (Postre)',
+    desc: '+20% velocidad de carga de Ultimate por baja',
+    accentHex: 0xf59e0b,
+  },
+];
+
+/**
+ * Computes live passive buffs granted by the 4 bottom gourmet plates while intact.
+ * Devouring a plate immediately turns off ONLY that plate's passive buff.
+ */
+export function computeLiveMenuBuffs(intactPlates: readonly boolean[]): LiveMenuBuffs {
+  return {
+    thermalRateMult: intactPlates[0] ? 1.15 : 1.0,
+    controlDurationMult: intactPlates[1] ? 1.15 : 1.0,
+    frontalDamageMult: intactPlates[2] ? 1.15 : 1.0,
+    ultChargeMult: intactPlates[3] ? 1.2 : 1.0,
+  };
+}
+
+/**
+ * Doubles victory coins if Level 6+ VIP Critic's Plate ("Plato del Crítico VIP") survives intact.
+ */
+export function computeVipVictoryCoins(
+  baseVictoryCoins: number,
+  vipPlateRail: number | null,
+  intactPlates: readonly boolean[]
+): { coinsEarned: number; vipSaved: boolean } {
+  const vipSaved =
+    vipPlateRail !== null &&
+    vipPlateRail >= 0 &&
+    vipPlateRail < intactPlates.length &&
+    Boolean(intactPlates[vipPlateRail]);
+  return {
+    coinsEarned: vipSaved ? baseVictoryCoins * 2 : baseVictoryCoins,
+    vipSaved,
+  };
+}
+
+/**
+ * Combines active timeScales using Math.min() so Tactical Slow-Mo (0.20x) and
+ * Salvada In Extremis (0.35x) NEVER multiply together (0.20x wins cleanly, never 0.07x).
+ */
+export function combineActiveTimeScales(
+  baseSpeed: number,
+  opts: {
+    isPlaying: boolean;
+    hitstopActive: boolean;
+    tacticalSlowMoActive: boolean;
+    lastStandActive: boolean;
+  }
+): number {
+  if (!opts.isPlaying) return 0;
+  if (opts.hitstopActive) return 0.04;
+  const candidates: number[] = [baseSpeed];
+  if (opts.tacticalSlowMoActive) candidates.push(0.2);
+  if (opts.lastStandActive) candidates.push(0.35);
+  return Math.min(...candidates);
+}
+
+/**
+ * Conductive UV Chain Reaction:
+ * When a wet/soaped bug touches an electric/UV beam, propagates an electric arc
+ * across contiguous wet/soaped countertop cells (8-way adjacent) to other live bugs.
+ */
+export function computeConductiveUvChainTargets(
+  sourceBugId: string,
+  bugs: readonly BugEnemy[],
+  chemTiles: readonly TileChemicalState[]
+): string[] {
+  const source = bugs.find((b) => b.id === sourceBugId && b.koTimer <= 0);
+  if (!source) return [];
+
+  const srcRail = Math.max(0, Math.min(GRID_RAILS - 1, Math.round(source.rail)));
+  const srcRow = Math.max(0, Math.min(GRID_ROWS - 1, Math.round(source.yProgress)));
+
+  const isBugWet = (b: BugEnemy) => {
+    if ((b.wetTimer ?? 0) > 0 || b.isSlidingFromSoap) return true;
+    const br = Math.round(b.rail);
+    const bw = Math.round(b.yProgress);
+    return chemTiles.some(
+      (t) => t.kind === 'wet_soap' && t.timer > 0 && t.rail === br && t.row === bw
+    );
+  };
+
+  if (!isBugWet(source)) return [];
+
+  // Build wet cell set from active 4s wet_soap tiles + cells occupied by wet/soaped live bugs
+  const wetCellKeys = new Set<string>();
+  const keyOf = (r: number, rw: number) => `${r},${rw}`;
+  wetCellKeys.add(keyOf(srcRail, srcRow));
+
+  for (const t of chemTiles) {
+    if (t.kind === 'wet_soap' && t.timer > 0) {
+      wetCellKeys.add(keyOf(t.rail, t.row));
+    }
+  }
+  for (const b of bugs) {
+    if (b.koTimer <= 0 && isBugWet(b)) {
+      const br = Math.max(0, Math.min(GRID_RAILS - 1, Math.round(b.rail)));
+      const bw = Math.max(0, Math.min(GRID_ROWS - 1, Math.round(b.yProgress)));
+      wetCellKeys.add(keyOf(br, bw));
+    }
+  }
+
+  // Flood-fill contiguous wet cells starting from (srcRail, srcRow)
+  const visited = new Set<string>([keyOf(srcRail, srcRow)]);
+  const queue: [number, number][] = [[srcRail, srcRow]];
+  while (queue.length > 0) {
+    const [cr, cw] = queue.shift()!;
+    for (let dr = -1; dr <= 1; dr++) {
+      for (let dw = -1; dw <= 1; dw++) {
+        if (dr === 0 && dw === 0) continue;
+        const nr = cr + dr;
+        const nw = cw + dw;
+        if (nr < 0 || nr >= GRID_RAILS || nw < 0 || nw >= GRID_ROWS) continue;
+        const nk = keyOf(nr, nw);
+        if (!visited.has(nk) && wetCellKeys.has(nk)) {
+          visited.add(nk);
+          queue.push([nr, nw]);
+        }
+      }
+    }
+  }
+
+  const targetIds: string[] = [];
+  for (const b of bugs) {
+    if (b.id === sourceBugId || b.koTimer > 0) continue;
+    const br = Math.max(0, Math.min(GRID_RAILS - 1, Math.round(b.rail)));
+    const bw = Math.max(0, Math.min(GRID_ROWS - 1, Math.round(b.yProgress)));
+    if (visited.has(keyOf(br, bw))) {
+      targetIds.push(b.id);
+    }
+  }
+  return targetIds;
+}
+
+/**
+ * Thermal Shock ("Choque Térmico"):
+ * When a bug slowed by cold/control receives thermal/fire/UV damage, shatters an extra 50%
+ * of carapace/armor and blasts shrapnel to live bugs within 1 cell.
+ */
+export function computeThermalShockResult(
+  bug: BugEnemy,
+  allBugs: readonly BugEnemy[],
+  isColdEnvironment = false
+): {
+  triggered: boolean;
+  bonusCarapaceDamage: number;
+  shrapnelTargetIds: string[];
+} {
+  const isChilledOrSlowed =
+    bug.slowTimer > 0 || (bug.coldTimer ?? 0) > 0 || (isColdEnvironment && bug.yProgress > 0);
+  if (!isChilledOrSlowed || (bug.thermalShockCooldown ?? 0) > 0) {
+    return { triggered: false, bonusCarapaceDamage: 0, shrapnelTargetIds: [] };
+  }
+
+  // Breaks 50% extra carapace (50% of maxHp on standard bugs; 50% of Phase-1 carapace segment on Grand Bosses)
+  const bonusCarapaceDamage =
+    bug.bossTier === 'grand'
+      ? Math.round(bug.maxHp * 0.17)
+      : bug.bossTier === 'mini'
+      ? Math.round(bug.maxHp * 0.25)
+      : Math.round(bug.maxHp * 0.5);
+
+  const shrapnelTargetIds: string[] = [];
+  for (const other of allBugs) {
+    if (other.id === bug.id || other.koTimer > 0) continue;
+    if (
+      Math.abs(other.rail - bug.rail) <= 1.25 &&
+      Math.abs(other.yProgress - bug.yProgress) <= 1.25
+    ) {
+      shrapnelTargetIds.push(other.id);
+    }
+  }
+
+  return {
+    triggered: true,
+    bonusCarapaceDamage,
+    shrapnelTargetIds,
+  };
+}
+
+/**
+ * Physical Knockback ("Empuje físico"):
+ * Sweep or explosion weapons (Fregona 360° / Volcán / Kärcher) physically push light/medium
+ * plagues 1 cell backward (or deflect to a neighboring rail), allowing re-pushing into an active UV Bridge.
+ */
+export function applyPhysicalKnockback(
+  bug: BugEnemy,
+  opts: { pushCells?: number; deflectToNeighbor?: boolean } = {}
+): {
+  applied: boolean;
+  nextYProgress: number;
+  nextTargetRail: number;
+} {
+  // Grand Bosses resist standard knockback; Mini-Bosses take reduced push; light/medium take full 1-cell push
+  if (bug.bossTier === 'grand' || (bug.knockbackCooldown ?? 0) > 0 || bug.koTimer > 0) {
+    return {
+      applied: false,
+      nextYProgress: bug.yProgress,
+      nextTargetRail: bug.targetRail,
+    };
+  }
+
+  const rawPush = opts.pushCells ?? 1.0;
+  const effectivePush = bug.bossTier === 'mini' ? rawPush * 0.45 : rawPush;
+  const nextYProgress = Math.max(-0.2, Number((bug.yProgress - effectivePush).toFixed(3)));
+
+  let nextTargetRail = bug.targetRail;
+  if (opts.deflectToNeighbor && !bug.bossTier) {
+    const curR = Math.max(0, Math.min(GRID_RAILS - 1, Math.round(bug.rail)));
+    nextTargetRail = curR < GRID_RAILS - 1 ? curR + 1 : curR - 1;
+  }
+
+  return {
+    applied: true,
+    nextYProgress,
+    nextTargetRail,
+  };
+}
+

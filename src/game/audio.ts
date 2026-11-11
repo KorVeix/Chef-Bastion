@@ -167,31 +167,145 @@ class SoundEngine {
     osc.stop(now + 0.2);
   }
 
-  public playStarKill(stars: 1 | 2 | 3) {
+  // Ascending C Major Pentatonic scale (C5, D5, E5, G5, A5, C6, D6, E6) for rapid kill chains (< 1.2s apart)
+  public static readonly PENTATONIC_SCALE_HZ = [
+    523.25, 587.33, 659.25, 783.99, 880.0, 1046.5, 1174.66, 1318.51,
+  ];
+  public static readonly KILL_CHAIN_RESET_MS = 1200;
+
+  private killChainStep = 0;
+  private lastKillAtMs = -Infinity;
+
+  /**
+   * Advances the pentatonic pitch step when kills occur < 1.2s (1200ms) apart,
+   * and resets to step 0 after >= 1.2s without kills.
+   */
+  public registerKillChainStep(nowMs = Date.now()): {
+    step: number;
+    freqHz: number;
+    pitchMult: number;
+  } {
+    if (nowMs - this.lastKillAtMs > 0 && nowMs - this.lastKillAtMs < SoundEngine.KILL_CHAIN_RESET_MS) {
+      this.killChainStep = Math.min(
+        SoundEngine.PENTATONIC_SCALE_HZ.length - 1,
+        this.killChainStep + 1
+      );
+    } else if (nowMs === this.lastKillAtMs) {
+      // Simultaneous multi-kill in the exact same ms also steps up cleanly
+      this.killChainStep = Math.min(
+        SoundEngine.PENTATONIC_SCALE_HZ.length - 1,
+        this.killChainStep + 1
+      );
+    } else {
+      this.killChainStep = 0;
+    }
+    this.lastKillAtMs = nowMs;
+    const freqHz = SoundEngine.PENTATONIC_SCALE_HZ[this.killChainStep];
+    const pitchMult = Number((freqHz / SoundEngine.PENTATONIC_SCALE_HZ[0]).toFixed(4));
+    return { step: this.killChainStep, freqHz, pitchMult };
+  }
+
+  public resetKillChain() {
+    this.killChainStep = 0;
+    this.lastKillAtMs = -Infinity;
+  }
+
+  public playStarKill(stars: 1 | 2 | 3, nowMs = Date.now()) {
+    const chain = this.registerKillChainStep(nowMs);
     const scale = this.getSfxScale();
     if (scale <= 0.001) return;
     const ctx = this.ensureContext();
     if (!ctx) return;
     const now = ctx.currentTime;
-    const notes =
+
+    // Primary ascending pentatonic bell note so chained kills sing upward musically
+    const bellOsc = ctx.createOscillator();
+    const bellGain = ctx.createGain();
+    bellOsc.type = 'sine';
+    bellOsc.frequency.setValueAtTime(chain.freqHz, now);
+    bellGain.gain.setValueAtTime(Math.max(0.001, 0.14 * scale), now);
+    bellGain.gain.exponentialRampToValueAtTime(0.0005, now + 0.24);
+    bellOsc.connect(bellGain);
+    bellGain.connect(ctx.destination);
+    bellOsc.start(now);
+    bellOsc.stop(now + 0.26);
+
+    const baseNotes =
       stars === 3
         ? [523.25, 659.25, 783.99, 1046.5, 1567.98] // High TV-ad sparkle DING!
         : stars === 2
         ? [440, 554.37, 659.25]
         : [330, 440];
 
-    notes.forEach((freq, i) => {
+    const pitchShift = Math.min(1.85, 1 + chain.step * 0.08);
+    baseNotes.forEach((freq, i) => {
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
-      osc.type = stars === 3 && i === notes.length - 1 ? 'sine' : 'triangle';
-      const t = now + i * 0.055;
-      osc.frequency.setValueAtTime(freq, t);
-      gain.gain.setValueAtTime(Math.max(0.001, (stars === 3 ? 0.16 : 0.11) * scale), t);
-      gain.gain.exponentialRampToValueAtTime(0.0005, t + (stars === 3 ? 0.28 : 0.14));
+      osc.type = stars === 3 && i === baseNotes.length - 1 ? 'sine' : 'triangle';
+      const t = now + i * 0.05;
+      osc.frequency.setValueAtTime(freq * pitchShift, t);
+      gain.gain.setValueAtTime(Math.max(0.001, (stars === 3 ? 0.14 : 0.095) * scale), t);
+      gain.gain.exponentialRampToValueAtTime(0.0005, t + (stars === 3 ? 0.26 : 0.13));
       osc.connect(gain);
       gain.connect(ctx.destination);
       osc.start(t);
-      osc.stop(t + 0.3);
+      osc.stop(t + 0.28);
+    });
+  }
+
+  public playTowelWhip() {
+    const scale = this.getSfxScale();
+    if (scale <= 0.001) return;
+    const ctx = this.ensureContext();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+
+    // Fast cloth whoosh + crisp high-frequency snap crack
+    const whoosh = ctx.createOscillator();
+    const whooshGain = ctx.createGain();
+    whoosh.type = 'sawtooth';
+    whoosh.frequency.setValueAtTime(190, now);
+    whoosh.frequency.exponentialRampToValueAtTime(1420, now + 0.065);
+    whooshGain.gain.setValueAtTime(Math.max(0.001, 0.15 * scale), now);
+    whooshGain.gain.exponentialRampToValueAtTime(0.0005, now + 0.085);
+    whoosh.connect(whooshGain);
+    whooshGain.connect(ctx.destination);
+    whoosh.start(now);
+    whoosh.stop(now + 0.09);
+
+    const crack = ctx.createOscillator();
+    const crackGain = ctx.createGain();
+    crack.type = 'square';
+    crack.frequency.setValueAtTime(1850, now + 0.055);
+    crack.frequency.exponentialRampToValueAtTime(420, now + 0.11);
+    crackGain.gain.setValueAtTime(Math.max(0.001, 0.16 * scale), now + 0.055);
+    crackGain.gain.exponentialRampToValueAtTime(0.0005, now + 0.12);
+    crack.connect(crackGain);
+    crackGain.connect(ctx.destination);
+    crack.start(now + 0.055);
+    crack.stop(now + 0.125);
+  }
+
+  public playChainShock() {
+    const scale = this.getSfxScale();
+    if (scale <= 0.001) return;
+    const ctx = this.ensureContext();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+
+    [920, 1380, 1760].forEach((freq, idx) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sawtooth';
+      const t = now + idx * 0.022;
+      osc.frequency.setValueAtTime(freq, t);
+      osc.frequency.exponentialRampToValueAtTime(freq * 0.62, t + 0.05);
+      gain.gain.setValueAtTime(Math.max(0.001, 0.09 * scale), t);
+      gain.gain.exponentialRampToValueAtTime(0.0005, t + 0.055);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(t);
+      osc.stop(t + 0.06);
     });
   }
 

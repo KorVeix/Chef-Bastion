@@ -99,6 +99,29 @@ export interface BugEnemy {
   bossFrenzyTriggered?: boolean; // Escort/lateral ambush trigger in Phase 3
   bossPhaseFlashTimer?: number;  // 300ms visual flash on phase break
   bossStunTimer?: number;      // > 0 when boss mechanic is countered
+  // Emergent Countertop Chemistry, Knockback & Active Chef Stun
+  wetTimer?: number;           // > 0 when soaked/soaped (conducts UV electric arcs)
+  coldTimer?: number;          // > 0 when chilled/slowed (triggers Thermal Shock on fire/UV)
+  knockbackCooldown?: number;  // Prevents infinite frame-by-frame knockback pinning
+  chainArcCooldown?: number;   // Cooldown between conductive UV chain zaps
+  thermalShockCooldown?: number; // Cooldown between Thermal Shock shrapnel bursts
+  chefStunTimer?: number;      // 1.0s stun from Chef's active "Trapazo de cocina"
+}
+
+export type TileStateKind = 'wet_soap' | 'acid_pool';
+
+export interface TileChemicalState {
+  rail: number;
+  row: number;
+  kind: TileStateKind;
+  timer: number; // 4.0s temporary countertop state
+}
+
+export interface LiveMenuBuffs {
+  thermalRateMult: number;     // Plate 1 (Pizza): +15% fire/tick rate on thermal & UV
+  controlDurationMult: number; // Plate 2 (Queso/Uvas): +15% slow & control duration
+  frontalDamageMult: number;   // Plate 3 (Principal): +15% direct frontal projectile damage
+  ultChargeMult: number;       // Plate 4 (Postre): +20% Ultimate charge speed per kill
 }
 
 export interface ActiveBossHudInfo {

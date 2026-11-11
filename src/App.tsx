@@ -25,6 +25,7 @@ import {
   isDynamicOnboardingLevel,
   isWorldUnlocked,
   LEVEL_DURATION_SECONDS,
+  MENU_PLATE_BUFF_META,
   SPECIAL_WEAPONS_CATALOG,
   STRATEGIC_BOOST_SHIELD_COST,
   STRATEGIC_BOOST_ULTIMATE_COST,
@@ -149,6 +150,10 @@ export default function App() {
       forecast: getLevelForecast(initLvl),
       bossHud: null,
       tutorialTargetScreen: null,
+      intactPlates: [true, true, true, true],
+      vipPlateRail: null,
+      chefWhipCooldown: 0,
+      chefWhipThreatReady: false,
     };
   });
 
@@ -180,6 +185,8 @@ export default function App() {
     phaseReached: number;
     remainingKillsToNext: number;
     bugsCleaned: number;
+    vipSaved?: boolean;
+    coinsEarned?: number;
   } | null>(null);
 
   const handleUpdateSettings = useCallback((patch: Partial<GameSettings>) => {
@@ -364,9 +371,12 @@ export default function App() {
         phaseReached: number;
         remainingKillsToNext: number;
         bugsCleaned: number;
+        vipSaved?: boolean;
       }
     ) => {
-      setEndOutcome({ victory, ...finalStats });
+      const vipSaved = Boolean(victory && finalStats.vipSaved);
+      const coinsEarned = victory ? (vipSaved ? 240 : 120) : 40;
+      setEndOutcome({ victory, ...finalStats, vipSaved, coinsEarned });
       setGameState('gameover');
       setProgress((prev) => {
         const nextLevel = victory ? prev.currentLevel + 1 : prev.currentLevel;
@@ -382,7 +392,7 @@ export default function App() {
           currentLevel: nextLevel,
           highestLevel: nextHighest,
           unlockedWorlds: nextWorlds,
-          coins: prev.coins + (victory ? 120 : 40),
+          coins: prev.coins + coinsEarned,
           bestScore: Math.max(prev.bestScore, finalStats.score),
           totalBugsCleaned: prev.totalBugsCleaned + finalStats.bugsCleaned,
         };
@@ -587,6 +597,7 @@ export default function App() {
 
   const equippedSpecialMeta = SPECIAL_WEAPONS_CATALOG[progress.equippedSpecial];
   const tutorialGuide = getTutorialGuideForLevel(progress.currentLevel, hud.pieces);
+  const liveTutorialGuide = getTutorialGuideForLevel(progress.currentLevel, piecesRef.current);
   const onboardingCard = getTacticalOnboardingCard(progress.currentLevel);
   const activeBiome = getBiomeForLevel(progress.currentLevel);
   const placedCount = hud.pieces.filter((p) => p.rail !== null && p.row !== null).length;
@@ -918,6 +929,39 @@ export default function App() {
                     </span>
                   )}
                 </div>
+
+                {/* "Menú Vivo" Subtle Passive Plate Buff Micro-Indicators + Level 6+ Golden VIP Critic Border */}
+                <div
+                  data-testid="live-menu-buffs"
+                  className="pointer-events-auto flex items-center gap-1 mt-0.5"
+                >
+                  {MENU_PLATE_BUFF_META.map((meta) => {
+                    const intact = hud.intactPlates[meta.rail] ?? true;
+                    const isVip = hud.vipPlateRail === meta.rail;
+                    return (
+                      <span
+                        key={meta.rail}
+                        data-testid={`plate-buff-${meta.rail}`}
+                        data-vip={isVip ? 'true' : 'false'}
+                        data-intact={intact ? 'true' : 'false'}
+                        title={
+                          isVip
+                            ? `⭐ Plato del Crítico VIP (Monedas ×2 si sobrevive) · ${meta.name}: ${meta.desc}`
+                            : `${meta.name}: ${meta.desc}${intact ? ' (Activo)' : ' (Devorado)'}`
+                        }
+                        className={`px-1 py-0.5 rounded text-[8.5px] font-black leading-none border transition ${
+                          !intact
+                            ? 'border-stone-800 bg-stone-950/50 text-stone-500 line-through opacity-45'
+                            : isVip
+                            ? 'border-yellow-400 bg-yellow-500/25 text-yellow-200 shadow-[0_0_6px_rgba(250,204,21,0.55)]'
+                            : 'border-stone-700 bg-stone-950/90 text-stone-200'
+                        }`}
+                      >
+                        {isVip ? `★${meta.shortTag}` : meta.shortTag}
+                      </span>
+                    );
+                  })}
+                </div>
               </div>
 
               {/* Top-Right Utility Controls */}
@@ -1181,6 +1225,15 @@ export default function App() {
                 ⏱️ ¡ÚLTIMO PLATO · CÁMARA LENTA!
               </div>
             )}
+            {/* Active Chef Reflex Cue when a plague steps into the critical strip and Trapazo (18s CD) is ready */}
+            {hud.chefWhipThreatReady && (
+              <div
+                data-testid="chef-whip-ready-cue"
+                className="mx-auto bg-cyan-950/95 border-2 border-cyan-400 px-2.5 py-0.5 rounded-xl text-[9.5px] font-black text-cyan-200 shadow-[0_2px_0_#0f172a] whitespace-nowrap animate-pulse"
+              >
+                🧣 ¡TOCA AL CHEF: TRAPAZO LISTO!
+              </div>
+            )}
           </div>
 
           {/* Salvada In Extremis Soft Red Edge Pulse Vignette (Zero backdrop-filter) */}
@@ -1191,8 +1244,13 @@ export default function App() {
             />
           )}
 
-          {/* Single-Focus Animated Drag Guide + Minimal Floating Cell Label (Levels 1-3 & 31) */}
-          {hud.tutorialTargetScreen && !hud.selectedPieceId && !dockCollapsed && (
+          {/* Single-Focus Animated Drag Guide + Minimal Floating Cell Label (Levels 1-3 & 31; clears immediately on drop) */}
+          {hud.tutorialTargetScreen &&
+            liveTutorialGuide?.nextTarget?.pieceId === hud.tutorialTargetScreen.pieceId &&
+            !hud.selectedPieceId &&
+            !selectedPieceIdRef.current &&
+            !dragPointerRef.current.active &&
+            !dockCollapsed && (
             <div className="pointer-events-none fixed inset-0 z-20">
               <svg
                 viewBox="0 0 100 100"
@@ -1544,6 +1602,14 @@ export default function App() {
                   ? `¡Progreso guardado automáticamente en el Nivel ${progress.currentLevel}!`
                   : `¡Casi lo logras! Te faltaron solo ${endOutcome.remainingKillsToNext} plagas para superar el Cambio ${endOutcome.phaseReached}/3.`}
               </p>
+              {endOutcome.victory && endOutcome.vipSaved && (
+                <div
+                  data-testid="vip-saved-badge"
+                  className="mt-2 inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-yellow-400/20 border-2 border-yellow-400 text-yellow-200 text-xs font-black"
+                >
+                  ⭐ ¡Plato del Crítico VIP salvado! Monedas ×2 (+{endOutcome.coinsEarned ?? 240} 🪙)
+                </div>
+              )}
             </div>
 
             <div className="grid grid-cols-3 gap-2 text-center bg-amber-900/50 p-3 rounded-xl border border-amber-700">
