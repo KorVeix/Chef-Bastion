@@ -25,16 +25,44 @@ export const COMANDA_AUTO_PICK_SECONDS = 10.0;
 export const SUPREME_EVOLUTION_HITSTOP_SECONDS = 0.05; // 50ms exactos al evolucionar Nv.3 + Nv.3
 export const MERGE_SHOCKWAVE_PUSH_CELLS = 1.0;
 
+export const RUSH_ADAPTIVE_POWER_RATIO = 0.75; // 75% of (weapons * avgLevel) growth; time provides the rest
+
 /**
- * Escalating deploy cost: each weapon placed on the board raises the next deploy cost by +30% compounded.
- * Merging does NOT increment `placedDeployCount`.
+ * Escalating deploy cost: +30% compounded per ACTIVE weapon currently on the board.
+ * When an aerosol runs out of charges or a weapon disappears, active count drops by 1 and cost steps back down!
  */
 export function computeRushEscalatedCost(
-  placedDeployCount: number,
+  activeBoardWeapons: number,
   baseCost = RUSH_SUPPLY_DEPLOY_COST
 ): number {
-  const safeCount = Math.max(0, Math.floor(placedDeployCount));
+  const safeCount = Math.max(0, Math.floor(activeBoardWeapons));
   return Math.round(baseCost * Math.pow(RUSH_COST_ESCALATION_MULT, safeCount));
+}
+
+/**
+ * Counts currently ACTIVE weapons on the countertop (excluding tray cards and empty/depleting aerosols).
+ */
+export function countActiveRushBoardWeapons(
+  pieces: readonly Pick<UtensilPiece, 'rail' | 'row' | 'ammo' | 'depleteTimer'>[]
+): number {
+  let count = 0;
+  for (let i = 0; i < pieces.length; i++) {
+    const p = pieces[i];
+    if (p.rail === null || p.row === null) continue;
+    if (p.depleteTimer !== undefined || (p.ammo !== undefined && p.ammo <= 0)) continue;
+    count += 1;
+  }
+  return count;
+}
+
+/**
+ * Computes the current Rush deploy cost directly from active weapons on the board.
+ */
+export function computeRushDeployCostForBoard(
+  pieces: readonly Pick<UtensilPiece, 'rail' | 'row' | 'ammo' | 'depleteTimer'>[],
+  baseCost = RUSH_SUPPLY_DEPLOY_COST
+): number {
+  return computeRushEscalatedCost(countActiveRushBoardWeapons(pieces), baseCost);
 }
 
 /**
@@ -301,9 +329,7 @@ export function executeRushDropOrMerge(
 
   // 1. Empty target cell -> enforce board weapon cap if deploying from tray, else place or move directly
   if (!occupant) {
-    const activeOnBoard = boardPieces.filter(
-      (p) => p.rail !== null && p.row !== null && p.depleteTimer === undefined
-    ).length;
+    const activeOnBoard = countActiveRushBoardWeapons(boardPieces);
     if (!isFromBoard && activeOnBoard >= maxBoardWeapons) {
       return {
         outcome: 'cap_reached',
@@ -548,14 +574,20 @@ export function buildActiveRushPool(opts: {
     pool.push('bleach_cannon');
   }
 
-  const vetoSet = new Set(opts.vetoedTypes ?? []);
+  // Never allow vetoing `spray_flus` so the shooting guarantee ("al menos 1 Flus-Flus") always holds!
+  const vetoSet = new Set<UtensilType>((opts.vetoedTypes ?? []).filter((t) => t !== 'spray_flus'));
   const filtered = pool.filter((t) => !vetoSet.has(t));
-  // Safeguard: always keep at least 3 distinct weapon types so merges remain dynamic
-  return filtered.length >= 3 ? filtered : pool.slice(0, 3);
+  // Safeguard: always keep at least 3 distinct weapon types (including spray_flus) so merges remain dynamic
+  if (filtered.length >= 3) {
+    return filtered.includes('spray_flus') ? filtered : ['spray_flus', ...filtered.slice(0, 2)];
+  }
+  return pool.slice(0, 3);
 }
 
 /**
  * Rolls a single rotating tray slot respecting Frenzy Tier level probabilities (Silver Lv.2 / Gold Lv.3).
+ * If `otherTrayTypes` is passed and contains NO `spray_flus`, guarantees this slot rolls `spray_flus`
+ * while costing and scaling in tier identically to any other weapon.
  */
 export function rollRushTraySlot(
   slotIndex: number,
@@ -563,18 +595,24 @@ export function rollRushTraySlot(
     elapsedSeconds: number;
     unlockedMilestones?: readonly string[];
     vetoedTypes?: readonly UtensilType[];
+    otherTrayTypes?: readonly UtensilType[];
+    activeBoardWeapons?: number;
     rng?: () => number;
   }
 ): RushTraySlot {
   const rand = opts.rng ?? Math.random;
   const frenzy = getFrenzyThermometer(opts.elapsedSeconds);
   const pool = buildActiveRushPool(opts);
-  const pickedType = pool[Math.floor(rand() * pool.length) % pool.length];
+  const mustForceSpray =
+    opts.otherTrayTypes !== undefined && !opts.otherTrayTypes.includes('spray_flus');
+  const pickedType: UtensilType = mustForceSpray
+    ? 'spray_flus'
+    : pool[Math.floor(rand() * pool.length) % pool.length];
 
   let level: 1 | 2 | 3 = 1;
   const lvlRoll = rand();
   if (!frenzy.allowTier1InTray) {
-    // Frenesí 4 Overdrive (4:00+): 0% Nv.1! Everything spawns at Nv.2 Plata or Nv.3 Oro!
+    // Frenesí 4 Overdrive (4:00+): 0% Nv.1! Everything (including Flus-Flus) spawns at Nv.2 Plata or Nv.3 Oro!
     level = lvlRoll < frenzy.goldChance ? 3 : 2;
   } else if (lvlRoll < frenzy.goldChance) {
     level = 3;
@@ -587,8 +625,76 @@ export function rollRushTraySlot(
     id: `rush-slot-${slotIndex}-${Date.now()}-${Math.floor(rand() * 10000)}`,
     type: pickedType,
     level,
-    cost: RUSH_SUPPLY_DEPLOY_COST,
+    cost: computeRushEscalatedCost(opts.activeBoardWeapons ?? 0),
   };
+}
+
+/**
+ * Rolls a complete 4-slot Rush tray (`RUSH_TRAY_SLOTS`) guaranteeing at least 1 `spray_flus` ("Flus-Flus")
+ * that costs and scales in level identically to any other weapon.
+ */
+export function rollRushTrayBatch(opts: {
+  elapsedSeconds: number;
+  unlockedMilestones?: readonly string[];
+  vetoedTypes?: readonly UtensilType[];
+  activeBoardWeapons?: number;
+  slotCount?: number;
+  rng?: () => number;
+}): RushTraySlot[] {
+  const rand = opts.rng ?? Math.random;
+  const count = Math.max(1, opts.slotCount ?? RUSH_TRAY_SLOTS);
+  const slots: RushTraySlot[] = [];
+  for (let i = 0; i < count; i++) {
+    slots.push(
+      rollRushTraySlot(i, {
+        ...opts,
+        rng: rand,
+      })
+    );
+  }
+  if (!slots.some((s) => s.type === 'spray_flus')) {
+    const forcedIdx = Math.floor(rand() * slots.length) % slots.length;
+    slots[forcedIdx] = {
+      ...slots[forcedIdx],
+      type: 'spray_flus',
+    };
+  }
+  return slots;
+}
+
+/**
+ * Ensures any array of Rush `UtensilPiece` items has at least 1 `spray_flus` among its tray cards (`rail === null`).
+ */
+export function ensureRushTrayHasSprayFlus(
+  pieces: readonly UtensilPiece[],
+  rng: () => number = Math.random
+): UtensilPiece[] {
+  const trayIndices: number[] = [];
+  let hasSpray = false;
+  for (let i = 0; i < pieces.length; i++) {
+    const p = pieces[i];
+    if (p.rail === null || p.row === null) {
+      trayIndices.push(i);
+      if (p.type === 'spray_flus') {
+        hasSpray = true;
+      }
+    }
+  }
+  if (hasSpray || trayIndices.length === 0) {
+    return pieces.map((p) => ({ ...p }));
+  }
+  const targetIdx = trayIndices[Math.floor(rng() * trayIndices.length) % trayIndices.length];
+  return pieces.map((p, idx) =>
+    idx === targetIdx
+      ? {
+          ...p,
+          type: 'spray_flus',
+          ammo: undefined,
+          maxAmmo: undefined,
+          depleteTimer: undefined,
+        }
+      : { ...p }
+  );
 }
 
 export function getSupplyKillBonus(rapidStreak: number): number {
@@ -697,9 +803,20 @@ export function pickRushSpawnRail(
 }
 
 /**
+ * Computes the adaptive difficulty multiplier at 75% of `(armas × nivel medio)` growth above baseline 1.
+ * E.g. growing arsenalPower from 1 -> 5 (+400% growth) scales adaptive pressure by +300% (4.0x = 1 + 0.75 * 4),
+ * leaving the remaining pressure to elapsed time.
+ */
+export function computeRushAdaptivePressureMultiplier(arsenalPower: number): number {
+  const safePower = Math.max(0, arsenalPower);
+  const powerGrowth = Math.max(0, safePower - 1);
+  return Number((1 + RUSH_ADAPTIVE_POWER_RATIO * powerGrowth).toFixed(4));
+}
+
+/**
  * Adaptive Rush Director:
- * Plague HP and spawn frequency scale with BOTH elapsed time AND `(nº de armas × nivel medio)` (`arsenalPower`),
- * calibrated so an average player gets overwhelmed and loses between 90 and 120 seconds.
+ * Scales adaptive pressure at 75% of `(nº de armas × nivel medio)` growth (`computeRushAdaptivePressureMultiplier`),
+ * while `elapsedSeconds` supplies the remaining pressure so an average player loses between 90 and 120 seconds.
  */
 export function computeRushDirectorParams(
   elapsedSeconds: number,
@@ -712,42 +829,45 @@ export function computeRushDirectorParams(
   lateralConduitsOpen: boolean;
 } {
   const safePower = Math.max(0, arsenalPower);
+  const adaptivePressureMult = computeRushAdaptivePressureMultiplier(safePower);
+  // Split adaptivePressureMult cleanly across HP (55% exponent) and Spawn Frequency (45% exponent)
+  // so (hpMultiplier * effectiveFreq) scales at exact 1.0x of `adaptivePressureMult` (75% of power growth)!
+  const adaptiveHpMult = Math.pow(adaptivePressureMult, 0.55);
+  const adaptiveFreqMult = Math.pow(adaptivePressureMult, 0.45);
 
-  // 1. Movement speed: calm 0..15s central-rail opening, ramping into 90-120s climax
+  // 1. Movement speed: calm 0..15s central-rail opening, steady mid-game, ramping after 72s
   const rawSpeed =
     elapsedSeconds < RUSH_CENTRAL_RAIL_ONLY_SECONDS
-      ? 0.65 + elapsedSeconds * 0.004
-      : 0.72 +
-        Math.min(0.68, (elapsedSeconds - 15) * 0.0042) +
-        Math.max(0, elapsedSeconds - 75) * 0.0065 +
-        Math.min(0.22, safePower * 0.009);
+      ? 0.64 + elapsedSeconds * 0.004
+      : 0.7 +
+        Math.min(0.62, (elapsedSeconds - 15) * 0.0038) +
+        Math.max(0, elapsedSeconds - 72) * 0.0068 +
+        Math.min(0.18, Math.max(0, safePower - 1) * 0.012);
   const speedMultiplier = Number(rawSpeed.toFixed(3));
 
-  // 2. Adaptive Spawn Frequency (bugs/sec) scaling with time AND (weaponCount * avgLevel)
-  const baseFreq =
+  // 2. Time-based + Adaptive Spawn Frequency (bugs/sec)
+  const timeFreq =
     elapsedSeconds < RUSH_CENTRAL_RAIL_ONLY_SECONDS
-      ? 0.36 + elapsedSeconds * 0.004
-      : 0.4 +
-        (elapsedSeconds - 15) * 0.0048 +
-        Math.max(0, elapsedSeconds - 74) * 0.022;
-  const adaptiveFreqMult = 1 + safePower * 0.036;
-  const effectiveFreq = baseFreq * adaptiveFreqMult;
-  const spawnIntervalSec = Number(Math.max(0.32, 1 / effectiveFreq).toFixed(2));
+      ? 0.28 + elapsedSeconds * 0.002
+      : 0.31 +
+        (elapsedSeconds - 15) * 0.0018 +
+        Math.max(0, elapsedSeconds - 72) * 0.0095;
+  const effectiveFreq = timeFreq * adaptiveFreqMult;
+  const spawnIntervalSec = Number(Math.max(0.28, 1 / effectiveFreq).toFixed(2));
 
-  // 3. Adaptive Plague HP scaling with time AND (weaponCount * avgLevel)
+  // 3. Time-based + Adaptive Plague HP
   const timeHp =
     elapsedSeconds < RUSH_CENTRAL_RAIL_ONLY_SECONDS
-      ? 0.72 + elapsedSeconds * 0.004
-      : 0.78 +
-        (elapsedSeconds - 15) * 0.0062 +
-        Math.max(0, elapsedSeconds - 74) * 0.036;
-  const adaptiveHpMult = 1 + safePower * 0.045;
+      ? 0.58 + elapsedSeconds * 0.002
+      : 0.61 +
+        (elapsedSeconds - 15) * 0.0028 +
+        Math.max(0, elapsedSeconds - 72) * 0.0165;
   const hpMultiplier = Number((timeHp * adaptiveHpMult).toFixed(2));
 
   const maxConcurrentBugs =
     elapsedSeconds < RUSH_CENTRAL_RAIL_ONLY_SECONDS
       ? 4
-      : Math.min(20, 4 + Math.floor(elapsedSeconds / 20) + Math.floor(safePower / 3));
+      : Math.min(20, 4 + Math.floor(elapsedSeconds / 18) + Math.floor(safePower / 3));
 
   const lateralConduitsOpen =
     (elapsedSeconds >= 120 && elapsedSeconds <= 150) || elapsedSeconds >= 240;
@@ -911,10 +1031,13 @@ export function rollLiveComandaTriplet(opts: {
 
   const stamp = Date.now();
   const assignVetoIfNeeded = (base: Omit<ComandaTicket, 'id'>, idx: number): ComandaTicket => {
-    if (base.effectId === 'veto_weapon' && opts.activePool.length > 3) {
-      const candidateVeto = opts.activePool[opts.activePool.length - 1];
+    const vetoablePool = opts.activePool.filter((t) => t !== 'spray_flus');
+    if (base.effectId === 'veto_weapon' && opts.activePool.length > 3 && vetoablePool.length > 0) {
+      const candidateVeto = vetoablePool[vetoablePool.length - 1];
       const shortWeapon =
-        candidateVeto === 'scourer_nanas'
+        candidateVeto === 'aerosol_torch'
+          ? 'Aerosol'
+          : candidateVeto === 'scourer_nanas'
           ? 'Estropajo'
           : candidateVeto === 'soap_bar'
           ? 'Jabón'

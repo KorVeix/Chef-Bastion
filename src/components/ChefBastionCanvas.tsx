@@ -24,10 +24,11 @@ import {
   ComandaTicket,
   computeRushArsenalMetrics,
   computeRushBoardWeaponCap,
+  computeRushDeployCostForBoard,
   computeRushDirectorParams,
-  computeRushEscalatedCost,
   computeRushSupplyMax,
   consumeAerosolAmmo,
+  ensureRushTrayHasSprayFlus,
   executeRushDropOrMerge,
   findSupremeEvolutionPartners,
   FrenzyThermometerState,
@@ -37,6 +38,7 @@ import {
   getSupplyKillBonus,
   pickRushSpawnRail,
   rollLiveComandaTriplet,
+  rollRushTrayBatch,
   rollRushTraySlot,
   RUSH_ADRENALINE_MILESTONES,
   RUSH_SUPPLY_BASE_PER_SEC,
@@ -1132,7 +1134,6 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
     // Survival Rush ("Supervivencia Rush") State
     let rushElapsedSec = 0;
     let rushSupply = 48;
-    let rushPlacedDeployCount = 0;
     let rushCapFlashTimer = 0;
     let rushXp = 0;
     let rushXpNext = 55;
@@ -1202,11 +1203,17 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
     const _dragPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -0.72);
     const _dragWorldPt = new THREE.Vector3();
 
-    function makeRushTrayUtensilPiece(slotIdx: number, elapsedForRoll: number): UtensilPiece {
+    function makeRushTrayUtensilPiece(
+      slotIdx: number,
+      elapsedForRoll: number,
+      otherTrayTypes?: readonly UtensilType[]
+    ): UtensilPiece {
       const rolled = rollRushTraySlot(slotIdx, {
         elapsedSeconds: elapsedForRoll,
         unlockedMilestones: Array.from(rushSessionMilestones),
         vetoedTypes: rushModifiers.vetoedTypes,
+        otherTrayTypes,
+        activeBoardWeapons: computeRushArsenalMetrics(piecesRef.current).weaponCount,
       });
       const initAmmo =
         rolled.type === 'aerosol_torch' ? getInitialAerosolAmmo(rolled.level) : undefined;
@@ -1223,6 +1230,32 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
         ammo: initAmmo,
         maxAmmo: initAmmo,
       };
+    }
+
+    function makeInitialRushTrayPieces(elapsedForRoll: number): UtensilPiece[] {
+      const batch = rollRushTrayBatch({
+        elapsedSeconds: elapsedForRoll,
+        unlockedMilestones: Array.from(rushSessionMilestones),
+        vetoedTypes: rushModifiers.vetoedTypes,
+        activeBoardWeapons: 0,
+      });
+      return batch.map((rolled) => {
+        const initAmmo =
+          rolled.type === 'aerosol_torch' ? getInitialAerosolAmmo(rolled.level) : undefined;
+        return {
+          id: rolled.id,
+          type: rolled.type,
+          level: rolled.level,
+          rail: null,
+          row: null,
+          gunkTimer: 0,
+          cooldown: 0,
+          fireTimer: 0.1,
+          comboType: 'none',
+          ammo: initAmmo,
+          maxAmmo: initAmmo,
+        };
+      });
     }
 
     function drainRushAerosolInPlace(piece: UtensilPiece, charges: number) {
@@ -1565,7 +1598,6 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
 
       rushElapsedSec = 0;
       rushSupply = 48;
-      rushPlacedDeployCount = 0;
       rushCapFlashTimer = 0;
       rushXp = 0;
       rushXpNext = 55;
@@ -1599,10 +1631,8 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
       }
 
       if (isRush) {
-        // Seed 4 agile rotating tray slots (all Nv.1 from RUSH_BASE_POOL at 0:00!)
-        piecesRef.current = Array.from({ length: RUSH_TRAY_SLOTS }, (_, idx) =>
-          makeRushTrayUtensilPiece(idx, 0)
-        );
+        // Seed 4 agile rotating tray slots guaranteed to contain >= 1 Flus-Flus at 0:00!
+        piecesRef.current = makeInitialRushTrayPieces(0);
       } else if (
         piecesRef.current.some((p) => p.rail !== null || p.row !== null) ||
         piecesRef.current.length === 0 ||
@@ -1872,12 +1902,14 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
         const traySlotIdx = trayList.findIndex((p) => p.id === pieceId);
         const isFromTray = traySlotIdx >= 0;
 
-        const currentDeployCost = computeRushEscalatedCost(rushPlacedDeployCount);
+        const currentDeployCost = computeRushDeployCostForBoard(piecesRef.current);
         const maxBoardWeapons = computeRushBoardWeaponCap(rushLevel);
         const targetOccupied = boardList.some(
           (p) => p.id !== pieceId && p.rail === cell.rail && p.row === cell.row
         );
-        const activeBoardCount = boardList.filter((p) => p.depleteTimer === undefined).length;
+        const activeBoardCount = boardList.filter(
+          (p) => p.depleteTimer === undefined && (p.ammo === undefined || p.ammo > 0)
+        ).length;
 
         // Check board weapon cap FIRST when trying to place onto an empty cell from the tray (merges on occupied cells bypass cap!)
         if (isFromTray && !targetOccupied && activeBoardCount >= maxBoardWeapons) {
@@ -1937,18 +1969,21 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
           return;
         }
 
+        const comboEvaluatedBoard = evaluateBoardCombos(res.updatedPieces).updatedPieces;
         const nextTray = [...trayList];
         if (isFromTray) {
           rushSupply = Math.max(0, rushSupply - currentDeployCost);
-          nextTray[traySlotIdx] = makeRushTrayUtensilPiece(traySlotIdx, rushElapsedSec);
-          // Anti-snowball rule 1: ONLY placing a new weapon onto the board escalates cost (+30%); merging NEVER escalates cost!
-          if (res.outcome === 'placed') {
-            rushPlacedDeployCount += 1;
-          }
+          const otherTrayTypes = nextTray
+            .filter((_, idx) => idx !== traySlotIdx)
+            .map((p) => p.type);
+          nextTray[traySlotIdx] = makeRushTrayUtensilPiece(
+            traySlotIdx,
+            rushElapsedSec,
+            otherTrayTypes
+          );
         }
 
-        const comboEvaluatedBoard = evaluateBoardCombos(res.updatedPieces).updatedPieces;
-        piecesRef.current = [...nextTray, ...comboEvaluatedBoard];
+        piecesRef.current = [... ensureRushTrayHasSprayFlus(nextTray), ...comboEvaluatedBoard];
 
         const dropWX = gridToWorldX(cell.rail);
         const dropWZ = gridToWorldZ(cell.row);
@@ -2350,7 +2385,7 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
         ? computeRushArsenalMetrics(piecesRef.current)
         : { weaponCount: 0, averageLevel: 0, arsenalPower: 0 };
       const rushDirector = computeRushDirectorParams(rushElapsedSec, rushArsenal.arsenalPower);
-      const currentRushCost = computeRushEscalatedCost(rushPlacedDeployCount);
+      const currentRushCost = computeRushDeployCostForBoard(piecesRef.current);
       const currentRushSupplyMax = computeRushSupplyMax(currentRushCost);
       const levelForecast = getLevelForecast(stateRef.current.level);
       kitchenProps.lateralVents.forEach((lv) => {
@@ -3065,16 +3100,19 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
         }
         if (rushElapsedSec >= 240) {
           unlockRushMilestoneIfNew('rush_overdrive_4min');
-          // Overdrive 4:00+: eliminate any lingering Nv.1 card from the tray immediately!
+          // Overdrive 4:00+: eliminate any lingering Nv.1 card from the tray immediately (preserving >= 1 Flus-Flus)!
           let upgradedTray = false;
-          piecesRef.current = piecesRef.current.map((p, idx) => {
+          const mappedPieces = piecesRef.current.map((p, idx) => {
             if (p.rail === null && p.row === null && p.level === 1) {
               upgradedTray = true;
               return makeRushTrayUtensilPiece(idx % RUSH_TRAY_SLOTS, rushElapsedSec);
             }
             return p;
           });
-          if (upgradedTray) hudEmitTimer = 1.0;
+          if (upgradedTray) {
+            piecesRef.current = ensureRushTrayHasSprayFlus(mappedPieces);
+            hudEmitTimer = 1.0;
+          }
         }
 
         // Chaos Director: trigger non-pausing live event every 60s!
@@ -3255,11 +3293,13 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
               if (!rushModifiers.vetoedTypes.includes(chosen.vetoTarget)) {
                 rushModifiers.vetoedTypes = [...rushModifiers.vetoedTypes, chosen.vetoTarget];
               }
-              // Replace any vetoed weapon currently sitting in the 4 rotating tray slots!
-              piecesRef.current = piecesRef.current.map((p, idx) =>
-                p.rail === null && p.type === chosen.vetoTarget
-                  ? makeRushTrayUtensilPiece(idx % RUSH_TRAY_SLOTS, rushElapsedSec)
-                  : p
+              // Replace any vetoed weapon currently sitting in the 4 rotating tray slots (preserving >= 1 Flus-Flus)!
+              piecesRef.current = ensureRushTrayHasSprayFlus(
+                piecesRef.current.map((p, idx) =>
+                  p.rail === null && p.type === chosen.vetoTarget
+                    ? makeRushTrayUtensilPiece(idx % RUSH_TRAY_SLOTS, rushElapsedSec)
+                    : p
+                )
               );
             } else if (chosen.effectId === 'pact_sacrifice_plate') {
               const sacIdx = intactPlates.findIndex(Boolean);
@@ -5699,7 +5739,7 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
         const liveRushArsenal = isRushMode
           ? computeRushArsenalMetrics(piecesRef.current)
           : { weaponCount: 0, averageLevel: 0, arsenalPower: 0 };
-        const liveDeployCost = computeRushEscalatedCost(rushPlacedDeployCount);
+        const liveDeployCost = computeRushDeployCostForBoard(piecesRef.current);
         const liveSupplyMax = computeRushSupplyMax(liveDeployCost);
         const rushHud: RushHudSnapshot | null = isRushMode
           ? {

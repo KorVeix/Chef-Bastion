@@ -23,9 +23,9 @@ import { soundEngine } from './game/audio';
 import {
   buildThermalReceipt,
   formatSurvivalMMSS,
-  rollRushTraySlot,
+  getInitialAerosolAmmo,
+  rollRushTrayBatch,
   RUSH_ADRENALINE_MILESTONES,
-  RUSH_TRAY_SLOTS,
   ThermalReceiptSummary,
 } from './game/roguelite';
 import {
@@ -159,9 +159,30 @@ export default function App() {
   const progressRef = useRef<PlayerProgress>(progress);
   progressRef.current = progress;
 
-  // Every level ALWAYS starts with 100% of pieces in the bottom tray (rail: null, row: null)
+  // Every level/session ALWAYS starts with 100% of pieces in the bottom tray and >= 1 Flus-Flus!
   const piecesRef = useRef<UtensilPiece[]>(
-    createInitialBoardPieces(loadSavedProgress().currentLevel)
+    gameMode === 'rush'
+      ? rollRushTrayBatch({
+          elapsedSeconds: 0,
+          unlockedMilestones: loadSavedProgress().unlockedRushMilestones ?? [],
+        }).map((slot) => {
+          const initAmmo =
+            slot.type === 'aerosol_torch' ? getInitialAerosolAmmo(slot.level) : undefined;
+          return {
+            id: slot.id,
+            type: slot.type,
+            level: slot.level,
+            rail: null,
+            row: null,
+            gunkTimer: 0,
+            cooldown: 0.15,
+            fireTimer: 0.08,
+            comboType: 'none',
+            ammo: initAmmo,
+            maxAmmo: initAmmo,
+          };
+        })
+      : createInitialBoardPieces(loadSavedProgress().currentLevel)
   );
   const selectedPieceIdRef = useRef<string | null>(null);
   const inspectionTargetRef = useRef<TacticalInspectionTarget | null>(null);
@@ -703,11 +724,12 @@ export default function App() {
     setGameMode('rush');
     gameModeRef.current = 'rush';
     document.body.dataset.mode = 'rush';
-    piecesRef.current = Array.from({ length: RUSH_TRAY_SLOTS }, (_, idx) => {
-      const slot = rollRushTraySlot(idx, {
-        elapsedSeconds: 0,
-        unlockedMilestones: progressRef.current.unlockedRushMilestones ?? [],
-      });
+    piecesRef.current = rollRushTrayBatch({
+      elapsedSeconds: 0,
+      unlockedMilestones: progressRef.current.unlockedRushMilestones ?? [],
+    }).map((slot) => {
+      const initAmmo =
+        slot.type === 'aerosol_torch' ? getInitialAerosolAmmo(slot.level) : undefined;
       return {
         id: slot.id,
         type: slot.type,
@@ -718,6 +740,8 @@ export default function App() {
         cooldown: 0.15,
         fireTimer: 0.08,
         comboType: 'none',
+        ammo: initAmmo,
+        maxAmmo: initAmmo,
       };
     });
     selectedPieceIdRef.current = null;

@@ -1862,7 +1862,43 @@ export function createInitialBoardPieces(level = 1): UtensilPiece[] {
     ];
   }
 
-  return evaluateBoardCombos(initial).updatedPieces;
+  return evaluateBoardCombos(ensureTrayHasSprayFlus(initial)).updatedPieces;
+}
+
+/**
+ * Guarantees that a tray (`rail === null || row === null`) ALWAYS contains at least 1 `spray_flus` ("Flus-Flus"),
+ * preserving piece level and standard weapon behavior.
+ */
+export function ensureTrayHasSprayFlus(
+  pieces: readonly UtensilPiece[],
+  rng: () => number = Math.random
+): UtensilPiece[] {
+  const trayIndices: number[] = [];
+  let hasSprayInTray = false;
+  for (let i = 0; i < pieces.length; i++) {
+    const p = pieces[i];
+    if (p.rail === null || p.row === null) {
+      trayIndices.push(i);
+      if (p.type === 'spray_flus') {
+        hasSprayInTray = true;
+      }
+    }
+  }
+  if (hasSprayInTray || trayIndices.length === 0) {
+    return pieces.map((p) => ({ ...p }));
+  }
+  const replaceIdx = trayIndices[Math.floor(rng() * trayIndices.length) % trayIndices.length];
+  return pieces.map((p, idx) =>
+    idx === replaceIdx
+      ? {
+          ...p,
+          type: 'spray_flus',
+          ammo: undefined,
+          maxAmmo: undefined,
+          depleteTimer: undefined,
+        }
+      : { ...p }
+  );
 }
 
 export const DEFAULT_KITCHEN_UPGRADES: KitchenUpgrades = {

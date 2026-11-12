@@ -6,12 +6,16 @@ import {
   buildThermalReceipt,
   COMANDA_AUTO_PICK_SECONDS,
   COMANDAS_POOL,
+  computeRushAdaptivePressureMultiplier,
   computeRushArsenalMetrics,
   computeRushBoardWeaponCap,
+  computeRushDeployCostForBoard,
   computeRushDirectorParams,
   computeRushEscalatedCost,
   computeRushSupplyMax,
   consumeAerosolAmmo,
+  countActiveRushBoardWeapons,
+  ensureRushTrayHasSprayFlus,
   executeRushDropOrMerge,
   findSupremeEvolutionPartners,
   formatSurvivalMMSS,
@@ -21,7 +25,9 @@ import {
   MERGE_SHOCKWAVE_PUSH_CELLS,
   pickRushSpawnRail,
   rollLiveComandaTriplet,
+  rollRushTrayBatch,
   rollRushTraySlot,
+  RUSH_ADAPTIVE_POWER_RATIO,
   RUSH_BASE_POOL,
   RUSH_CENTRAL_RAIL_ONLY_SECONDS,
   RUSH_SUPPLY_BASE_PER_SEC,
@@ -29,7 +35,7 @@ import {
   SUPREME_EVOLUTION_HITSTOP_SECONDS,
   tickDepletingAerosol,
 } from './roguelite';
-import { evaluateBoardCombos } from './rules';
+import { createInitialBoardPieces, ensureTrayHasSprayFlus, evaluateBoardCombos } from './rules';
 import { UtensilPiece, UtensilType } from './types';
 
 function makePiece(
@@ -210,12 +216,11 @@ test('Rush Rebalance 1: +30% compounded cost per placed weapon; merging does NOT
   assert.equal(computeRushEscalatedCost(6), Math.round(24 * Math.pow(1.3, 6))); // 116
   assert.equal(computeRushSupplyMax(computeRushEscalatedCost(6)), 116);
 
-  // Simulate placement vs merge counter: merging leaves placedDeployCount untouched
-  let placedDeployCount = 0;
+  // Simulate placement vs merge using active weapons on board: merging does NOT increase active count or cost
   const placeRes = executeRushDropOrMerge([], makePiece('t1', 'spray_flus', 1, null, null), 1, 5, 2, 4);
   assert.equal(placeRes.outcome, 'placed');
-  placedDeployCount += placeRes.outcome === 'placed' ? 1 : 0;
-  const costAfterFirstPlace = computeRushEscalatedCost(placedDeployCount);
+  const costAfterFirstPlace = computeRushDeployCostForBoard(placeRes.updatedPieces);
+  assert.equal(costAfterFirstPlace, computeRushEscalatedCost(1));
 
   const mergeRes = executeRushDropOrMerge(
     placeRes.updatedPieces,
@@ -225,10 +230,8 @@ test('Rush Rebalance 1: +30% compounded cost per placed weapon; merging does NOT
     2,
     4
   );
-  // Merging does NOT increment placedDeployCount
-  if (mergeRes.outcome === 'placed') placedDeployCount += 1;
   assert.equal(mergeRes.outcome, 'merged');
-  assert.equal(computeRushEscalatedCost(placedDeployCount), costAfterFirstPlace);
+  assert.equal(computeRushDeployCostForBoard(mergeRes.updatedPieces), costAfterFirstPlace);
 });
 
 test('Rush Rebalance 2: Board weapon cap starts at 4, +1 per XP level up to max 8, and still permits merges at cap', () => {
@@ -317,7 +320,12 @@ test('Rush Rebalance 4 & 5: First 15s spawn central rail ONLY, adaptive scaling 
   const post15Rails = new Set([0.05, 0.3, 0.6, 0.9].map((r) => pickRushSpawnRail(15.0, () => r)));
   assert.equal(post15Rails.size, 4);
 
-  // Rule 4: Adaptive difficulty scales plague HP and spawn frequency with (weaponCount * averageLevel)
+  // Rule 4 (Fine-tuned): Adaptive difficulty scales at 75% of (weapons * avgLevel) growth; time adds the rest
+  assert.equal(RUSH_ADAPTIVE_POWER_RATIO, 0.75);
+  assert.equal(computeRushAdaptivePressureMultiplier(1), 1);
+  assert.equal(computeRushAdaptivePressureMultiplier(5), 4); // 1 + 0.75 * (5 - 1) = 4.0
+  assert.equal(computeRushAdaptivePressureMultiplier(9), 7); // 1 + 0.75 * (9 - 1) = 7.0
+
   const metrics = computeRushArsenalMetrics([
     makePiece('w1', 'spray_flus', 2, 1, 5),
     makePiece('w2', 'mop_vortex', 1, 2, 4),
@@ -330,14 +338,17 @@ test('Rush Rebalance 4 & 5: First 15s spawn central rail ONLY, adaptive scaling 
 
   const lowPowerAt60 = computeRushDirectorParams(60, 1);
   const highPowerAt60 = computeRushDirectorParams(60, 10);
+  const laterTimeSamePower = computeRushDirectorParams(105, 1);
   assert.ok(highPowerAt60.hpMultiplier > lowPowerAt60.hpMultiplier);
   assert.ok(highPowerAt60.spawnIntervalSec < lowPowerAt60.spawnIntervalSec);
+  // Elapsed time provides additional pressure even at identical arsenalPower
+  assert.ok(laterTimeSamePower.hpMultiplier > lowPowerAt60.hpMultiplier);
+  assert.ok(laterTimeSamePower.spawnIntervalSec < lowPowerAt60.spawnIntervalSec);
 
   // Deterministic Average-Player Rush Pacing Simulation -> must lose between 90s and 120s!
   let simSec = 0;
   const dt = 0.25;
   let supply = 48;
-  let placedCount = 0;
   let xp = 0;
   let xpNext = 55;
   let rushLvl = 1;
@@ -373,7 +384,8 @@ test('Rush Rebalance 4 & 5: First 15s spawn central rail ONLY, adaptive scaling 
         : towers.reduce((acc, t) => acc + t.level, 0) / towers.length;
     const power = towers.length * avgLvl;
     const dir = computeRushDirectorParams(simSec, power);
-    const curCost = computeRushEscalatedCost(placedCount);
+    // Escalated cost counts ACTIVE weapons currently on board (`towers.length`)
+    const curCost = computeRushEscalatedCost(towers.length);
     const supMax = computeRushSupplyMax(curCost);
     supply = Math.min(supMax, supply + RUSH_SUPPLY_BASE_PER_SEC * dt);
 
@@ -388,14 +400,12 @@ test('Rush Rebalance 4 & 5: First 15s spawn central rail ONLY, adaptive scaling 
     if (supply >= curCost) {
       if (towers.length < cap) {
         supply -= curCost;
-        placedCount += 1;
         const targetRail = towers.length === 0 ? 1 : (towers.length + 1) % 4;
         towers.push({ rail: targetRail, level: 1, dps: 13.5 });
       } else {
         const upgradable = towers.find((t) => t.level < 3);
         if (upgradable && nextRng() < 0.45) {
           supply -= curCost;
-          // Merging does NOT increment placedCount!
           upgradable.level += 1;
           upgradable.dps = upgradable.level === 2 ? 19.5 : 27;
         }
@@ -458,4 +468,168 @@ test('Rush Rebalance 4 & 5: First 15s spawn central rail ONLY, adaptive scaling 
     `Expected average player to lose between 90s and 120s, but lost at ${lostAtSec}s`
   );
 });
+
+test('reponer un aerosol agotado no cuesta más que el que se gastó', () => {
+  // Start with 2 active weapons on the board
+  const baseBoard: UtensilPiece[] = [
+    makePiece('w1', 'spray_flus', 1, 0, 5),
+    makePiece('w2', 'mop_vortex', 1, 1, 5),
+  ];
+  assert.equal(countActiveRushBoardWeapons(baseBoard), 2);
+  const costPaidForAerosol = computeRushDeployCostForBoard(baseBoard); // 41 (24 * 1.3^2)
+
+  // Deploy an aerosol onto (2, 4) -> active weapons rises to 3, next deploy cost steps up to 53
+  const deployAerosol = executeRushDropOrMerge(
+    baseBoard,
+    makePiece('uv-1', 'aerosol_torch', 1, null, null),
+    2,
+    4,
+    2,
+    4
+  );
+  assert.equal(deployAerosol.outcome, 'placed');
+  assert.equal(countActiveRushBoardWeapons(deployAerosol.updatedPieces), 3);
+  const costWhileAerosolActive = computeRushDeployCostForBoard(deployAerosol.updatedPieces);
+  assert.ok(costWhileAerosolActive > costPaidForAerosol);
+
+  // Exhaust all charges on `uv-1` -> enters 3.0s blinking depleted state (`ammo === 0`, `depleteTimer === 3.0`)
+  const boardWhenDepleted = deployAerosol.updatedPieces.map((p) =>
+    p.id === 'uv-1' ? consumeAerosolAmmo(p, p.ammo ?? 10) : p
+  );
+  // Immediately upon depletion, active count drops back to 2 and replacement cost drops back down!
+  assert.equal(countActiveRushBoardWeapons(boardWhenDepleted), 2);
+  const costRightWhenDepleted = computeRushDeployCostForBoard(boardWhenDepleted);
+  assert.ok(
+    costRightWhenDepleted <= costPaidForAerosol,
+    `Replacement cost on depletion (${costRightWhenDepleted}) must not exceed original aerosol cost (${costPaidForAerosol})`
+  );
+  assert.equal(costRightWhenDepleted, costPaidForAerosol);
+
+  // After the 3.0s blink finishes and the aerosol vanishes from the board, replacement cost still never exceeds it
+  const boardAfterVanish = boardWhenDepleted.flatMap((p) => {
+    if (p.id !== 'uv-1') return [p];
+    const ticked = tickDepletingAerosol(p, AEROSOL_DEPLETE_BLINK_SECONDS);
+    return ticked.expired ? [] : [ticked.piece];
+  });
+  assert.equal(boardAfterVanish.length, 2);
+  const replacementCost = computeRushDeployCostForBoard(boardAfterVanish);
+  assert.ok(
+    replacementCost <= costPaidForAerosol,
+    `Replacement cost after vanish (${replacementCost}) must not exceed original aerosol cost (${costPaidForAerosol})`
+  );
+  assert.equal(replacementCost, costPaidForAerosol);
+
+  // Verify replacement aerosol actually deploys cleanly at that stepped-down cost
+  const replaceRes = executeRushDropOrMerge(
+    boardAfterVanish,
+    makePiece('uv-2', 'aerosol_torch', 1, null, null),
+    2,
+    4,
+    2,
+    4
+  );
+  assert.equal(replaceRes.outcome, 'placed');
+  assert.equal(countActiveRushBoardWeapons(replaceRes.updatedPieces), 3);
+});
+
+test('en 1.000 bandejas aleatorias siempre hay al menos 1 Flus-Flus', () => {
+  let seed = 20261111;
+  const seededRng = () => {
+    seed = (seed * 1664525 + 1013904223) >>> 0;
+    return seed / 0x100000000;
+  };
+
+  // 1) 1,000 random Rush 4-slot trays across all Frenzy tiers (0..300s), random vetoes (even attempting to veto spray_flus),
+  // and random active weapon counts (0..7). Also checks cost & level scaling parity!
+  const milestonesVariants: string[][] = [[], ['rush_streak_25'], ['rush_streak_25', 'rush_overdrive_4min']];
+  const vetoCandidates: UtensilType[][] = [
+    [],
+    ['spray_flus'], // even if caller tries to veto spray_flus, guarantee must hold!
+    ['scourer_nanas', 'mop_vortex'],
+    ['spray_flus', 'aerosol_torch', 'soap_bar'],
+  ];
+
+  for (let i = 0; i < 1000; i++) {
+    const elapsedSeconds = Math.floor(seededRng() * 320);
+    const activeBoardWeapons = Math.floor(seededRng() * 8);
+    const unlockedMilestones = milestonesVariants[i % milestonesVariants.length];
+    const vetoedTypes = vetoCandidates[i % vetoCandidates.length];
+
+    const tray = rollRushTrayBatch({
+      elapsedSeconds,
+      unlockedMilestones,
+      vetoedTypes,
+      activeBoardWeapons,
+      rng: seededRng,
+    });
+
+    assert.equal(tray.length, 4);
+    const spraySlots = tray.filter((slot) => slot.type === 'spray_flus');
+    assert.ok(
+      spraySlots.length >= 1,
+      `Rush tray #${i} (t=${elapsedSeconds}s) lacked Flus-Flus: ${tray.map((s) => s.type).join(', ')}`
+    );
+
+    // Flus-Flus costs and scales in level identically to any other weapon
+    const expectedCost = computeRushEscalatedCost(activeBoardWeapons);
+    for (const slot of tray) {
+      assert.equal(slot.cost, expectedCost);
+      if (elapsedSeconds >= 240) {
+        assert.ok(slot.level === 2 || slot.level === 3, 'Overdrive Flus-Flus/slot must scale to Lv.2 or Lv.3');
+      }
+    }
+  }
+
+  // 2) Single-slot live rotation in Rush: when the other 3 slots in tray lack Flus-Flus, 1,000/1,000 rotations roll Flus-Flus
+  for (let i = 0; i < 1000; i++) {
+    const rotated = rollRushTraySlot(i % 4, {
+      elapsedSeconds: Math.floor(seededRng() * 300),
+      otherTrayTypes: ['mop_vortex', 'aerosol_torch', 'soap_bar'],
+      activeBoardWeapons: i % 6,
+      rng: seededRng,
+    });
+    assert.equal(rotated.type, 'spray_flus');
+    assert.equal(rotated.cost, computeRushEscalatedCost(i % 6));
+  }
+
+  // 3) Strategic Mode + arbitrary tray invariant across 1,000 trays (campaign levels + randomized trays)
+  const nonSprayPool: UtensilType[] = [
+    'aerosol_torch',
+    'soap_bar',
+    'mop_vortex',
+    'scourer_nanas',
+    'corner_square',
+    'wc_shield',
+    'bleach_cannon',
+  ];
+  for (let i = 0; i < 1000; i++) {
+    const pieces =
+      i < 120
+        ? createInitialBoardPieces(i + 1)
+        : ensureTrayHasSprayFlus(
+            [
+              makePiece(`s0-${i}`, nonSprayPool[Math.floor(seededRng() * nonSprayPool.length)], 1, null, null),
+              makePiece(`s1-${i}`, nonSprayPool[Math.floor(seededRng() * nonSprayPool.length)], 1, null, null),
+              makePiece(`s2-${i}`, nonSprayPool[Math.floor(seededRng() * nonSprayPool.length)], 1, null, null),
+              makePiece(`b0-${i}`, 'mop_vortex', 1, 1, 5), // board piece doesn't count as tray
+            ],
+            seededRng
+          );
+    const trayPieces = pieces.filter((p) => p.rail === null || p.row === null);
+    assert.ok(
+      trayPieces.some((p) => p.type === 'spray_flus'),
+      `Strategic tray #${i} lacked Flus-Flus`
+    );
+    // ensureRushTrayHasSprayFlus also guarantees >= 1 spray_flus on any arbitrary Rush piece list
+    const rushGuarded = ensureRushTrayHasSprayFlus(
+      [
+        makePiece(`r0-${i}`, nonSprayPool[Math.floor(seededRng() * nonSprayPool.length)], 1, null, null),
+        makePiece(`r1-${i}`, nonSprayPool[Math.floor(seededRng() * nonSprayPool.length)], 2, null, null),
+      ],
+      seededRng
+    );
+    assert.ok(rushGuarded.filter((p) => p.rail === null).some((p) => p.type === 'spray_flus'));
+  }
+});
+
 
