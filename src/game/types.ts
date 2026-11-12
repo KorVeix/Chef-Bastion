@@ -74,6 +74,9 @@ export interface UtensilPiece {
   cooldown: number;    // 0.3s snap cooldown after moving, then firing timer
   fireTimer: number;
   comboType: 'none' | 'line_foam' | 'bridge_uv' | 'slip_vortex' | 'shield_reflect' | 'deflect_90';
+  ammo?: number;       // Remaining charges for aerosol_torch in Rush
+  maxAmmo?: number;    // Max charges for current tier
+  depleteTimer?: number; // > 0 when ammo === 0: blinks for 3.0s then disappears
 }
 
 export interface BugEnemy {

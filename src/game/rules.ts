@@ -1103,11 +1103,14 @@ export function evaluateBoardCombos(pieces: UtensilPiece[]): {
   const links: CircuitLink[] = [];
   const nextPieces = pieces.map((p) => ({ ...p, comboType: 'none' as UtensilPiece['comboType'] }));
 
+  const isDepletedCan = (p?: UtensilPiece | null) =>
+    Boolean(p && ((p.ammo !== undefined && p.ammo <= 0) || p.depleteTimer !== undefined));
+
   const findAt = (rail: number, row: number) =>
-    nextPieces.find((p) => p.rail === rail && p.row === row);
+    nextPieces.find((p) => p.rail === rail && p.row === row && !isDepletedCan(p));
 
   for (const piece of nextPieces) {
-    if (piece.rail === null || piece.row === null) continue;
+    if (piece.rail === null || piece.row === null || isDepletedCan(piece)) continue;
 
     // 1. COMBO EN LÍNEA: [Spray o Lejía] + [Estropajo] a 1 o 2 casillas en el mismo raíl
     if (piece.type === 'spray_flus' || piece.type === 'bleach_cannon') {
@@ -1139,7 +1142,7 @@ export function evaluateBoardCombos(pieces: UtensilPiece[]): {
       }
     }
 
-    // 2. COMBO PUENTE HORIZONTAL: Dos [Aerosol UV] en la misma fila en raíles vecinos (rail y rail + 1)
+    // 2. COMBO PUENTE HORIZONTAL: Dos [Aerosol UV] con carga en la misma fila en raíles vecinos
     if (piece.type === 'aerosol_torch') {
       const neighbor = findAt(piece.rail + 1, piece.row);
       if (neighbor && neighbor.type === 'aerosol_torch') {
@@ -3004,9 +3007,18 @@ export function getTacticalInspectorCard(
     combineLine = meta.comboRecipe;
   }
 
+  const ammoSuffix =
+    opts.isRushMode && pieceType === 'aerosol_torch' && found
+      ? found.depleteTimer !== undefined
+        ? ` · VACÍO (${found.depleteTimer.toFixed(1)}s)`
+        : found.ammo !== undefined && found.maxAmmo !== undefined
+        ? ` · ${Math.ceil(found.ammo)}/${found.maxAmmo}`
+        : ''
+      : '';
+
   return {
     title: `${meta.icon} ${meta.shortName}`,
-    badge: `${UTENSIL_ROLE_TAGS[pieceType].toUpperCase()} · ${tierLabel}`,
+    badge: `${UTENSIL_ROLE_TAGS[pieceType].toUpperCase()} · ${tierLabel}${ammoSuffix}`,
     whatItDoes: copy.whatItDoes,
     combineOrMerge: combineLine,
     accent: copy.accent,

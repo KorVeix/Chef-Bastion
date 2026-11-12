@@ -22,20 +22,26 @@ import {
   buildActiveRushPool,
   COMANDA_AUTO_PICK_SECONDS,
   ComandaTicket,
+  computeRushArsenalMetrics,
+  computeRushBoardWeaponCap,
   computeRushDirectorParams,
+  computeRushEscalatedCost,
+  computeRushSupplyMax,
+  consumeAerosolAmmo,
   executeRushDropOrMerge,
   findSupremeEvolutionPartners,
   FrenzyThermometerState,
   getChaosDirectorEventForMinute,
   getFrenzyThermometer,
+  getInitialAerosolAmmo,
   getSupplyKillBonus,
+  pickRushSpawnRail,
   rollLiveComandaTriplet,
   rollRushTraySlot,
   RUSH_ADRENALINE_MILESTONES,
   RUSH_SUPPLY_BASE_PER_SEC,
-  RUSH_SUPPLY_DEPLOY_COST,
-  RUSH_SUPPLY_MAX,
   RUSH_TRAY_SLOTS,
+  tickDepletingAerosol,
 } from '../game/roguelite';
 import {
   applyPhysicalKnockback,
@@ -120,6 +126,10 @@ export interface RushHudSnapshot {
   elapsedSec: number;
   supply: number;
   supplyCost: number;
+  supplyMax: number;
+  boardWeaponCount: number;
+  maxBoardWeapons: number;
+  capFlashActive: boolean;
   frenzy: FrenzyThermometerState;
   xpPct: number;
   rushLevel: number;
@@ -1121,7 +1131,9 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
 
     // Survival Rush ("Supervivencia Rush") State
     let rushElapsedSec = 0;
-    let rushSupply = 68;
+    let rushSupply = 48;
+    let rushPlacedDeployCount = 0;
+    let rushCapFlashTimer = 0;
     let rushXp = 0;
     let rushXpNext = 55;
     let rushLevel = 1;
@@ -1196,6 +1208,8 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
         unlockedMilestones: Array.from(rushSessionMilestones),
         vetoedTypes: rushModifiers.vetoedTypes,
       });
+      const initAmmo =
+        rolled.type === 'aerosol_torch' ? getInitialAerosolAmmo(rolled.level) : undefined;
       return {
         id: rolled.id,
         type: rolled.type,
@@ -1206,7 +1220,19 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
         cooldown: 0,
         fireTimer: 0.1,
         comboType: 'none',
+        ammo: initAmmo,
+        maxAmmo: initAmmo,
       };
+    }
+
+    function drainRushAerosolInPlace(piece: UtensilPiece, charges: number) {
+      if (stateRef.current.gameMode !== 'rush') return;
+      const updated = consumeAerosolAmmo(piece, charges);
+      if (updated === piece) return;
+      piece.ammo = updated.ammo;
+      piece.maxAmmo = updated.maxAmmo;
+      piece.comboType = updated.comboType;
+      piece.depleteTimer = updated.depleteTimer;
     }
 
     function unlockRushMilestoneIfNew(milestoneId: string) {
@@ -1538,7 +1564,9 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
       const dynamicOnboarding = isDynamicOnboardingLevel(currentLvl);
 
       rushElapsedSec = 0;
-      rushSupply = 68;
+      rushSupply = 48;
+      rushPlacedDeployCount = 0;
+      rushCapFlashTimer = 0;
       rushXp = 0;
       rushXpNext = 55;
       rushLevel = 1;
@@ -1666,8 +1694,28 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
       });
 
       if (isRush) {
-        // Immediate 0.0s action in Survival Rush: 2 fast opening ants advancing right away!
-        spawnWavePreviewBugs(1, 1);
+        // Opening 15s: strictly spawn ONLY on the central rail (`rail === 1`)!
+        const openingRail = pickRushSpawnRail(0);
+        const openingHp = Math.round(38 * computeRushDirectorParams(0, 0).hpMultiplier);
+        bugs.push({
+          id: `rush-open-${Date.now()}-1`,
+          type: 'speed_ant',
+          rail: openingRail,
+          targetRail: openingRail,
+          yProgress: -0.35,
+          hp: openingHp,
+          maxHp: openingHp,
+          hasShield: false,
+          isSlidingFromSoap: false,
+          hitByDiagonalFoam: false,
+          hitByBridgeBurn: false,
+          hitByVortexSpin: false,
+          slowTimer: 0,
+          flashTimer: 0,
+          attackWindup: 0,
+          koTimer: 0,
+          koStar: 1,
+        });
         selectedPieceIdRef.current = null;
       } else {
         spawnWavePreviewBugs(currentLvl, 1);
@@ -1824,14 +1872,31 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
         const traySlotIdx = trayList.findIndex((p) => p.id === pieceId);
         const isFromTray = traySlotIdx >= 0;
 
-        if (isFromTray && rushSupply < RUSH_SUPPLY_DEPLOY_COST) {
+        const currentDeployCost = computeRushEscalatedCost(rushPlacedDeployCount);
+        const maxBoardWeapons = computeRushBoardWeaponCap(rushLevel);
+        const targetOccupied = boardList.some(
+          (p) => p.id !== pieceId && p.rail === cell.rail && p.row === cell.row
+        );
+        const activeBoardCount = boardList.filter((p) => p.depleteTimer === undefined).length;
+
+        // Check board weapon cap FIRST when trying to place onto an empty cell from the tray (merges on occupied cells bypass cap!)
+        if (isFromTray && !targetOccupied && activeBoardCount >= maxBoardWeapons) {
+          soundEngine.playShieldClink();
+          rushCapFlashTimer = 0.9;
+          selectedPieceIdRef.current = null;
+          setInspectionTarget(null);
+          hudEmitTimer = 1.0;
+          return;
+        }
+
+        if (isFromTray && rushSupply < currentDeployCost) {
           soundEngine.playShieldClink();
           const warnPos = projectWorldToScreenPct(gridToWorldX(cell.rail), 0.75, gridToWorldZ(cell.row));
           stateRef.current.onFloatingCombo?.({
             id: `supply-low-${Date.now()}`,
             multiplier: 1,
             label: '⚡ FALTA SUMINISTRO',
-            detail: `${Math.floor(rushSupply)}/${RUSH_SUPPLY_DEPLOY_COST}`,
+            detail: `${Math.floor(rushSupply)}/${currentDeployCost}`,
             color: 'yellow',
             xPct: warnPos.xPct,
             yPct: warnPos.yPct,
@@ -1842,7 +1907,7 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
           return;
         }
 
-        // If deploying from tray onto empty cell, assign a unique board tower ID so tray rotation never collides
+        // If deploying from tray, assign a unique board tower ID so tray rotation never collides
         const deployPiece: UtensilPiece = isFromTray
           ? { ...sourcePiece, id: `rush-tower-${Date.now()}-${Math.floor(Math.random() * 9999)}` }
           : sourcePiece;
@@ -1852,8 +1917,18 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
           deployPiece,
           cell.rail,
           cell.row,
-          MIN_PLACEABLE_ROW
+          MIN_PLACEABLE_ROW,
+          maxBoardWeapons
         );
+
+        if (res.outcome === 'cap_reached') {
+          soundEngine.playShieldClink();
+          rushCapFlashTimer = 0.9;
+          selectedPieceIdRef.current = null;
+          setInspectionTarget(null);
+          hudEmitTimer = 1.0;
+          return;
+        }
 
         if (res.outcome === 'invalid') {
           soundEngine.playShieldClink();
@@ -1864,8 +1939,12 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
 
         const nextTray = [...trayList];
         if (isFromTray) {
-          rushSupply = Math.max(0, rushSupply - RUSH_SUPPLY_DEPLOY_COST);
+          rushSupply = Math.max(0, rushSupply - currentDeployCost);
           nextTray[traySlotIdx] = makeRushTrayUtensilPiece(traySlotIdx, rushElapsedSec);
+          // Anti-snowball rule 1: ONLY placing a new weapon onto the board escalates cost (+30%); merging NEVER escalates cost!
+          if (res.outcome === 'placed') {
+            rushPlacedDeployCount += 1;
+          }
         }
 
         const comboEvaluatedBoard = evaluateBoardCombos(res.updatedPieces).updatedPieces;
@@ -2264,7 +2343,15 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
         activeBiome.id === 'main_kitchen' ? '#ffffff' : activeBiome.floorHex
       );
       const isRushMode = stateRef.current.gameMode === 'rush';
-      const rushDirector = computeRushDirectorParams(rushElapsedSec);
+      if (rushCapFlashTimer > 0) {
+        rushCapFlashTimer = Math.max(0, rushCapFlashTimer - dt);
+      }
+      const rushArsenal = isRushMode
+        ? computeRushArsenalMetrics(piecesRef.current)
+        : { weaponCount: 0, averageLevel: 0, arsenalPower: 0 };
+      const rushDirector = computeRushDirectorParams(rushElapsedSec, rushArsenal.arsenalPower);
+      const currentRushCost = computeRushEscalatedCost(rushPlacedDeployCount);
+      const currentRushSupplyMax = computeRushSupplyMax(currentRushCost);
       const levelForecast = getLevelForecast(stateRef.current.level);
       kitchenProps.lateralVents.forEach((lv) => {
         lv.visible = isRushMode
@@ -2968,7 +3055,7 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
       if (isRushMode && gState === 'playing' && !gameEndedLock) {
         rushElapsedSec += simDt;
         rushSupply = Math.min(
-          RUSH_SUPPLY_MAX,
+          currentRushSupplyMax,
           rushSupply + RUSH_SUPPLY_BASE_PER_SEC * rushModifiers.supplyRateMult * simDt
         );
 
@@ -3157,13 +3244,13 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
                   );
                 }
               } else {
-                rushSupply = RUSH_SUPPLY_MAX;
+                rushSupply = currentRushSupplyMax;
               }
             } else if (chosen.effectId === 'deploy_roomba') {
               patrolRoombaActive = true;
             } else if (chosen.effectId === 'supply_boost') {
               rushModifiers.supplyRateMult = Number((rushModifiers.supplyRateMult * 1.3).toFixed(2));
-              rushSupply = RUSH_SUPPLY_MAX;
+              rushSupply = currentRushSupplyMax;
             } else if (chosen.effectId === 'veto_weapon' && chosen.vetoTarget) {
               if (!rushModifiers.vetoedTypes.includes(chosen.vetoTarget)) {
                 rushModifiers.vetoedTypes = [...rushModifiers.vetoedTypes, chosen.vetoTarget];
@@ -3331,6 +3418,28 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
           }
         }
 
+        if (isRushMode && piece.depleteTimer !== undefined) {
+          const dep = tickDepletingAerosol(piece, waveSimDt);
+          piece.depleteTimer = dep.piece.depleteTimer;
+          entry.group.visible = dep.blinkVisible;
+          entry.group.scale.setScalar(dep.blinkVisible ? 0.94 : 0.82);
+          if (dep.expired && waveSimDt > 0) {
+            soundEngine.playShieldClink();
+            spawnParticles(targetX, 0.45, targetZ, 12, 0x94a3b8, 2.2);
+            activePieceIds.delete(piece.id);
+            piecesRef.current = piecesRef.current.filter((p) => p.id !== piece.id);
+            if (selectedPieceIdRef.current === piece.id) {
+              selectedPieceIdRef.current = null;
+              setInspectionTarget(null);
+            }
+            hudEmitTimer = 1.0;
+          }
+          continue;
+        } else {
+          entry.group.visible = true;
+          entry.group.scale.setScalar(1);
+        }
+
         if (waveSimDt > 0) {
           if (piece.gunkTimer > 0) {
             piece.gunkTimer = Math.max(0, piece.gunkTimer - waveSimDt);
@@ -3339,6 +3448,19 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
           if (piece.cooldown > 0) {
             piece.cooldown = Math.max(0, piece.cooldown - waveSimDt);
             continue;
+          }
+
+          if (
+            isRushMode &&
+            piece.type === 'aerosol_torch' &&
+            !piece.evolutionId &&
+            piece.comboType === 'bridge_uv'
+          ) {
+            drainRushAerosolInPlace(piece, 0.45 * waveSimDt);
+            if (piece.depleteTimer !== undefined) {
+              hudEmitTimer = 1.0;
+              continue;
+            }
           }
 
           // ===================================================================
@@ -3556,8 +3678,8 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
               ? isInCombo
                 ? 0.85
                 : 1.45
-              : piece.type === 'aerosol_torch' && !isInCombo && piece.level >= 2
-              ? 1.25 / liveMenuBuffs.thermalRateMult
+              : piece.type === 'aerosol_torch' && !isInCombo && (isRushMode || piece.level >= 2)
+              ? (isRushMode && piece.level === 1 ? 1.45 : 1.25) / liveMenuBuffs.thermalRateMult
               : 999;
 
           if (piece.fireTimer <= 0 && baseFireInterval < 100) {
@@ -3614,7 +3736,7 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
                 });
               }
             } else if (piece.type === 'aerosol_torch') {
-              // Upgraded Nv.2/Nv.3 solo Aerosol UV emits a short violet pulse ahead even before pairing!
+              // Aerosol UV emits a short violet pulse ahead (and spends 1 charge in Rush!)
               projectiles.push({
                 id: `proj-uvsolo-${piece.id}-${Date.now()}`,
                 x: piece.rail,
@@ -3631,6 +3753,10 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
                 aoeRadius: 0.55,
                 life: 0.75,
               });
+              if (isRushMode) {
+                drainRushAerosolInPlace(piece, 1);
+                hudEmitTimer = 1.0;
+              }
             }
           }
         }
@@ -3673,7 +3799,7 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
             : Math.max(2.1, 3.0 - stateRef.current.level * 0.1);
 
           if (isRushMode) {
-            const rail = Math.floor(Math.random() * GRID_RAILS);
+            const rail = pickRushSpawnRail(rushElapsedSec);
             const roll = Math.random();
             let bType: BugType = 'speed_ant';
             if (rushElapsedSec < 35) {
@@ -4752,6 +4878,18 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
               : 1.0;
             bug.hp -= 48 * liveMenuBuffs.thermalRateMult * uvMult * waveSimDt;
             bug.hitByBridgeBurn = true;
+            if (isRushMode) {
+              for (const p of piecesRef.current) {
+                if (
+                  p.type === 'aerosol_torch' &&
+                  !p.evolutionId &&
+                  p.row === currentRowInt &&
+                  (p.rail === bridgeLink.fromRail || p.rail === bridgeLink.toRail)
+                ) {
+                  drainRushAerosolInPlace(p, 0.85 * waveSimDt);
+                }
+              }
+            }
             evaluateGrandBossTransition(bug);
           }
 
@@ -4934,7 +5072,7 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
             if (isRushMode) {
               // Supply kill-streak bonus + XP gain!
               rushSupply = Math.min(
-                RUSH_SUPPLY_MAX,
+                currentRushSupplyMax,
                 rushSupply + getSupplyKillBonus(rapidKillStreakCount) * rushModifiers.supplyRateMult
               );
               rushXp += (bug.bossTier ? 48 : 14) * rushModifiers.xpMult;
@@ -5558,11 +5696,20 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
           };
         }
 
+        const liveRushArsenal = isRushMode
+          ? computeRushArsenalMetrics(piecesRef.current)
+          : { weaponCount: 0, averageLevel: 0, arsenalPower: 0 };
+        const liveDeployCost = computeRushEscalatedCost(rushPlacedDeployCount);
+        const liveSupplyMax = computeRushSupplyMax(liveDeployCost);
         const rushHud: RushHudSnapshot | null = isRushMode
           ? {
               elapsedSec: Math.floor(rushElapsedSec),
               supply: Math.round(rushSupply),
-              supplyCost: RUSH_SUPPLY_DEPLOY_COST,
+              supplyCost: liveDeployCost,
+              supplyMax: liveSupplyMax,
+              boardWeaponCount: liveRushArsenal.weaponCount,
+              maxBoardWeapons: computeRushBoardWeaponCap(rushLevel),
+              capFlashActive: rushCapFlashTimer > 0,
               frenzy: getFrenzyThermometer(rushElapsedSec),
               xpPct: Math.min(100, Math.round((rushXp / Math.max(1, rushXpNext)) * 100)),
               rushLevel,

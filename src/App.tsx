@@ -25,7 +25,6 @@ import {
   formatSurvivalMMSS,
   rollRushTraySlot,
   RUSH_ADRENALINE_MILESTONES,
-  RUSH_SUPPLY_MAX,
   RUSH_TRAY_SLOTS,
   ThermalReceiptSummary,
 } from './game/roguelite';
@@ -2113,24 +2112,61 @@ export default function App() {
           >
             {!dockCollapsed && (
               <>
-                {/* Continuous Rush Supply Bar ("Barra de Suministro") feeding the 4 rotating tray slots */}
+                {/* Continuous Rush Supply Bar + Pure Icon-Only Board Weapon Cap (4 -> 8, zero text) */}
                 {isRush && rushHud && (
                   <div
                     data-testid="rush-supply-bar"
                     className="w-full px-4 mb-1"
                   >
                     <div className="rounded-xl bg-slate-950/92 border-2 border-slate-950 px-2.5 py-1 shadow-[0_2px_0_#0f172a]">
-                      <div className="flex items-center justify-between text-[9.5px] font-black leading-none mb-1">
-                        <span className="text-yellow-300 tracking-wide">
+                      <div className="flex items-center justify-between gap-2 mb-1">
+                        <span className="text-[9.5px] font-black leading-none text-yellow-300 tracking-wide">
                           ⚡ SUMINISTRO · COSTE {rushHud.supplyCost}
                         </span>
-                        <span className="font-mono tabular-nums text-cyan-200">
-                          {rushHud.supply}/{RUSH_SUPPLY_MAX}{' '}
-                          {rushHud.frenzy.tier === 4
-                            ? '· 100% PLATA/ORO'
-                            : rushHud.frenzy.tier >= 2
-                            ? '· +NV.2 PLATA'
-                            : ''}
+                        <div
+                          data-testid="rush-board-cap-icons"
+                          role="img"
+                          aria-label={`Límite de armas en mesa: ${rushHud.boardWeaponCount} de ${rushHud.maxBoardWeapons}`}
+                          className={`flex items-center gap-0.5 px-1 py-0.5 rounded-md border transition-transform ${
+                            rushHud.capFlashActive
+                              ? 'bg-red-950/90 border-red-400 scale-105'
+                              : 'bg-slate-900/90 border-slate-800'
+                          }`}
+                        >
+                          {Array.from({ length: rushHud.maxBoardWeapons }, (_, slotIdx) => {
+                            const filled = slotIdx < rushHud.boardWeaponCount;
+                            return (
+                              <svg
+                                key={slotIdx}
+                                viewBox="0 0 16 16"
+                                aria-hidden="true"
+                                className="w-3.5 h-3.5 shrink-0"
+                              >
+                                <path
+                                  d="M3 13.5h10v-2H11.5L10.8 6.5h1.2V4.5H9.8V2.5H6.2v2H4v2h1.2L4.5 11.5H3v2z"
+                                  fill={
+                                    rushHud.capFlashActive
+                                      ? '#ef4444'
+                                      : filled
+                                      ? '#facc15'
+                                      : '#1e293b'
+                                  }
+                                  stroke={
+                                    rushHud.capFlashActive
+                                      ? '#fecaca'
+                                      : filled
+                                      ? '#0f172a'
+                                      : '#64748b'
+                                  }
+                                  strokeWidth="1.25"
+                                  strokeLinejoin="round"
+                                />
+                              </svg>
+                            );
+                          })}
+                        </div>
+                        <span className="text-[9.5px] font-black leading-none font-mono tabular-nums text-cyan-200">
+                          {rushHud.supply}/{rushHud.supplyMax}
                         </span>
                       </div>
                       <svg
@@ -2138,31 +2174,36 @@ export default function App() {
                         preserveAspectRatio="none"
                         className="w-full h-2 rounded-full bg-slate-800 border border-slate-950 overflow-hidden"
                         role="img"
-                        aria-label={`Barra de Suministro: ${rushHud.supply} de ${RUSH_SUPPLY_MAX}`}
+                        aria-label={`Barra de Suministro: ${rushHud.supply} de ${rushHud.supplyMax}`}
                       >
                         <rect
                           x="0"
                           y="0"
-                          width={Math.max(0, Math.min(100, rushHud.supply))}
+                          width={Math.max(
+                            0,
+                            Math.min(100, (rushHud.supply / Math.max(1, rushHud.supplyMax)) * 100)
+                          )}
                           height="8"
                           fill={rushHud.supply >= rushHud.supplyCost ? '#facc15' : '#38bdf8'}
                         />
                         <line
-                          x1={rushHud.supplyCost}
+                          x1={(rushHud.supplyCost / Math.max(1, rushHud.supplyMax)) * 100}
                           y1="0"
-                          x2={rushHud.supplyCost}
+                          x2={(rushHud.supplyCost / Math.max(1, rushHud.supplyMax)) * 100}
                           y2="8"
                           stroke="#0f172a"
                           strokeWidth="1.4"
                         />
-                        <line
-                          x1={rushHud.supplyCost * 2}
-                          y1="0"
-                          x2={rushHud.supplyCost * 2}
-                          y2="8"
-                          stroke="#0f172a"
-                          strokeWidth="1.4"
-                        />
+                        {rushHud.supplyCost * 2 < rushHud.supplyMax && (
+                          <line
+                            x1={((rushHud.supplyCost * 2) / Math.max(1, rushHud.supplyMax)) * 100}
+                            y1="0"
+                            x2={((rushHud.supplyCost * 2) / Math.max(1, rushHud.supplyMax)) * 100}
+                            y2="8"
+                            stroke="#0f172a"
+                            strokeWidth="1.4"
+                          />
+                        )}
                       </svg>
                     </div>
                   </div>

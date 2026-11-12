@@ -12,12 +12,100 @@ import {
 // ============================================================================
 
 export const RUSH_SUPPLY_MAX = 100;
-export const RUSH_SUPPLY_DEPLOY_COST = 34;
-export const RUSH_SUPPLY_BASE_PER_SEC = 21; // ~1 pieza cada 1.6s + bonus por rachas de bajas
+export const RUSH_SUPPLY_DEPLOY_COST = 24;
+export const RUSH_COST_ESCALATION_MULT = 1.3; // +30% cumulative per placed weapon (merging does NOT escalate!)
+export const RUSH_SUPPLY_BASE_PER_SEC = 15;
 export const RUSH_TRAY_SLOTS = 4;
+export const RUSH_INITIAL_BOARD_CAP = 4;
+export const RUSH_MAX_BOARD_CAP = 8;
+export const AEROSOL_DEPLETE_BLINK_SECONDS = 3.0;
+export const RUSH_CENTRAL_RAIL_ONLY_SECONDS = 15.0;
+export const RUSH_OPENING_CENTER_RAIL = 1;
 export const COMANDA_AUTO_PICK_SECONDS = 10.0;
 export const SUPREME_EVOLUTION_HITSTOP_SECONDS = 0.05; // 50ms exactos al evolucionar Nv.3 + Nv.3
 export const MERGE_SHOCKWAVE_PUSH_CELLS = 1.0;
+
+/**
+ * Escalating deploy cost: each weapon placed on the board raises the next deploy cost by +30% compounded.
+ * Merging does NOT increment `placedDeployCount`.
+ */
+export function computeRushEscalatedCost(
+  placedDeployCount: number,
+  baseCost = RUSH_SUPPLY_DEPLOY_COST
+): number {
+  const safeCount = Math.max(0, Math.floor(placedDeployCount));
+  return Math.round(baseCost * Math.pow(RUSH_COST_ESCALATION_MULT, safeCount));
+}
+
+/**
+ * Ensures the supply bar ceiling always accommodates escalated costs (> 100) so next deployments remain payable.
+ */
+export function computeRushSupplyMax(currentDeployCost: number): number {
+  return Math.max(RUSH_SUPPLY_MAX, Math.ceil(currentDeployCost));
+}
+
+/**
+ * Board weapon cap: 4 at start (rushLevel = 1), +1 per XP level-up, max 8.
+ */
+export function computeRushBoardWeaponCap(rushLevel: number): number {
+  const bonus = Math.max(0, Math.floor(rushLevel) - 1);
+  return Math.min(RUSH_MAX_BOARD_CAP, RUSH_INITIAL_BOARD_CAP + bonus);
+}
+
+/**
+ * Initial aerosol UV charges in Rush by tier.
+ */
+export function getInitialAerosolAmmo(level: number): number {
+  if (level >= 3) return 18;
+  if (level === 2) return 14;
+  return 10;
+}
+
+/**
+ * Consumes `charges` from an aerosol piece in Rush; when charges hit 0, starts the 3.0s blink-and-vanish countdown.
+ */
+export function consumeAerosolAmmo(piece: UtensilPiece, charges: number): UtensilPiece {
+  if (piece.type !== 'aerosol_torch' || piece.evolutionId || piece.depleteTimer !== undefined) {
+    return piece;
+  }
+  const initMax = piece.maxAmmo ?? getInitialAerosolAmmo(piece.level);
+  const current = piece.ammo ?? initMax;
+  const nextAmmo = Math.max(0, Number((current - Math.max(0, charges)).toFixed(3)));
+  if (nextAmmo <= 0) {
+    return {
+      ...piece,
+      ammo: 0,
+      maxAmmo: initMax,
+      comboType: 'none',
+      depleteTimer: AEROSOL_DEPLETE_BLINK_SECONDS,
+    };
+  }
+  return {
+    ...piece,
+    ammo: nextAmmo,
+    maxAmmo: initMax,
+  };
+}
+
+/**
+ * Advances the 3.0s blink countdown on an empty aerosol and reports blink visibility + expiration.
+ */
+export function tickDepletingAerosol(
+  piece: UtensilPiece,
+  dt: number
+): { piece: UtensilPiece; expired: boolean; blinkVisible: boolean } {
+  if (piece.depleteTimer === undefined) {
+    return { piece, expired: false, blinkVisible: true };
+  }
+  const nextTimer = Math.max(0, Number((piece.depleteTimer - Math.max(0, dt)).toFixed(4)));
+  const freq = nextTimer < 1.0 ? 16 : 9;
+  const blinkVisible = Math.floor(nextTimer * freq) % 2 === 0;
+  return {
+    piece: { ...piece, depleteTimer: nextTimer },
+    expired: nextTimer <= 0,
+    blinkVisible,
+  };
+}
 
 // Pool ágil inicial de 5 armas base en Nv.1 para asegurar fusiones rápidas desde el segundo 0
 export const RUSH_BASE_POOL: readonly UtensilType[] = [
@@ -164,7 +252,7 @@ export function findSupremeEvolutionPartners(
 }
 
 export interface RushMergeOrPlaceResult {
-  outcome: 'placed' | 'swapped' | 'merged' | 'evolved' | 'invalid';
+  outcome: 'placed' | 'swapped' | 'merged' | 'evolved' | 'cap_reached' | 'invalid';
   updatedPieces: UtensilPiece[];
   resultPieceId: string | null;
   newLevel: number;
@@ -177,14 +265,16 @@ export interface RushMergeOrPlaceResult {
 /**
  * Executes Hot-Merge (Nv.1 -> Nv.2 Plata -> Nv.3 Oro) or Supreme Evolution (Nv.3 + Nv.3 -> Super-Turret in 1 cell),
  * or places/swaps on the 4x5 playable grid (rows 2..6).
- * When merging/evolving from another board cell, frees the origin cell automatically!
+ * Enforces `maxBoardWeapons` ONLY when placing a new piece from the tray onto an empty cell — merging/evolving
+ * onto an occupied compatible piece is always allowed even at cap!
  */
 export function executeRushDropOrMerge(
   boardPieces: readonly UtensilPiece[],
   sourcePiece: UtensilPiece,
   targetRail: number,
   targetRow: number,
-  minPlaceableRow = 2
+  minPlaceableRow = 2,
+  maxBoardWeapons = Infinity
 ): RushMergeOrPlaceResult {
   if (targetRow < minPlaceableRow || targetRail < 0 || targetRail > 3 || targetRow > 6) {
     return {
@@ -209,8 +299,32 @@ export function executeRushDropOrMerge(
     (p) => p.id !== sourcePiece.id && p.rail === targetRail && p.row === targetRow
   );
 
-  // 1. Empty target cell -> place or move directly
+  // 1. Empty target cell -> enforce board weapon cap if deploying from tray, else place or move directly
   if (!occupant) {
+    const activeOnBoard = boardPieces.filter(
+      (p) => p.rail !== null && p.row !== null && p.depleteTimer === undefined
+    ).length;
+    if (!isFromBoard && activeOnBoard >= maxBoardWeapons) {
+      return {
+        outcome: 'cap_reached',
+        updatedPieces: [...boardPieces],
+        resultPieceId: null,
+        newLevel: sourcePiece.level,
+        evolution: null,
+        shockwavePushCells: 0,
+        hitstopSeconds: 0,
+        freedOriginCell: null,
+      };
+    }
+
+    const initAmmoFields =
+      sourcePiece.type === 'aerosol_torch' && !sourcePiece.evolutionId
+        ? {
+            ammo: sourcePiece.ammo ?? getInitialAerosolAmmo(sourcePiece.level),
+            maxAmmo: sourcePiece.maxAmmo ?? getInitialAerosolAmmo(sourcePiece.level),
+          }
+        : {};
+
     const nextPieces = isFromBoard
       ? boardPieces.map((p) =>
           p.id === sourcePiece.id
@@ -221,6 +335,7 @@ export function executeRushDropOrMerge(
           ...boardPieces.map((p) => ({ ...p })),
           {
             ...sourcePiece,
+            ...initAmmoFields,
             rail: targetRail,
             row: targetRow,
             gunkTimer: 0,
@@ -252,6 +367,9 @@ export function executeRushDropOrMerge(
               ...p,
               level: 4,
               evolutionId: evo.id,
+              ammo: undefined,
+              maxAmmo: undefined,
+              depleteTimer: undefined,
               gunkTimer: 0,
               cooldown: 0.08,
               fireTimer: 0.05,
@@ -279,12 +397,21 @@ export function executeRushDropOrMerge(
     !occupant.evolutionId
   ) {
     const mergedLevel = sourcePiece.level + 1;
+    const mergedAmmoFields =
+      occupant.type === 'aerosol_torch'
+        ? {
+            ammo: getInitialAerosolAmmo(mergedLevel),
+            maxAmmo: getInitialAerosolAmmo(mergedLevel),
+            depleteTimer: undefined,
+          }
+        : {};
     const nextPieces = boardPieces
       .filter((p) => p.id !== sourcePiece.id)
       .map((p) =>
         p.id === occupant.id
           ? {
               ...p,
+              ...mergedAmmoFields,
               level: mergedLevel,
               gunkTimer: 0,
               cooldown: 0.1,
@@ -465,10 +592,10 @@ export function rollRushTraySlot(
 }
 
 export function getSupplyKillBonus(rapidStreak: number): number {
-  if (rapidStreak >= 10) return 18;
-  if (rapidStreak >= 5) return 13;
-  if (rapidStreak >= 2) return 9;
-  return 6;
+  if (rapidStreak >= 10) return 11;
+  if (rapidStreak >= 5) return 8;
+  if (rapidStreak >= 2) return 6;
+  return 4;
 }
 
 // ============================================================================
@@ -525,24 +652,103 @@ export function getChaosDirectorEventForMinute(minuteMark: number): ChaosDirecto
   return null;
 }
 
-export function computeRushDirectorParams(elapsedSeconds: number): {
+export interface RushArsenalMetrics {
+  weaponCount: number;
+  averageLevel: number;
+  arsenalPower: number; // weaponCount * averageLevel
+}
+
+/**
+ * Computes `(nº de armas × nivel medio)` for active placed weapons on the countertop.
+ * Excludes empty blinking aerosol cans (`depleteTimer !== undefined` or `ammo <= 0`) so adaptive
+ * difficulty reflects live combat power accurately.
+ */
+export function computeRushArsenalMetrics(
+  pieces: readonly Pick<UtensilPiece, 'rail' | 'row' | 'level' | 'ammo' | 'depleteTimer'>[]
+): RushArsenalMetrics {
+  let count = 0;
+  let sumLevels = 0;
+  for (let i = 0; i < pieces.length; i++) {
+    const p = pieces[i];
+    if (p.rail === null || p.row === null) continue;
+    if (p.depleteTimer !== undefined || (p.ammo !== undefined && p.ammo <= 0)) continue;
+    count += 1;
+    sumLevels += Math.max(1, p.level);
+  }
+  if (count === 0) {
+    return { weaponCount: 0, averageLevel: 0, arsenalPower: 0 };
+  }
+  const averageLevel = Number((sumLevels / count).toFixed(2));
+  const arsenalPower = Number((count * averageLevel).toFixed(2));
+  return { weaponCount: count, averageLevel, arsenalPower };
+}
+
+/**
+ * Opening 15s spawn rule: during the first 15 seconds, ONLY the central rail (`rail === 1`) spawns bugs.
+ */
+export function pickRushSpawnRail(
+  elapsedSeconds: number,
+  rng: () => number = Math.random
+): number {
+  if (elapsedSeconds < RUSH_CENTRAL_RAIL_ONLY_SECONDS) {
+    return RUSH_OPENING_CENTER_RAIL;
+  }
+  return Math.floor(rng() * 4) % 4;
+}
+
+/**
+ * Adaptive Rush Director:
+ * Plague HP and spawn frequency scale with BOTH elapsed time AND `(nº de armas × nivel medio)` (`arsenalPower`),
+ * calibrated so an average player gets overwhelmed and loses between 90 and 120 seconds.
+ */
+export function computeRushDirectorParams(
+  elapsedSeconds: number,
+  arsenalPower = 0
+): {
   speedMultiplier: number;
   spawnIntervalSec: number;
   maxConcurrentBugs: number;
   hpMultiplier: number;
   lateralConduitsOpen: boolean;
 } {
-  const baseSpeed = 0.92 + Math.min(1.35, elapsedSeconds * 0.0038);
-  const baseInterval = Math.max(0.52, 1.95 - elapsedSeconds * 0.0052);
-  // Breathable opening 90s: -35% plague movement speed and -35% spawn frequency so players can read & build synergies
-  const openingPaceFactor = elapsedSeconds < 90 ? 0.65 : 1.0;
-  const speedMultiplier = Number((baseSpeed * openingPaceFactor).toFixed(3));
-  const spawnIntervalSec = Number((baseInterval / openingPaceFactor).toFixed(2));
+  const safePower = Math.max(0, arsenalPower);
+
+  // 1. Movement speed: calm 0..15s central-rail opening, ramping into 90-120s climax
+  const rawSpeed =
+    elapsedSeconds < RUSH_CENTRAL_RAIL_ONLY_SECONDS
+      ? 0.65 + elapsedSeconds * 0.004
+      : 0.72 +
+        Math.min(0.68, (elapsedSeconds - 15) * 0.0042) +
+        Math.max(0, elapsedSeconds - 75) * 0.0065 +
+        Math.min(0.22, safePower * 0.009);
+  const speedMultiplier = Number(rawSpeed.toFixed(3));
+
+  // 2. Adaptive Spawn Frequency (bugs/sec) scaling with time AND (weaponCount * avgLevel)
+  const baseFreq =
+    elapsedSeconds < RUSH_CENTRAL_RAIL_ONLY_SECONDS
+      ? 0.36 + elapsedSeconds * 0.004
+      : 0.4 +
+        (elapsedSeconds - 15) * 0.0048 +
+        Math.max(0, elapsedSeconds - 74) * 0.022;
+  const adaptiveFreqMult = 1 + safePower * 0.036;
+  const effectiveFreq = baseFreq * adaptiveFreqMult;
+  const spawnIntervalSec = Number(Math.max(0.32, 1 / effectiveFreq).toFixed(2));
+
+  // 3. Adaptive Plague HP scaling with time AND (weaponCount * avgLevel)
+  const timeHp =
+    elapsedSeconds < RUSH_CENTRAL_RAIL_ONLY_SECONDS
+      ? 0.72 + elapsedSeconds * 0.004
+      : 0.78 +
+        (elapsedSeconds - 15) * 0.0062 +
+        Math.max(0, elapsedSeconds - 74) * 0.036;
+  const adaptiveHpMult = 1 + safePower * 0.045;
+  const hpMultiplier = Number((timeHp * adaptiveHpMult).toFixed(2));
+
   const maxConcurrentBugs =
-    elapsedSeconds < 90
-      ? Math.min(8, 4 + Math.floor(elapsedSeconds / 30))
-      : Math.min(18, 5 + Math.floor(elapsedSeconds / 24));
-  const hpMultiplier = Number((0.9 + elapsedSeconds * 0.0075).toFixed(2));
+    elapsedSeconds < RUSH_CENTRAL_RAIL_ONLY_SECONDS
+      ? 4
+      : Math.min(20, 4 + Math.floor(elapsedSeconds / 20) + Math.floor(safePower / 3));
+
   const lateralConduitsOpen =
     (elapsedSeconds >= 120 && elapsedSeconds <= 150) || elapsedSeconds >= 240;
 
