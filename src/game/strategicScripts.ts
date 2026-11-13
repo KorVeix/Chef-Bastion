@@ -43,6 +43,10 @@ const bridge = (leftRail: number, row: number) => [
   { type: 'aerosol_torch' as const, rail: leftRail + 1, row },
 ];
 
+/** Colocación en vivo (niveles sin fase de colocación): una pieza cada 1,5 s desde el segundo 1,5. */
+const placedLive = (pieces: SimLayoutStep['placements']): SimLayoutStep[] =>
+  pieces.map((_, i) => ({ t: 1.5 * (i + 1), placements: pieces.slice(0, i + 1) }));
+
 export const STRATEGIC_SCRIPTS: readonly StrategicScript[] = [
   {
     level: 1,
@@ -50,44 +54,63 @@ export const STRATEGIC_SCRIPTS: readonly StrategicScript[] = [
     teaches: 'Estropajo delante del Flus-Flus: abanico de 5 burbujas que cubre 3 carriles.',
     tutorial: 'line_foam',
     spawns: [
-      ...at(2, 'speed_ant', 1),
-      ...at(8, 'speed_ant', 2),
-      ...at(14, 'speed_ant', 1),
-      ...at(20, 'speed_ant', 2),
-      ...at(26, 'speed_ant', 1, 2),
-      ...at(34, 'speed_ant', 2),
-      ...at(40, 'speed_ant', 1, 2),
+      ...at(0.5, 'speed_ant', 1),
+      ...at(3, 'speed_ant', 2),
+      ...at(5, 'speed_ant', 1),
+      ...at(7, 'speed_ant', 0, 1, 2),
+      ...at(10, 'speed_ant', 2),
+      ...at(12, 'speed_ant', 1),
+      ...at(14, 'speed_ant', 0, 2),
+      ...at(17, 'speed_ant', 1),
+      ...at(19, 'speed_ant', 1, 2),
+      ...at(22, 'speed_ant', 0, 1, 2),
+      ...at(25, 'speed_ant', 2),
+      ...at(27, 'speed_ant', 1, 2),
+      ...at(30, 'speed_ant', 0, 1, 2),
     ],
-    solution: [{ t: 0, placements: foam(1) }],
+    solution: placedLive(foam(1)),
     failsWithout: {
       label: 'Flus-Flus sin Estropajo',
-      plan: [{ t: 0, placements: [{ type: 'spray_flus', rail: 1, row: 5 }] }],
+      plan: [{ t: 1.5, placements: [{ type: 'spray_flus', rail: 1, row: 5 }] }],
     },
   },
   {
     level: 2,
     loadout: ['scourer_nanas', 'spray_flus'],
-    teaches: 'Más hormigas y en más carriles: mueve el abanico hacia donde entran.',
+    teaches: 'Más hormigas y en los 4 carriles: mueve el abanico hacia donde entran.',
     tutorial: null,
     spawns: [
-      // Tramo 1 (carriles 1-3): abanico en el carril 2.
-      ...at(2, 'speed_ant', 1),
-      ...at(6, 'speed_ant', 0, 2),
-      ...at(12, 'speed_ant', 1),
-      ...at(16, 'speed_ant', 0, 1, 2),
-      // Tramo 2 (carriles 2-4): hay que mover el abanico al carril 3.
-      ...at(28, 'speed_ant', 3),
-      ...at(32, 'speed_ant', 2, 3),
-      ...at(38, 'speed_ant', 1, 3),
-      ...at(44, 'speed_ant', 1, 2, 3),
+      // Tramo 1: carriles 1-3, abanico en el carril 2.
+      ...at(0.5, 'speed_ant', 0),
+      ...at(2.5, 'speed_ant', 1),
+      ...at(4.5, 'speed_ant', 2),
+      ...at(7, 'speed_ant', 0, 1, 2),
+      ...at(10, 'speed_ant', 1),
+      ...at(12, 'speed_ant', 0, 2),
+      ...at(14.5, 'speed_ant', 1),
+      ...at(16.5, 'speed_ant', 0, 1, 2),
+      // Tramo 2: se abre el carril 4 → el abanico pasa al carril 3.
+      ...at(19, 'speed_ant', 3),
+      ...at(21, 'speed_ant', 2),
+      ...at(23, 'speed_ant', 1, 3),
+      ...at(25.5, 'speed_ant', 2, 3),
+      ...at(28, 'speed_ant', 1, 2, 3),
+      ...at(31, 'speed_ant', 3),
+      ...at(33, 'speed_ant', 2, 3),
+      ...at(35.5, 'speed_ant', 1, 2, 3),
+      // Remate: por los dos bordes a la vez → ir y volver con el abanico.
+      ...at(38, 'speed_ant', 0, 3),
+      ...at(44, 'speed_ant', 0, 3),
     ],
     solution: [
-      { t: 0, placements: foam(1) },
-      { t: 24, placements: foam(2) },
+      ...placedLive(foam(1)),
+      { t: 19.5, placements: foam(2) },
+      { t: 40, placements: foam(1) },
+      { t: 46, placements: foam(2) },
     ],
     failsWithout: {
       label: 'Abanico quieto en el carril 2',
-      plan: [{ t: 0, placements: foam(1) }],
+      plan: placedLive(foam(1)),
     },
   },
   {
@@ -96,31 +119,35 @@ export const STRATEGIC_SCRIPTS: readonly StrategicScript[] = [
     teaches: 'Ratas blindadas: 2 Aerosoles UV en carriles vecinos y misma fila funden el escudo.',
     tutorial: 'bridge_uv',
     spawns: [
-      // Mismo volumen de hormigas que el Nv.2, por la izquierda…
-      ...at(2, 'speed_ant', 0),
-      ...at(6, 'speed_ant', 1),
-      ...at(10, 'speed_ant', 0, 2),
-      ...at(16, 'speed_ant', 1),
-      ...at(22, 'speed_ant', 0, 1),
-      ...at(30, 'speed_ant', 2),
-      ...at(36, 'speed_ant', 0, 1, 2),
+      // El volumen de hormigas del Nv.2, por los carriles 1-3…
+      ...at(0.5, 'speed_ant', 1),
+      ...at(2.5, 'speed_ant', 0),
+      ...at(4.5, 'speed_ant', 2),
+      ...at(7, 'speed_ant', 0, 1, 2),
+      ...at(10, 'speed_ant', 1),
+      ...at(12, 'speed_ant', 0, 2),
+      ...at(14.5, 'speed_ant', 1),
+      ...at(16.5, 'speed_ant', 0, 1, 2),
+      ...at(19, 'speed_ant', 2),
+      ...at(21, 'speed_ant', 0),
+      ...at(23, 'speed_ant', 1, 2),
+      ...at(25.5, 'speed_ant', 0, 1),
+      ...at(28, 'speed_ant', 0, 1, 2),
+      ...at(31, 'speed_ant', 2),
+      ...at(33, 'speed_ant', 0, 1),
+      ...at(35.5, 'speed_ant', 0, 1, 2),
       // …y 2 ratas blindadas por el carril 4, fuera del abanico.
-      ...at(12, 'cap_beetle', 3),
-      ...at(32, 'cap_beetle', 3),
+      ...at(9, 'cap_beetle', 3),
+      ...at(26, 'cap_beetle', 3),
     ],
-    solution: [{ t: 0, placements: [...foam(1), ...bridge(2, 2)] }],
+    solution: placedLive([...foam(1), ...bridge(2, 2)]),
     failsWithout: {
       label: 'Aerosoles separados (sin puente)',
-      plan: [
-        {
-          t: 0,
-          placements: [
-            ...foam(1),
-            { type: 'aerosol_torch', rail: 3, row: 2 },
-            { type: 'aerosol_torch', rail: 3, row: 4 },
-          ],
-        },
-      ],
+      plan: placedLive([
+        ...foam(1),
+        { type: 'aerosol_torch', rail: 3, row: 2 },
+        { type: 'aerosol_torch', rail: 3, row: 4 },
+      ]),
     },
   },
   {
@@ -129,15 +156,22 @@ export const STRATEGIC_SCRIPTS: readonly StrategicScript[] = [
     teaches: 'Solo ratas blindadas, más y en todos los carriles: abanico y puente a la vez.',
     tutorial: null,
     spawns: [
-      ...at(2, 'cap_beetle', 3),
-      ...at(8, 'cap_beetle', 0),
-      ...at(14, 'cap_beetle', 2, 3),
-      ...at(22, 'cap_beetle', 1),
-      ...at(28, 'cap_beetle', 0, 3),
-      ...at(36, 'cap_beetle', 1, 2),
-      ...at(44, 'cap_beetle', 0, 2, 3),
-      ...at(54, 'cap_beetle', 1, 3),
+      ...at(0.5, 'cap_beetle', 1),
+      ...at(3, 'cap_beetle', 3),
+      ...at(5.5, 'cap_beetle', 0, 2, 3),
+      ...at(9, 'cap_beetle', 1),
+      ...at(11.5, 'cap_beetle', 0, 3),
+      ...at(14, 'cap_beetle', 2),
+      ...at(16.5, 'cap_beetle', 1, 3),
+      ...at(19, 'cap_beetle', 0, 2),
+      ...at(22, 'cap_beetle', 1, 2, 3),
+      ...at(25, 'cap_beetle', 0),
+      ...at(27.5, 'cap_beetle', 2, 3),
+      ...at(30, 'cap_beetle', 0, 1, 3),
+      ...at(33.5, 'cap_beetle', 2),
+      ...at(36, 'cap_beetle', 0, 1, 2, 3),
     ],
+    // Nv.4 tiene fase de colocación: el reloj del guion empieza con las armas ya puestas.
     solution: [{ t: 0, placements: [...foam(1), ...bridge(2, 2)] }],
     failsWithout: {
       label: 'Solo el abanico',

@@ -362,9 +362,10 @@ test('isDynamicOnboardingLevel is active ONLY on Levels 1-3 and tutorial targets
 
   assert.equal(getTutorialGuideForLevel(2, createInitialBoardPieces(2)), null);
   const l3Init = createInitialBoardPieces(3);
-  const g3Step1 = getTutorialGuideForLevel(3, l3Init);
-  assert.equal(g3Step1?.nextTarget?.shortTag, '⚡ 1º LÁSER UV');
-  const g3Step2 = getTutorialGuideForLevel(3, moveOrSwapUtensil(l3Init, 'u-aerosol-1', 2, 2));
+  assert.equal(getTutorialGuideForLevel(3, l3Init)?.nextTarget?.shortTag, '🧽 ESTROPAJO');
+  const l3Fan = moveOrSwapUtensil(moveOrSwapUtensil(l3Init, 'u-scourer-1', 1, 3), 'u-spray-1', 1, 5);
+  assert.equal(getTutorialGuideForLevel(3, l3Fan)?.nextTarget?.shortTag, '⚡ 1º LÁSER UV');
+  const g3Step2 = getTutorialGuideForLevel(3, moveOrSwapUtensil(l3Fan, 'u-aerosol-1', 2, 2));
   assert.equal(g3Step2?.nextTarget?.shortTag, '⚡ PUENTE UV');
   assert.equal(g3Step2?.nextTarget?.rail, 3);
 });

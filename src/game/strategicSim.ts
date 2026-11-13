@@ -58,6 +58,12 @@ export interface SimResult {
   leaks: SimEvent[];
   /** Máximo de bichos vivos a la vez. */
   peakAlive: number;
+  /** Máximo de bichos vivos a la vez en los primeros 10 s. */
+  peakAliveFirst10s: number;
+  firstSpawnT: number | null;
+  firstKillT: number | null;
+  /** Mayor tramo sin ningún bicho en pantalla mientras el guion sigue (tiempo muerto). */
+  maxDeadGap: number;
   endTime: number;
 }
 
@@ -140,6 +146,10 @@ export function simulateStrategic(opts: {
   const kills: SimEvent[] = [];
   const leaks: SimEvent[] = [];
   let peakAlive = 0;
+  let peakAliveFirst10s = 0;
+  let firstSpawnT: number | null = null;
+  let deadGap = 0;
+  let maxDeadGap = 0;
   let t = 0;
 
   const applyLayout = (step: SimLayoutStep) => {
@@ -248,8 +258,16 @@ export function simulateStrategic(opts: {
         redirectedBySquare: false,
       });
       spawnIdx += 1;
+      if (firstSpawnT === null) firstSpawnT = t;
     }
     peakAlive = Math.max(peakAlive, bugs.length);
+    if (t <= 10) peakAliveFirst10s = Math.max(peakAliveFirst10s, bugs.length);
+    if (spawnIdx > 0 && spawnIdx < spawns.length && bugs.length === 0) {
+      deadGap += dt;
+      maxDeadGap = Math.max(maxDeadGap, deadGap);
+    } else {
+      deadGap = 0;
+    }
 
     // 3. Proyectiles.
     const surviving: SimProjectile[] = [];
@@ -382,5 +400,15 @@ export function simulateStrategic(opts: {
     if (spawnIdx >= spawns.length && bugs.length === 0) break;
   }
 
-  return { spawned: spawnIdx, kills, leaks, peakAlive, endTime: t };
+  return {
+    spawned: spawnIdx,
+    kills,
+    leaks,
+    peakAlive,
+    peakAliveFirst10s,
+    firstSpawnT,
+    firstKillT: kills.length > 0 ? kills[0].t : null,
+    maxDeadGap,
+    endTime: t,
+  };
 }

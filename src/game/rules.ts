@@ -671,35 +671,35 @@ export function getTacticalOnboardingCard(level: number): TacticalOnboardingCard
         'Las Ratas Blindadas entran por el carril 4, fuera del abanico, y su escudo para el disparo básico. Pon 2 Aerosoles UV en la misma fila en carriles vecinos para tender un Puente Láser UV.',
       cells: [
         {
-          rail: 3,
-          row: 3,
-          icon: '⚡',
-          label: '1º Aerosol UV [R3, F3]',
-          highlightColor: 'cyan',
-        },
-        {
-          rail: 4,
-          row: 3,
-          icon: '⚡',
-          label: '2º Aerosol UV [R4, F3]',
-          highlightColor: 'cyan',
-        },
-        {
           rail: 2,
           row: 4,
           icon: '🧽',
-          label: '3º Estropajo [R2, F4]',
+          label: '1º Estropajo [R2, F4]',
           highlightColor: 'green',
         },
         {
           rail: 2,
           row: 6,
           icon: '🔫',
-          label: '4º Flus-Flus [R2, F6]',
+          label: '2º Flus-Flus [R2, F6]',
           highlightColor: 'green',
         },
+        {
+          rail: 3,
+          row: 3,
+          icon: '⚡',
+          label: '3º Aerosol UV [R3, F3]',
+          highlightColor: 'cyan',
+        },
+        {
+          rail: 4,
+          row: 3,
+          icon: '⚡',
+          label: '4º Aerosol UV [R4, F3]',
+          highlightColor: 'cyan',
+        },
       ],
-      flowArrowLabel: '⚡ + ⚡ en paralelo ➔ ¡Haz UV funde el escudo! · 🧽 + 🔫 limpian las hormigas',
+      flowArrowLabel: '🧽 + 🔫 limpian las hormigas · ⚡ + ⚡ en paralelo ➔ ¡Haz UV funde el escudo!',
       rewardTitle: '🎁 Recompensa 1★: +150 Monedas Sanitarias',
       rewardExplanation:
         'Fundir el escudo metálico activa "¡Combo x2! Escudo Fundido" y deja a la plaga vulnerable a cualquier disparo.',
@@ -1004,22 +1004,6 @@ export function getTutorialGuideForLevel(
 
     const targets: TutorialTargetCell[] = [
       {
-        pieceId: 'u-aerosol-1',
-        pieceType: 'aerosol_torch',
-        rail: 2,
-        row: 2,
-        label: '⚡ Aerosol UV 1 en [Raíl 3, Fila 3]',
-        shortTag: '⚡ 1º LÁSER UV',
-      },
-      {
-        pieceId: 'u-aerosol-2',
-        pieceType: 'aerosol_torch',
-        rail: bridgeRail,
-        row: bridgeRow,
-        label: '⚡ Aerosol UV 2 al lado, misma fila',
-        shortTag: '⚡ PUENTE UV',
-      },
-      {
         pieceId: 'u-scourer-1',
         pieceType: 'scourer_nanas',
         rail: 1,
@@ -1034,6 +1018,22 @@ export function getTutorialGuideForLevel(
         row: 5,
         label: '🔫 Flus-Flus detrás en [Raíl 2, Fila 6]',
         shortTag: '🫧 ABANICO ×5',
+      },
+      {
+        pieceId: 'u-aerosol-1',
+        pieceType: 'aerosol_torch',
+        rail: 2,
+        row: 2,
+        label: '⚡ Aerosol UV 1 en [Raíl 3, Fila 3]',
+        shortTag: '⚡ 1º LÁSER UV',
+      },
+      {
+        pieceId: 'u-aerosol-2',
+        pieceType: 'aerosol_torch',
+        rail: bridgeRail,
+        row: bridgeRow,
+        label: '⚡ Aerosol UV 2 al lado, misma fila',
+        shortTag: '⚡ PUENTE UV',
       },
     ];
     const nextTarget = targets.find((t) => isInTray(t.pieceId, t.pieceType)) ?? null;

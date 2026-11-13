@@ -38,6 +38,14 @@ for (const script of STRATEGIC_SCRIPTS) {
     assert.ok(res.leaks.length >= 1, 'el guion se puede pasar sin el combo que enseña');
   });
 
+  test(`Guion Nv.${script.level}: regla de los 10 s (sin tiempos muertos)`, () => {
+    const res = simulateStrategic({ level: script.level, spawns: script.spawns, plan: script.solution });
+    assert.ok((res.firstSpawnT ?? 99) <= 1, `primer bicho a los ${res.firstSpawnT} s (máx. 1 s)`);
+    assert.ok((res.firstKillT ?? 99) <= 5, `primera baja a los ${res.firstKillT?.toFixed(1)} s (máx. 5 s)`);
+    assert.ok(res.peakAliveFirst10s >= 3, `solo ${res.peakAliveFirst10s} bichos a la vez en los primeros 10 s (mín. 3)`);
+    assert.ok(res.maxDeadGap <= 4, `${res.maxDeadGap.toFixed(1)} s seguidos sin bichos (máx. 4 s)`);
+  });
+
   test(`Guion Nv.${script.level}: el reparto incluye el Flus-Flus`, () => {
     assert.ok(script.loadout.includes('spray_flus'));
   });
@@ -63,9 +71,9 @@ test('Guiones: ningún tipo de bicho sale en más de 3 niveles seguidos', () => 
 
 test('Guiones: las apariciones salen en su segundo y la fase avanza por tercios', () => {
   const script = getStrategicScript(1)!;
-  const first = takeDueScriptSpawns(script, 0, 1.9);
+  const first = takeDueScriptSpawns(script, 0, 0.4);
   assert.equal(first.spawns.length, 0);
-  const second = takeDueScriptSpawns(script, first.cursor, 2.0);
+  const second = takeDueScriptSpawns(script, first.cursor, 0.5);
   assert.equal(second.spawns.length, 1);
   assert.equal(getScriptPhase(script, 0), 1);
   assert.equal(getScriptPhase(script, script.spawns.length), 3);
