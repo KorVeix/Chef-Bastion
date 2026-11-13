@@ -161,37 +161,35 @@ El código está estructurado siguiendo principios de arquitectura limpia para s
 
 ---
 
-## 📦 4. Cómo Generar e Instalar el `.APK` de Android
+## 📦 4. Android: APK de prueba y AAB para Google Play
 
-### Método 1 — Automático en la Nube desde tu GitHub Privado (Recomendado)
-El repositorio incluye el workflow [`.github/workflows/android-apk.yml`](.github/workflows/android-apk.yml) que configura **Node 22 + Java JDK 21 + Android SDK + Capacitor + Gradle** en los servidores de GitHub Actions:
-1. Entra a tu repositorio privado en **GitHub**.
-2. Pulsa en la pestaña **Actions** → selecciona **"Build Android APK (Capacitor)"**.
-3. Pulsa **Run workflow** (o haz cualquier `push` a la rama `main`/`master`).
-4. Al finalizar el job (~2 min), descarga el paquete **`ChefBastion-Android-APK`** en la sección **Artifacts**, descomprímelo e instala **`ChefBastion-v1.0.0-debug.apk`** directamente en tu teléfono Android.
+La plataforma nativa vive en `android/` (versionada en el repo) y se sincroniza con Capacitor 8. El workflow [`.github/workflows/main.yml`](.github/workflows/main.yml) usa **Bun + Node 22 + Java JDK 21 + Android SDK + Gradle**.
 
-### Método 2 — En Local con Capacitor + Android Studio / Línea de Comandos
+### APK de prueba (automático)
+Cada pull request y cada `push` a `main` pasan tipado, tests y build, y generan un APK debug:
+1. En GitHub, pestaña **Actions** → workflow **"CI · Chef Bastion"** → la ejecución que quieras.
+2. En **Artifacts**, descarga **`ChefBastion-debug-apk`** e instala `app-debug.apk` en el móvil.
+
+### AAB firmado para Google Play (manual)
+1. Crea una sola vez el keystore de subida (guárdalo fuera del repo, con copia de seguridad):
+   ```bash
+   keytool -genkeypair -v -keystore upload.keystore -alias upload -keyalg RSA -keysize 2048 -validity 10000
+   ```
+2. En GitHub → **Settings → Secrets and variables → Actions**, crea estos secretos:
+   - `ANDROID_KEYSTORE_BASE64`: el keystore en base64 (`base64 -w0 upload.keystore`).
+   - `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`.
+3. **Actions → "CI · Chef Bastion" → Run workflow**, marca **"Generar también el AAB firmado"** y descarga **`ChefBastion-release-aab`**.
+
+`versionCode` es el número de ejecución del workflow y `versionName` la `version` de `package.json`.
+
+### En local
 ```bash
-# 1. Instalar dependencias y validar tests + tipado
-npm install
-npm run lint
-npm test
-
-# 2. Añadir plataforma nativa Android de Capacitor (solo la primera vez)
-npm install @capacitor/core @capacitor/cli @capacitor/android
-npx cap add android
-
-# 3. Compilar la app web 3D y sincronizarla con el contenedor Android
-npm run cap:sync
-
-# 4. Generar el APK desde terminal
+bun install
+bun run lint && bun run test
+bun run cap:sync                 # build web + sincronizar android/
 cd android && ./gradlew assembleDebug
 ```
-El archivo instalable quedará generado en `android/app/build/outputs/apk/debug/app-debug.apk`.
-Si prefieres abrir el proyecto en **Android Studio** para firmarlo con tu *keystore* o lanzarlo por cable USB a tu móvil, ejecuta:
-```bash
-npm run cap:open:android
-```
+El APK queda en `android/app/build/outputs/apk/debug/app-debug.apk`. Para abrir el proyecto en Android Studio: `bun run cap:open:android`.
 
 ---
 
@@ -199,14 +197,14 @@ npm run cap:open:android
 
 ```bash
 # Ejecutar servidor de desarrollo (Puerto 3000)
-npm run dev
+bun run dev
 
-# Ejecutar suite de tests unitarios (node:test)
-npm test
+# Ejecutar suite de tests unitarios (node:test: reglas, roguelite y música)
+bun run test
 
 # Comprobar tipado estricto TypeScript
-npm run lint
+bun run lint
 
 # Generar empaquetado de producción + Service Worker Offline (dist/)
-npm run build
+bun run build
 ```
