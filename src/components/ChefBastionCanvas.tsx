@@ -102,6 +102,13 @@ import {
   WORLDS_CATALOG,
 } from '../game/rules';
 import {
+  getScriptPhase,
+  getStrategicScript,
+  takeDueScriptSpawns,
+  type StrategicScript,
+} from '../game/strategicScripts';
+import { STRATEGIC_BUG_BASE_HP } from '../game/levelAudit';
+import {
   ActiveBossHudInfo,
   ArmorId,
   BiomeConfig,
@@ -1197,6 +1204,10 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
     let spawnTimer = 2.0;
     let prepTimer = 0; // 3-second breather timer between Phase 1 -> 2 -> 3
     let levelTimer = LEVEL_DURATION_SECONDS; // 120s (2-minute) intense wave timer for Level 5+
+    // Estratégico con guion fijo (strategicScripts.ts): apariciones por segundo, sin azar.
+    let activeScript: StrategicScript | null = null;
+    let scriptClock = 0;
+    let scriptCursor = 0;
     let lastAnnouncedBiomeLevel = 0;
     let shieldWarnCooldown = 0;
     let lastKillComicPopAt = 0; // 6-second minimum cooldown between kill comic banners!
@@ -1779,6 +1790,9 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
       soundEngine.musicEngine.resetSession();
 
       phase = 1;
+      activeScript = isRush ? null : getStrategicScript(currentLvl);
+      scriptClock = 0;
+      scriptCursor = 0;
       // Rush mode starts in 0.0s with ZERO pauses; Strategic Levels 1-3 also start dynamically!
       inPlacementPhase = isRush ? false : !dynamicOnboarding;
       startWaveRef.current = false;
@@ -1869,7 +1883,7 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
         });
         selectedPieceIdRef.current = null;
       } else {
-        spawnWavePreviewBugs(currentLvl, 1);
+        if (!activeScript) spawnWavePreviewBugs(currentLvl, 1);
         selectNextTrayPieceIfAny();
       }
     }
@@ -3977,7 +3991,7 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
       // Spawn new bugs according to Rush Chaos Director OR Strategic Level & Phase
       const ventsClosed = isRushMode
         ? false
-        : waveQuotaCompleted || (stateRef.current.level >= 5 && levelTimer <= 0);
+        : waveQuotaCompleted || (stateRef.current.level >= 5 && !activeScript && levelTimer <= 0);
       if (waveSimDt > 0 && !gameEndedLock && isRushMode) {
         // Supervivencia: oleadas concentradas en 1-2 carriles y avisadas 3 s antes (no carriles al azar).
         const waveTick = tickRushWaveDirector(rushWaves, waveSimDt, rushElapsedSec, {
@@ -3992,7 +4006,41 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
         }
       }
 
-      if (waveSimDt > 0 && !gameEndedLock && !ventsClosed && !isRushMode) {
+      if (waveSimDt > 0 && !gameEndedLock && !isRushMode && activeScript) {
+        // Guion fijo: cada bicho sale en su segundo y carril; la fase del HUD avanza por tercios del guion.
+        scriptClock += waveSimDt;
+        const due = takeDueScriptSpawns(activeScript, scriptCursor, scriptClock);
+        scriptCursor = due.cursor;
+        for (const sp of due.spawns) {
+          const maxHp = STRATEGIC_BUG_BASE_HP[sp.type];
+          bugs.push({
+            id: `bug-s${stateRef.current.level}-${scriptCursor}-${Date.now()}-${Math.random()}`,
+            type: sp.type,
+            rail: sp.rail,
+            targetRail: sp.rail,
+            yProgress: -0.35,
+            hp: maxHp,
+            maxHp,
+            hasShield: sp.type === 'cap_beetle' || sp.type === 'king_crab',
+            isSlidingFromSoap: false,
+            hitByDiagonalFoam: false,
+            hitByBridgeBurn: false,
+            hitByVortexSpin: false,
+            slowTimer: 0,
+            flashTimer: 0,
+            attackWindup: 0,
+            koTimer: 0,
+            koStar: 1,
+            isLateralInvasion: false,
+            lateralDir: 0,
+            redirectedBySquare: false,
+          });
+        }
+        phase = getScriptPhase(activeScript, scriptCursor);
+        if (scriptCursor >= activeScript.spawns.length) waveQuotaCompleted = true;
+      }
+
+      if (waveSimDt > 0 && !gameEndedLock && !ventsClosed && !isRushMode && !activeScript) {
         spawnTimer -= waveSimDt;
         const maxBugsOnScreen = stateRef.current.level <= 3 ? 3 : 5;
         if (spawnTimer <= 0 && bugs.length < maxBugsOnScreen) {
@@ -4774,7 +4822,7 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
             : getLevelSpeedMultiplier(stateRef.current.level);
           // Level 1 Wave 1 ONLY (Strategic Mode): 35% slower (0.65x) so live dynamic onboarding feels calm!
           const lvl1Wave1Factor =
-            !isRushMode && stateRef.current.level === 1 && phase === 1 ? 0.65 : 1.0;
+            !isRushMode && !activeScript && stateRef.current.level === 1 && phase === 1 ? 0.65 : 1.0;
           // Grand Boss Phase 3 Frenzy: +30% speed!
           const bossFrenzyFactor =
             bug.bossTier === 'grand' && (bug.bossPhase ?? 1) === 3 ? 1.3 : 1.0;
@@ -5337,7 +5385,7 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
               }
             }
 
-            if (!isRushMode) {
+            if (!isRushMode && !activeScript) {
               const trans = checkPhaseTransition(phase, phaseKills, stateRef.current.level);
               if (trans.shouldAdvance) {
                 if (trans.nextPhase === 'victory') {
@@ -5475,7 +5523,9 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
               intactPlates[currentRailInt] = false;
               gameEndedLock = true;
               const trans = checkPhaseTransition(phase, phaseKills, stateRef.current.level);
-              const remaining = Math.max(1, trans.targetKillsForCurrentPhase - phaseKills);
+              const remaining = activeScript
+                ? Math.max(1, activeScript.spawns.length - totalBugsCleaned)
+                : Math.max(1, trans.targetKillsForCurrentPhase - phaseKills);
               setTimeout(() => {
                 stateRef.current.onGameEnd(false, {
                   score,
@@ -5507,7 +5557,7 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
         getBossTierForLevel(stateRef.current.level) !== null && !bossSpawnedForLevel;
       const readyForVictory =
         !isRushMode &&
-        (waveQuotaCompleted || (stateRef.current.level >= 5 && levelTimer <= 0)) &&
+        (waveQuotaCompleted || (stateRef.current.level >= 5 && !activeScript && levelTimer <= 0)) &&
         !bossPending;
       if (waveSimDt > 0 && !gameEndedLock && readyForVictory && liveBugsCount === 0) {
         gameEndedLock = true;
@@ -5909,8 +5959,8 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
         stateRef.current.onHudUpdate({
           phase,
           inPlacementPhase,
-          phaseKills,
-          phaseTargetKills: trans.targetKillsForCurrentPhase,
+          phaseKills: activeScript ? totalBugsCleaned : phaseKills,
+          phaseTargetKills: activeScript ? activeScript.spawns.length : trans.targetKillsForCurrentPhase,
           sanitationSeals,
           score,
           pressurePct: Math.round(pressurePct),
