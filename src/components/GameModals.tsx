@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { soundEngine } from '../game/audio';
+import { exportMetrics, loadMetrics, summarizeMetrics } from '../game/analytics';
 import { ComandaTicket, COMANDA_AUTO_PICK_SECONDS, ThermalReceiptSummary } from '../game/roguelite';
 import {
   ACHIEVEMENTS_CATALOG,
@@ -1324,6 +1325,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             )}
           </div>
 
+          <MetricsPanel />
+
           {/* 3. Safe Progress Reset ("Empezar de 0" ONLY in Pause/Settings with 2-step confirmation) */}
           {onResetProgressFromZero && (
             <div className="rounded-xl bg-rose-950/45 border border-rose-700/60 p-2.5 space-y-1.5">
@@ -2131,8 +2134,70 @@ export const QuickGuideModal: React.FC<{ onClose: () => void }> = ({ onClose }) 
   );
 };
 
+const METRICS_BUG_LABELS: Record<string, string> = {
+  speed_ant: '🐜 Hormiga',
+  cap_beetle: '🛡️ Rata blindada',
+  acid_wasp: '🦟 Mosca ácida',
+  shift_roach: '🪳 Cucaracha',
+  king_crab: '👑 Jefe',
+};
 
+function formatSeconds(total: number): string {
+  const m = Math.floor(total / 60);
+  const s = Math.round(total % 60);
+  return `${m}:${String(s).padStart(2, '0')}`;
+}
 
+/** Local match metrics (stored only on this device) with a copy button for beta testers. */
+const MetricsPanel: React.FC = () => {
+  const [store] = useState(() => loadMetrics());
+  const [copied, setCopied] = useState<string | null>(null);
+  const summary = summarizeMetrics(store);
 
+  if (summary.totalMatches === 0) {
+    return (
+      <div className="rounded-xl bg-slate-950/60 border border-slate-700/70 p-2.5 text-[11px] text-slate-300">
+        📊 Métricas: juega una partida para empezar a medir.
+      </div>
+    );
+  }
 
+  const rows: [string, string][] = [
+    ['Partidas', `${summary.totalMatches} en ${summary.daysPlayed} día${summary.daysPlayed === 1 ? '' : 's'}`],
+    ['Supervivencia', summary.rush.runs ? `${summary.rush.runs} · mejor ${formatSeconds(summary.rush.bestSeconds)} · mediana ${formatSeconds(summary.rush.medianSeconds)}` : '—'],
+    ['Campaña', summary.strategic.matches ? `${Math.round(summary.strategic.winRate * 100)}% victorias · atasco Nv.${summary.strategic.hardestLevel ?? '—'}` : '—'],
+    ['Bajas con combo', `${Math.round(summary.comboKillShare * 100)}%`],
+    ['Más platos rompe', summary.topBreachCause ? METRICS_BUG_LABELS[summary.topBreachCause] ?? summary.topBreachCause : '—'],
+  ];
 
+  return (
+    <div className="rounded-xl bg-slate-950/60 border border-slate-700/70 p-2.5 space-y-1.5" data-testid="metrics-panel">
+      <div className="text-[10px] font-black uppercase tracking-wider text-cyan-300">📊 Métricas (solo en este móvil)</div>
+      <dl className="grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5 text-[11px]">
+        {rows.map(([k, v]) => (
+          <React.Fragment key={k}>
+            <dt className="text-slate-400">{k}</dt>
+            <dd className="text-slate-100 font-semibold text-right">{v}</dd>
+          </React.Fragment>
+        ))}
+      </dl>
+      <button
+        type="button"
+        data-testid="export-metrics-btn"
+        onClick={async () => {
+          const json = exportMetrics(store);
+          try {
+            await navigator.clipboard?.writeText(json);
+            setCopied('✓ Métricas copiadas: pégalas en un mensaje.');
+          } catch {
+            setCopied('No se pudo copiar automáticamente.');
+          }
+        }}
+        className="w-full py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-cyan-200 border border-cyan-500/60 font-bold text-[11px] cursor-pointer transition"
+      >
+        📊 Copiar métricas
+      </button>
+      {copied && <p className="text-[10.5px] font-bold text-emerald-300">{copied}</p>}
+    </div>
+  );
+};

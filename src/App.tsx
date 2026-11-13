@@ -20,6 +20,7 @@ import {
   WardrobeTabId,
 } from './components/GameModals';
 import { soundEngine } from './game/audio';
+import { recordMatch } from './game/analytics';
 import {
   buildThermalReceipt,
   formatSurvivalMMSS,
@@ -645,8 +646,25 @@ export default function App() {
         evolutionsCount?: number;
         comandasPicked?: number;
         milestonesCoins?: number;
+        killsByStar?: [number, number, number];
+        breachesByBug?: Partial<Record<BugType, number>>;
       }
     ) => {
+      const [kills1, kills2, kills3] = finalStats.killsByStar ?? [finalStats.bugsCleaned, 0, 0];
+      recordMatch({
+        mode: gameModeRef.current === 'rush' ? 'rush' : 'strategic',
+        endedAt: Date.now(),
+        victory,
+        level: gameModeRef.current === 'rush' ? 0 : progressRef.current.currentLevel,
+        phaseReached: finalStats.phaseReached,
+        survivedSeconds: finalStats.survivedSeconds ?? 0,
+        bugsCleaned: finalStats.bugsCleaned,
+        kills1,
+        kills2,
+        kills3,
+        breaches: finalStats.breachesByBug ?? {},
+      });
+
       if (gameModeRef.current === 'rush') {
         const receipt = buildThermalReceipt({
           survivedSeconds: finalStats.survivedSeconds ?? 0,
