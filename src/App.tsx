@@ -1574,13 +1574,13 @@ export default function App() {
                     <div className="flex items-center gap-1.5 text-[11px] sm:text-xs font-black tracking-wide text-white leading-none drop-shadow">
                       <span
                         data-testid="rush-survival-clock"
-                        className="font-mono tabular-nums text-sm sm:text-base text-yellow-300"
+                        className="font-mono tabular-nums text-sm sm:text-base text-yellow-300 whitespace-nowrap"
                       >
                         ⏱️ {formatSurvivalMMSS(rushHud.elapsedSec)}
                       </span>
                       <span
                         data-testid="frenzy-thermometer-badge"
-                        className={`px-1.5 py-0.5 rounded border text-[9.5px] font-black leading-none ${
+                        className={`px-1.5 py-0.5 rounded border text-[9.5px] font-black leading-none whitespace-nowrap ${
                           rushHud.frenzy.color === 'red'
                             ? 'bg-rose-600/30 border-rose-400 text-rose-200 animate-pulse'
                             : rushHud.frenzy.color === 'orange'
@@ -1589,32 +1589,13 @@ export default function App() {
                             ? 'bg-yellow-500/25 border-yellow-400 text-yellow-200'
                             : 'bg-cyan-500/25 border-cyan-400 text-cyan-200'
                         }`}
+                        title={rushHud.frenzy.shortBadge}
                       >
-                        {rushHud.frenzy.shortBadge}
+                        {/* Compact HUD: keep "🔥 FRENESÍ 4" on one line; the red pulse already signals OVERDRIVE. */}
+                        {rushHud.frenzy.shortBadge.split(' · ')[0]}
                       </span>
                     </div>
 
-                    {/* Frenzy Thermometer + XP Bar (SVG, zero inline style) */}
-                    <div className="flex items-center gap-1.5 mt-1">
-                      <span className="font-mono tabular-nums text-[9px] font-black text-cyan-300 leading-none shrink-0">
-                        XP NV.{rushHud.rushLevel}
-                      </span>
-                      <svg
-                        viewBox="0 0 100 7"
-                        preserveAspectRatio="none"
-                        className="w-24 sm:w-28 h-1.5 rounded-full bg-slate-950 border border-slate-700 overflow-hidden"
-                        role="img"
-                        aria-label={`Experiencia Comanda: ${rushHud.xpPct}%`}
-                      >
-                        <rect
-                          x="0"
-                          y="0"
-                          width={Math.max(0, Math.min(100, rushHud.xpPct))}
-                          height="7"
-                          fill="#38bdf8"
-                        />
-                      </svg>
-                    </div>
                   </>
                 ) : (
                   <>
@@ -1676,6 +1657,11 @@ export default function App() {
                       {hud.phaseKills}/{hud.phaseTargetKills}
                     </span>
                   )}
+                  {isRush && rushHud && (
+                    <span className="font-mono tabular-nums text-[9px] font-black text-cyan-300 leading-none ml-0.5">
+                      NV.{rushHud.rushLevel}
+                    </span>
+                  )}
                   {isRush && rushHud?.roombaActive && (
                     <span
                       title="Roomba Kamikaze con Cuchillos patrullando frente a los platos"
@@ -1702,7 +1688,28 @@ export default function App() {
                   )}
                 </div>
 
-                {/* "Menú Vivo" Subtle Passive Plate Buff Micro-Indicators (Tap to Inspect at 0.08x!) */}
+                {/* Supervivencia: XP to the next Comanda as a thin bar, so the panel stays two rows tall. */}
+                {isRush && rushHud && (
+                  <svg
+                    viewBox="0 0 100 7"
+                    preserveAspectRatio="none"
+                    className="w-full h-1 mt-0.5 rounded-full bg-slate-950 overflow-hidden"
+                    role="img"
+                    aria-label={`Experiencia Comanda: ${rushHud.xpPct}%`}
+                  >
+                    <rect
+                      x="0"
+                      y="0"
+                      width={Math.max(0, Math.min(100, rushHud.xpPct))}
+                      height="7"
+                      fill="#38bdf8"
+                    />
+                  </svg>
+                )}
+
+                {/* "Menú Vivo" Subtle Passive Plate Buff Micro-Indicators (Tap to Inspect at 0.08x!).
+                    Hidden in Supervivencia: the panel must not cover the left vent and its wave warning. */}
+                {!isRush && (
                 <div
                   data-testid="live-menu-buffs"
                   className="pointer-events-auto grid grid-cols-2 sm:flex sm:items-center gap-1 mt-0.5"
@@ -1749,6 +1756,7 @@ export default function App() {
                     );
                   })}
                 </div>
+                )}
               </div>
 
               {/* Top-Right Utility Controls (Single clean row of >= 44x44px hit targets on Mobile/APK) */}
@@ -2163,7 +2171,16 @@ export default function App() {
                     <div className="rounded-xl bg-slate-950/92 border-2 border-slate-950 px-2.5 py-1 shadow-[0_2px_0_#0f172a]">
                       <div className="flex items-center justify-between gap-2 mb-1">
                         <span className="text-[9.5px] font-black leading-none text-yellow-300 tracking-wide">
-                          ⚡ SUMINISTRO · COSTE {rushHud.supplyCost}
+                          ⚡ SUMINISTRO{' '}
+                          <span
+                            data-testid="rush-supply-value"
+                            className={`font-mono tabular-nums ${
+                              rushHud.supply >= rushHud.supplyCost ? 'text-yellow-300' : 'text-sky-300'
+                            }`}
+                          >
+                            {rushHud.supply}
+                          </span>{' '}
+                          · COSTE {rushHud.supplyCost}
                         </span>
                         <div
                           data-testid="rush-board-cap-icons"
@@ -2208,7 +2225,7 @@ export default function App() {
                           })}
                         </div>
                         <span className="text-[9.5px] font-black leading-none font-mono tabular-nums text-cyan-200">
-                          {rushHud.supply}/{rushHud.supplyMax}
+                          máx {rushHud.supplyMax}
                         </span>
                       </div>
                       <svg

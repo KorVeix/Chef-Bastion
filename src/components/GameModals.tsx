@@ -78,7 +78,9 @@ export const FloatingComboLayer: React.FC<{ combos: FloatingComboEvent[] }> = ({
             )} animate-combo-float whitespace-nowrap`}
           >
             <span
-              className={`font-display font-black text-sm sm:text-base tracking-tight leading-none drop-shadow-[0_2px_2px_rgba(0,0,0,0.98)] [text-shadow:_-1.5px_-1.5px_0_#0f172a,_1.5px_-1.5px_0_#0f172a,_-1.5px_1.5px_0_#0f172a,_1.5px_1.5px_0_#0f172a] ${textColors[item.color]}`}
+              className={`font-display font-black ${
+                item.emphasis ? 'text-2xl sm:text-3xl' : 'text-sm sm:text-base'
+              } tracking-tight leading-none drop-shadow-[0_2px_2px_rgba(0,0,0,0.98)] [text-shadow:_-1.5px_-1.5px_0_#0f172a,_1.5px_-1.5px_0_#0f172a,_-1.5px_1.5px_0_#0f172a,_1.5px_1.5px_0_#0f172a] ${textColors[item.color]}`}
             >
               {compactLine}
             </span>
