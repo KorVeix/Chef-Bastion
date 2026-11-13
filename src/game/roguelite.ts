@@ -24,6 +24,15 @@ export const RUSH_TRAY_SLOTS = 4;
 // Never enough weapons to wall off the 4 rails: the player must read each wave and reposition.
 export const RUSH_INITIAL_BOARD_CAP = 3;
 export const RUSH_MAX_BOARD_CAP = 5;
+// Flus-Flus is the auto-fire workhorse: with 3+ of them the rails wall themselves off and the run plays
+// itself. Two is enough to answer the hot lanes; covering a third means moving one of them.
+export const RUSH_MAX_SPRAY_FLUS_ON_BOARD = 2;
+// A 4x5 counter only has room to build combos against a handful of bugs at once.
+export const RUSH_MAX_CONCURRENT_BUGS_EARLY = 3;
+export const RUSH_MAX_CONCURRENT_BUGS = 4;
+export const RUSH_EARLY_CONCURRENCY_UNTIL_SEC = 35;
+// Past this speed bugs walk through a Flus-Flus before it can react; later difficulty comes from bug types.
+export const RUSH_MAX_BUG_SPEED_MULT = 1.3;
 export const AEROSOL_DEPLETE_BLINK_SECONDS = 3.0;
 export const RUSH_CENTRAL_RAIL_ONLY_SECONDS = 15.0;
 export const RUSH_OPENING_CENTER_RAIL = 1;
@@ -59,6 +68,27 @@ export function countActiveRushBoardWeapons(
     count += 1;
   }
   return count;
+}
+
+/**
+ * Active (not depleting) board pieces of one weapon type.
+ */
+export function countActiveRushBoardType(
+  pieces: readonly Pick<UtensilPiece, 'type' | 'rail' | 'row' | 'ammo' | 'depleteTimer'>[],
+  type: UtensilType
+): number {
+  return countActiveRushBoardWeapons(pieces.filter((p) => p.type === type));
+}
+
+/**
+ * True when one more piece of `type` may NOT be deployed on an empty cell (Flus-Flus is capped at 2).
+ * Merging into an existing piece and moving pieces already on the board are never limited.
+ */
+export function isRushTypeAtBoardLimit(
+  pieces: readonly Pick<UtensilPiece, 'type' | 'rail' | 'row' | 'ammo' | 'depleteTimer'>[],
+  type: UtensilType
+): boolean {
+  return type === 'spray_flus' && countActiveRushBoardType(pieces, type) >= RUSH_MAX_SPRAY_FLUS_ON_BOARD;
 }
 
 /**
@@ -549,7 +579,7 @@ export function findSupremeEvolutionPartners(
 }
 
 export interface RushMergeOrPlaceResult {
-  outcome: 'placed' | 'swapped' | 'merged' | 'evolved' | 'cap_reached' | 'invalid';
+  outcome: 'placed' | 'swapped' | 'merged' | 'evolved' | 'cap_reached' | 'type_cap_reached' | 'invalid';
   updatedPieces: UtensilPiece[];
   resultPieceId: string | null;
   newLevel: number;
@@ -602,6 +632,18 @@ export function executeRushDropOrMerge(
     if (!isFromBoard && activeOnBoard >= maxBoardWeapons) {
       return {
         outcome: 'cap_reached',
+        updatedPieces: [...boardPieces],
+        resultPieceId: null,
+        newLevel: sourcePiece.level,
+        evolution: null,
+        shockwavePushCells: 0,
+        hitstopSeconds: 0,
+        freedOriginCell: null,
+      };
+    }
+    if (!isFromBoard && isRushTypeAtBoardLimit(boardPieces, sourcePiece.type)) {
+      return {
+        outcome: 'type_cap_reached',
         updatedPieces: [...boardPieces],
         resultPieceId: null,
         newLevel: sourcePiece.level,
@@ -1116,7 +1158,7 @@ export function computeRushDirectorParams(
         Math.min(0.62, (elapsedSeconds - 15) * 0.0038) +
         Math.max(0, elapsedSeconds - 72) * 0.0068 +
         Math.min(0.18, Math.max(0, safePower - 1) * 0.012);
-  const speedMultiplier = Number(rawSpeed.toFixed(3));
+  const speedMultiplier = Number(Math.min(RUSH_MAX_BUG_SPEED_MULT, rawSpeed).toFixed(3));
 
   // 2. Time-based + Adaptive Spawn Frequency (bugs/sec)
   const timeFreq =
@@ -1137,10 +1179,9 @@ export function computeRushDirectorParams(
         Math.max(0, elapsedSeconds - 72) * 0.0165;
   const hpMultiplier = Number((timeHp * adaptiveHpMult).toFixed(2));
 
+  // Fixed small ceiling (not tied to time or arsenal power): there must always be room to build combos.
   const maxConcurrentBugs =
-    elapsedSeconds < RUSH_CENTRAL_RAIL_ONLY_SECONDS
-      ? 4
-      : Math.min(20, 4 + Math.floor(elapsedSeconds / 18) + Math.floor(safePower / 3));
+    elapsedSeconds < RUSH_EARLY_CONCURRENCY_UNTIL_SEC ? RUSH_MAX_CONCURRENT_BUGS_EARLY : RUSH_MAX_CONCURRENT_BUGS;
 
   const lateralConduitsOpen =
     (elapsedSeconds >= 120 && elapsedSeconds <= 150) || elapsedSeconds >= 240;
