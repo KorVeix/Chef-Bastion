@@ -1316,78 +1316,16 @@ export default function App() {
 
             {/* Main Lockup + Roguelite-First CTA Hierarchy (No my-auto overflow on 20:9 displays) */}
             <div className="max-w-md w-full space-y-3 sm:space-y-4">
-              {/* Bespoke Inline SVG Title Emblem */}
-              <svg
-                viewBox="0 0 460 135"
-                className="w-full max-w-[390px] drop-shadow-[0_6px_0_rgba(20,10,4,0.95)]"
-                role="img"
-                aria-label="CHEF BASTION: Higiene Letal 3D"
-              >
-                <rect
-                  x="6"
-                  y="8"
-                  width="448"
-                  height="118"
-                  rx="22"
-                  fill="#451a03"
-                  stroke="#facc15"
-                  strokeWidth="6"
-                />
-                <rect
-                  x="16"
-                  y="18"
-                  width="428"
-                  height="98"
-                  rx="16"
-                  fill="#78350f"
-                  stroke="#d97706"
-                  strokeWidth="2"
-                />
-                {/* Chef Hat Badge */}
-                <g transform="translate(28, 28)">
-                  <path
-                    d="M16 42 C4 34 6 12 24 10 C32 -2 56 -2 64 10 C82 12 84 34 72 42 L68 64 L20 64 Z"
-                    fill="#ffffff"
-                    stroke="#0f172a"
-                    strokeWidth="5"
-                  />
-                  <rect
-                    x="19"
-                    y="56"
-                    width="50"
-                    height="14"
-                    rx="4"
-                    fill="#00d2ff"
-                    stroke="#0f172a"
-                    strokeWidth="4"
-                  />
-                </g>
-                <text
-                  x="124"
-                  y="64"
-                  fill="#fde047"
-                  stroke="#0f172a"
-                  strokeWidth="7"
-                  paintOrder="stroke fill"
-                  fontFamily="Outfit, sans-serif"
-                  fontWeight="900"
-                  fontSize="41"
-                  letterSpacing="1"
-                >
-                  CHEF BASTION
-                </text>
-                <text
-                  x="126"
-                  y="98"
-                  fill="#ffffff"
-                  fontFamily="Plus Jakarta Sans, sans-serif"
-                  fontWeight="800"
-                  fontSize="14.2"
-                  letterSpacing="1.8"
-                >
-                  HIGIENE LETAL · BULLET HELL 3D
-                </text>
-              </svg>
+              {/* Title logo (docs/branding/logo-chef-bastion.png, 1400 px WebP for the app) */}
+              <img
+                src="/branding/logo-chef-bastion.webp"
+                alt="CHEF BASTION: Higiene Letal"
+                width={1400}
+                height={841}
+                decoding="async"
+                draggable={false}
+                className="w-full max-w-[400px] h-auto mx-auto select-none drop-shadow-[0_6px_10px_rgba(0,0,0,0.55)]"
+              />
 
               {/* Logical Onboarding CTA Hierarchy: New players (< Lv.3) see Strategic FIRST; Veterans (>= Lv.3) see Rush FIRST */}
               <div className="pointer-events-auto flex flex-col gap-2.5 max-w-[400px]">
@@ -1401,7 +1339,7 @@ export default function App() {
                       className="apk-touch-target w-full px-5 py-3.5 sm:py-4 rounded-2xl bg-yellow-400 hover:bg-yellow-300 active:scale-95 text-slate-950 border-4 border-slate-950 shadow-[0_6px_0_#0f172a] transition cursor-pointer flex flex-col items-center justify-center text-center"
                     >
                       <span className="inline-flex items-center justify-center gap-2 font-display font-black text-lg sm:text-xl tracking-wide leading-tight">
-                        <span>🧠 MODO ESTRATÉGICO (NIVEL {progress.currentLevel})</span>
+                        <span>🧠 ESTRATEGIA · Nv.{progress.currentLevel}</span>
                       </span>
                       <span className="font-sans font-extrabold text-xs text-slate-800 mt-0.5">
                         ¡Empieza aquí! Aprende cada arma paso a paso
@@ -1456,7 +1394,7 @@ export default function App() {
                       onClick={() => setShowStrategicModal(true)}
                       className="apk-touch-target w-full px-4 py-3 rounded-2xl bg-slate-900/95 hover:bg-slate-800 active:scale-95 text-cyan-200 font-display font-black text-sm sm:text-base tracking-wide border-2 border-cyan-400/80 shadow-[0_4px_0_#0f172a] transition cursor-pointer inline-flex items-center justify-center"
                     >
-                      🧠 MODO ESTRATÉGICO (NIVEL {progress.currentLevel})
+                      🧠 ESTRATEGIA · Nv.{progress.currentLevel}
                     </button>
                   </>
                 )}
