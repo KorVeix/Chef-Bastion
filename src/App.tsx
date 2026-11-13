@@ -1426,11 +1426,8 @@ export default function App() {
               </div>
             </div>
 
-            {/* Bottom Safe Margin: Gameplay Merge Hint + CritFuse studio logo (docs/branding/logo-critfuse-horizontal.png) */}
-            <div className="flex flex-col items-center gap-2 text-center">
-              <div className="text-[11px] sm:text-xs font-bold text-amber-100/90 tracking-wide leading-snug">
-                Funde armas iguales en caliente (Nv.1 ➔ Plata ➔ Oro) · Une 2 Oro en Evolución Suprema
-              </div>
+            {/* Bottom Safe Margin: CritFuse studio logo (docs/branding/logo-critfuse-horizontal.png) */}
+            <div className="flex flex-col items-center">
               <img
                 data-testid="critfuse-studio-badge"
                 src="/branding/logo-critfuse.webp"
