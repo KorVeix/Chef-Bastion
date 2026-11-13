@@ -1,6 +1,6 @@
 {
-  "name": "RailWarden: Bullet & Bastion",
-  "description": "Juego casual 3D de estrategia por raíles, Bullet-Hell y construcción Roguelike instalable como PWA para Android, iOS y escritorio.",
+  "name": "Chef Bastion",
+  "description": "Defensa táctica por raíles en 3D para móvil: combina utensilios de limpieza por posición y protege los platos de las plagas.",
   "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+  "majorCapabilities": []
 }

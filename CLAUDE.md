@@ -18,14 +18,21 @@
 
 ## 2. Resumen de Estado del Proyecto (`Chef Bastion: Higiene Letal 3D`)
 
+- **Stack**: React 19 + TypeScript + Three.js (WebGL) + Web Audio API, empaquetado con Vite + VitePWA y Capacitor 8 (`android/` versionado; iOS pendiente). Gestor de paquetes: **Bun** (`bun.lock`). Estudio: CritFuse, id `com.critfuse.chefbastion`.
 - **Arquitectura actual**:
-  - `src/game/types.ts`: Contratos e interfaces TypeScript (`UtensilType` incluyendo `'corner_square'`, `BiomeConfig`, `SmartComboHint`, `TacticalOnboardingCardData`, invasión lateral y puzles de Jefe Zelda).
-  - `src/game/rules.ts` & `src/game/rules.test.ts`: Reglas puras desacopladas (combos `line_foam`, `bridge_uv`, `slip_vortex`, `deflect_90`, `BiomeProgressionManager` en ciclos de 19 niveles con loop infinito Nv.96+, `computeSmartComboHints` acotado a niveles de onboarding 1–4 y 31, curva de velocidad suavizada con techo `0.78x` en Nv.60, campaña de 60 niveles con reloj de 120s en Nv.5+ y puzles de jefe) validadas con 9 tests unitarios en `node:test`.
-  - `src/game/models3d.ts`: Motor gráfico Cel-Shading (`MeshToonMaterial` con `DataTexture` de 3 tonos `NearestFilter`) + contorno de tinta negra (`addInkOutline` con `THREE.BackSide`), modelo 3D de la `Escuadra Deflectora 90°` (`corner_square`), Fantasma 3D semitransparente (`buildGhostUtensilMesh`, `opacity: 0.45`) y 6 conductos laterales (`lateralVents` activos en `level >= 31`). El Chef (`buildChefBastionMesh`, escala `0.46`) permanece 100% inmutable.
-  - `src/components/ChefBastionCanvas.tsx`: Escena 3D 9:16, Modo Estratégico previo al inicio de cada oleada (los bichos asoman quietos y nunca arrancan hasta pulsar `▶️ ¡EMPEZAR!`), condición de victoria que cierra rejillas al terminar el reloj de 120s o la Fase 3 y exige `0` enemigos vivos en la mesa, e invasión lateral rebotando 90° en la Escuadra Deflectora.
-  - `src/components/GameModals.tsx` & `src/App.tsx`: Progresión lineal pura (sin selector de niveles ni botón PWA), cartel superior compacto (`⏱️ MODO ESTRATÉGICO · Coloca tus armas antes de comenzar`), tarjeta de ayuda táctica bajo demanda (`?`), y reloj de oleada (`⏱️ 02:00` ➔ `🧹 ¡LIMPIA EL TABLERO!`).
-  - `src/game/audio.ts`: Sintetizador de audio 100% Web Audio API (FX tácticos + música de fondo procedural bajita `gain: 0.022` con 6 temas distintos que cambian cada 10 niveles por establecimiento, sin archivos MP3 externos).
-  - `.github/workflows/main.yml`: Pipeline CI/CD en GitHub Actions que compila el `.APK` de Android con Capacitor + Gradle (`gradle-bin.zip`, `networkTimeout=120000`, 3 reintentos).
-- **Siguiente bloque pendiente (próxima sesión)**:
-  - Implementar **Grandes Jefes de 3 Habilidades / 3 Estados (100% ➔ 66% ➔ 33% HP)** cada 10 niveles (cierre de Establecimiento: Nv. 10, 20, 30, 40, 50, 60) que exijan reconfigurar 3 combinaciones distintas en tiempo real, dejando Mini-Jefes de 1 mecánica en los niveles intermedios (`X5`), y batería de tests / ajuste fino de balance.
-
+  - `src/game/types.ts`: contratos TypeScript (utensilios, biomas, jefes, invasión lateral, onboarding).
+  - `src/game/rules.ts`: reglas puras de la campaña y el Modo Estratégico. Combos `line_foam`, `bridge_uv`, `slip_vortex`, `deflect_90`; campaña de 60 niveles con reloj de 120 s desde Nv.5; biomas en ciclos de 19 niveles; Grandes Jefes de 3 fases en los X0 (`getGrandBossPhase`) y mini-jefes en los X5; curva de velocidad con techo `0.78x`.
+  - `src/game/roguelite.ts`: modo Supervivencia (Rush): suministro, coste de despliegue, cupo de armas en mesa, fusiones y evoluciones, director de eventos.
+  - `src/game/musicEngine.ts`: música adaptativa procedural (sin archivos de audio).
+  - `src/game/audio.ts`: efectos con Web Audio y háptica (`@capacitor/haptics` en nativo).
+  - `src/game/models3d.ts`: cel-shading (`MeshToonMaterial`) + contorno de tinta (`addInkOutline`). El Chef (`buildChefBastionMesh`, escala `0.46`) no se toca.
+  - `src/components/ChefBastionCanvas.tsx` (~5.800 líneas) y `src/App.tsx` (~2.900 líneas): escena 3D, bucle de juego y UI. Son los archivos más caros de modificar: preferir extraer lógica pura a `src/game/` con tests antes que añadir más código aquí.
+  - Tests: `rules.test.ts`, `roguelite.test.ts` y `musicEngine.test.ts` con `node:test` (`bun run test`).
+  - CI: `.github/workflows/main.yml` pasa tipado, tests y build en cada PR y push a `main`, genera el APK debug y, bajo demanda, el AAB firmado (ver README, sección 4).
+- **Reglas del autor vigentes**:
+  - El **Modo Estratégico** (campaña) no se modifica sin una orden explícita del autor.
+  - El juego es 100% cliente y offline: sin backend, sin claves de API y sin assets externos.
+- **Pendiente**:
+  - Rediseño del modo Supervivencia para que la estrategia dominante no sea cubrir carriles y olvidarse (exigir recolocar y encadenar combos).
+  - Medir el rendimiento real en un Android de gama media (se reportaron ~10 FPS desde Frenesí 2 en Rush).
+  - iOS (Capacitor + Xcode en el Mac), iconos y splash nativos, y ficha de Play Store.
