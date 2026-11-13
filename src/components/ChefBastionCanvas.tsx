@@ -35,13 +35,22 @@ import {
   getChaosDirectorEventForMinute,
   getFrenzyThermometer,
   getInitialAerosolAmmo,
-  getSupplyKillBonus,
+  createRushWaveDirector,
+  getRushKillSupply,
+  getRushWearFraction,
   pickRushSpawnRail,
   rollLiveComandaTriplet,
   rollRushTrayBatch,
   rollRushTraySlot,
   RUSH_ADRENALINE_MILESTONES,
+  RUSH_INITIAL_SUPPLY,
   RUSH_SUPPLY_BASE_PER_SEC,
+  RUSH_WAVE_WARNING_SECONDS,
+  RushWaveDirectorState,
+  RushWavePlan,
+  RushWaveTick,
+  tickRushWaveDirector,
+  tickRushWear,
   RUSH_TRAY_SLOTS,
   tickDepletingAerosol,
 } from '../game/roguelite';
@@ -1133,7 +1142,9 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
 
     // Survival Rush ("Supervivencia Rush") State
     let rushElapsedSec = 0;
-    let rushSupply = 48;
+    let rushSupply = RUSH_INITIAL_SUPPLY;
+    let rushWaves: RushWaveDirectorState = createRushWaveDirector();
+    let rushWaveWarning: RushWaveTick['warning'] = null;
     let rushCapFlashTimer = 0;
     let rushXp = 0;
     let rushXpNext = 55;
@@ -1266,6 +1277,106 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
       piece.maxAmmo = updated.maxAmmo;
       piece.comboType = updated.comboType;
       piece.depleteTimer = updated.depleteTimer;
+    }
+
+    const RUSH_BUG_ICONS: Record<BugType, string> = {
+      speed_ant: '🐜',
+      cap_beetle: '🛡️🐀',
+      acid_wasp: '🦟',
+      shift_roach: '🪳',
+      king_crab: '👑🦀',
+    };
+
+    // Pops one bubble per announced rail over its vent grate ("🐜×4 · 3s") so the player can prepare the answer.
+    function announceRushWave(plan: RushWavePlan) {
+      soundEngine.triggerHaptic('light');
+      for (const rail of plan.hotRails) {
+        const onRail = plan.spawns.filter((sp) => sp.rail === rail);
+        if (onRail.length === 0) continue;
+        const counts = new Map<BugType, number>();
+        for (const sp of onRail) counts.set(sp.type, (counts.get(sp.type) ?? 0) + 1);
+        const label = [...counts.entries()].map(([type, n]) => `${RUSH_BUG_ICONS[type]}×${n}`).join(' ');
+        const pos = projectWorldToScreenPct(gridToWorldX(rail), 0.9, -5.5);
+        stateRef.current.onFloatingCombo?.({
+          id: `rush-wave-${rushWaves.wavesStarted}-${rail}`,
+          multiplier: onRail.length,
+          label,
+          detail: `${Math.round(RUSH_WAVE_WARNING_SECONDS)}s`,
+          color: counts.has('cap_beetle') ? 'pink' : 'orange',
+          xPct: pos.xPct,
+          yPct: pos.yPct,
+          createdAt: Date.now(),
+        });
+      }
+    }
+
+    function spawnRushBug(
+      rail: number,
+      bType: BugType,
+      rushDirector: ReturnType<typeof computeRushDirectorParams>
+    ) {
+      const hpMap: Record<BugType, number> = {
+        speed_ant: 38,
+        cap_beetle: 78,
+        acid_wasp: 60,
+        shift_roach: 56,
+        king_crab: 145,
+      };
+      const maxHp = Math.round(hpMap[bType] * rushDirector.hpMultiplier);
+      const isLateralSpawn = rushDirector.lateralConduitsOpen && Math.random() < 0.38;
+      const lateralFromLeft = Math.random() < 0.5;
+      const lateralRow = 2 + Math.floor(Math.random() * 2);
+
+      bugs.push({
+        id: `rush-bug-${Date.now()}-${Math.random()}`,
+        type: bType,
+        rail: isLateralSpawn ? (lateralFromLeft ? -0.75 : 3.75) : rail,
+        targetRail: rail,
+        yProgress: isLateralSpawn ? lateralRow : -0.35,
+        hp: maxHp,
+        maxHp,
+        hasShield: bType === 'cap_beetle',
+        isSlidingFromSoap: false,
+        hitByDiagonalFoam: false,
+        hitByBridgeBurn: false,
+        hitByVortexSpin: false,
+        slowTimer: 0,
+        flashTimer: 0,
+        attackWindup: 0,
+        koTimer: 0,
+        koStar: 1,
+        isLateralInvasion: isLateralSpawn,
+        lateralDir: isLateralSpawn ? (lateralFromLeft ? 1 : -1) : 0,
+        redirectedBySquare: false,
+      });
+    }
+
+    // Wear ring at the base of each Rush weapon: drains as its service life runs out (green -> yellow -> red).
+    function updateWearRing(group: THREE.Group, fraction: number | null) {
+      let ring = group.getObjectByName('wear_ring') as THREE.Mesh | undefined;
+      if (fraction === null) {
+        if (ring) ring.visible = false;
+        return;
+      }
+      const bucket = Math.max(1, Math.ceil(fraction * 40)) / 40;
+      const color = fraction > 0.5 ? 0x4ade80 : fraction > 0.25 ? 0xfacc15 : 0xef4444;
+      if (!ring) {
+        ring = new THREE.Mesh(
+          new THREE.RingGeometry(0.4, 0.53, 40, 1, Math.PI / 2, bucket * Math.PI * 2),
+          new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.95, depthWrite: false, side: THREE.DoubleSide })
+        );
+        ring.name = 'wear_ring';
+        ring.rotation.x = -Math.PI / 2;
+        ring.position.y = 0.03;
+        ring.userData.bucket = bucket;
+        group.add(ring);
+      } else if (ring.userData.bucket !== bucket) {
+        ring.geometry.dispose();
+        ring.geometry = new THREE.RingGeometry(0.4, 0.53, 40, 1, Math.PI / 2, bucket * Math.PI * 2);
+        ring.userData.bucket = bucket;
+      }
+      ring.visible = true;
+      (ring.material as THREE.MeshBasicMaterial).color.setHex(color);
     }
 
     function unlockRushMilestoneIfNew(milestoneId: string) {
@@ -1597,7 +1708,9 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
       const dynamicOnboarding = isDynamicOnboardingLevel(currentLvl);
 
       rushElapsedSec = 0;
-      rushSupply = 48;
+      rushSupply = RUSH_INITIAL_SUPPLY;
+      rushWaves = createRushWaveDirector();
+      rushWaveWarning = null;
       rushCapFlashTimer = 0;
       rushXp = 0;
       rushXpNext = 55;
@@ -3458,6 +3571,19 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
           }
         }
 
+        if (isRushMode) {
+          if (waveSimDt > 0 && piece.wearRemaining !== undefined && piece.depleteTimer === undefined) {
+            const wear = tickRushWear(piece, waveSimDt);
+            piece.wearRemaining = wear.piece.wearRemaining;
+            if (wear.wornOut) {
+              piece.comboType = 'none';
+              piece.depleteTimer = wear.piece.depleteTimer;
+              hudEmitTimer = 1.0;
+            }
+          }
+          updateWearRing(entry.group, piece.depleteTimer === undefined ? getRushWearFraction(piece) : null);
+        }
+
         if (isRushMode && piece.depleteTimer !== undefined) {
           const dep = tickDepletingAerosol(piece, waveSimDt);
           piece.depleteTimer = dep.piece.depleteTimer;
@@ -3824,155 +3950,107 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
       const ventsClosed = isRushMode
         ? false
         : waveQuotaCompleted || (stateRef.current.level >= 5 && levelTimer <= 0);
-      if (waveSimDt > 0 && !gameEndedLock && !ventsClosed) {
+      if (waveSimDt > 0 && !gameEndedLock && isRushMode) {
+        // Supervivencia: oleadas concentradas en 1-2 carriles y avisadas 3 s antes (no carriles al azar).
+        const waveTick = tickRushWaveDirector(rushWaves, waveSimDt, rushElapsedSec, {
+          canSpawn: bugs.length < rushDirector.maxConcurrentBugs,
+          paceMult: rushDirector.spawnIntervalSec / 2.5,
+        });
+        rushWaves = waveTick.state;
+        rushWaveWarning = waveTick.warning;
+        if (waveTick.announced) announceRushWave(waveTick.announced);
+        for (const spawn of waveTick.spawns) {
+          spawnRushBug(spawn.rail, spawn.type, rushDirector);
+        }
+      }
+
+      if (waveSimDt > 0 && !gameEndedLock && !ventsClosed && !isRushMode) {
         spawnTimer -= waveSimDt;
-        const maxBugsOnScreen = isRushMode
-          ? rushDirector.maxConcurrentBugs
-          : stateRef.current.level <= 3
-          ? 3
-          : 5;
+        const maxBugsOnScreen = stateRef.current.level <= 3 ? 3 : 5;
         if (spawnTimer <= 0 && bugs.length < maxBugsOnScreen) {
-          spawnTimer = isRushMode
-            ? rushDirector.spawnIntervalSec
-            : stateRef.current.level <= 3
-            ? 3.4
-            : Math.max(2.1, 3.0 - stateRef.current.level * 0.1);
+          spawnTimer =
+            stateRef.current.level <= 3 ? 3.4 : Math.max(2.1, 3.0 - stateRef.current.level * 0.1);
 
-          if (isRushMode) {
-            const rail = pickRushSpawnRail(rushElapsedSec);
-            const roll = Math.random();
-            let bType: BugType = 'speed_ant';
-            if (rushElapsedSec < 35) {
-              bType = roll < 0.75 ? 'speed_ant' : 'cap_beetle';
-            } else if (rushElapsedSec < 95) {
-              bType = roll < 0.45 ? 'speed_ant' : roll < 0.8 ? 'cap_beetle' : 'acid_wasp';
-            } else {
-              bType =
-                roll < 0.34
-                  ? 'speed_ant'
-                  : roll < 0.62
-                  ? 'cap_beetle'
-                  : roll < 0.84
-                  ? 'acid_wasp'
-                  : 'shift_roach';
-            }
+          const lvl = stateRef.current.level;
+          const rail =
+            lvl === 1
+              ? Math.random() < 0.5
+                ? 1
+                : 2
+              : lvl === 2
+              ? Math.random() < 0.5
+                ? 1
+                : 2
+              : lvl === 3
+              ? Math.random() < 0.65
+                ? 2
+                : 1
+              : Math.floor(Math.random() * GRID_RAILS);
 
-            const hpMap: Record<BugType, number> = {
-              speed_ant: 38,
-              cap_beetle: 78,
-              acid_wasp: 60,
-              shift_roach: 56,
-              king_crab: 145,
-            };
-            const maxHp = Math.round(hpMap[bType] * rushDirector.hpMultiplier);
-            const isLateralSpawn = rushDirector.lateralConduitsOpen && Math.random() < 0.38;
-            const lateralFromLeft = Math.random() < 0.5;
-            const lateralRow = 2 + Math.floor(Math.random() * 2);
+          let bType: BugType = 'speed_ant';
+          const roll = Math.random();
 
-            bugs.push({
-              id: `rush-bug-${Date.now()}-${Math.random()}`,
-              type: bType,
-              rail: isLateralSpawn ? (lateralFromLeft ? -0.75 : 3.75) : rail,
-              targetRail: rail,
-              yProgress: isLateralSpawn ? lateralRow : -0.35,
-              hp: maxHp,
-              maxHp,
-              hasShield: bType === 'cap_beetle',
-              isSlidingFromSoap: false,
-              hitByDiagonalFoam: false,
-              hitByBridgeBurn: false,
-              hitByVortexSpin: false,
-              slowTimer: 0,
-              flashTimer: 0,
-              attackWindup: 0,
-              koTimer: 0,
-              koStar: 1,
-              isLateralInvasion: isLateralSpawn,
-              lateralDir: isLateralSpawn ? (lateralFromLeft ? 1 : -1) : 0,
-              redirectedBySquare: false,
-            });
+          if (lvl === 1) {
+            bType = 'speed_ant';
+          } else if (lvl === 2) {
+            bType = roll < 0.7 ? 'cap_beetle' : 'speed_ant';
+          } else if (lvl === 3) {
+            bType = roll < 0.65 ? 'cap_beetle' : 'speed_ant';
+          } else if (phase === 1) {
+            bType = roll < 0.55 ? 'speed_ant' : 'cap_beetle';
+          } else if (phase === 2) {
+            bType = roll < 0.45 ? 'cap_beetle' : roll < 0.78 ? 'acid_wasp' : 'speed_ant';
           } else {
-            const lvl = stateRef.current.level;
-            const rail =
-              lvl === 1
-                ? Math.random() < 0.5
-                  ? 1
-                  : 2
-                : lvl === 2
-                ? Math.random() < 0.5
-                  ? 1
-                  : 2
-                : lvl === 3
-                ? Math.random() < 0.65
-                  ? 2
-                  : 1
-                : Math.floor(Math.random() * GRID_RAILS);
-
-            let bType: BugType = 'speed_ant';
-            const roll = Math.random();
-
-            if (lvl === 1) {
-              bType = 'speed_ant';
-            } else if (lvl === 2) {
-              bType = roll < 0.7 ? 'cap_beetle' : 'speed_ant';
-            } else if (lvl === 3) {
-              bType = roll < 0.65 ? 'cap_beetle' : 'speed_ant';
-            } else if (phase === 1) {
-              bType = roll < 0.55 ? 'speed_ant' : 'cap_beetle';
-            } else if (phase === 2) {
-              bType = roll < 0.45 ? 'cap_beetle' : roll < 0.78 ? 'acid_wasp' : 'speed_ant';
-            } else {
-              bType =
-                roll < 0.18 && getBossTierForLevel(lvl) === null
-                  ? 'king_crab'
-                  : roll < 0.55
-                  ? 'cap_beetle'
-                  : roll < 0.82
-                  ? 'acid_wasp'
-                  : 'shift_roach';
-            }
-
-            const hpMap: Record<BugType, number> = {
-              speed_ant: 40,
-              cap_beetle: 84,
-              acid_wasp: 64,
-              shift_roach: 60,
-              king_crab: 145,
-            };
-            const maxHp = hpMap[bType] * (1 + Math.max(0, lvl - 3) * 0.08);
-
-            const isLateralSpawn =
-              lvl === 31
-                ? Math.random() < 0.72
-                : lvl >= 32
-                ? Math.random() < 0.45
-                : false;
-            const lateralFromLeft = lvl === 31 ? true : Math.random() < 0.5;
-            const lateralRow = lvl === 31 ? 2 : 2 + Math.floor(Math.random() * 2);
-
-            bugs.push({
-              id: `bug-${Date.now()}-${Math.random()}`,
-              type: bType,
-              rail: isLateralSpawn ? (lateralFromLeft ? -0.75 : 3.75) : rail,
-              targetRail: rail,
-              yProgress: isLateralSpawn ? lateralRow : -0.35,
-              hp: maxHp,
-              maxHp,
-              hasShield: bType === 'cap_beetle' || bType === 'king_crab',
-              isSlidingFromSoap: false,
-              hitByDiagonalFoam: false,
-              hitByBridgeBurn: false,
-              hitByVortexSpin: false,
-              slowTimer: 0,
-              flashTimer: 0,
-              attackWindup: 0,
-              koTimer: 0,
-              koStar: 1,
-              isLateralInvasion: isLateralSpawn,
-              lateralDir: isLateralSpawn ? (lateralFromLeft ? 1 : -1) : 0,
-              redirectedBySquare: false,
-            });
+            bType =
+              roll < 0.18 && getBossTierForLevel(lvl) === null
+                ? 'king_crab'
+                : roll < 0.55
+                ? 'cap_beetle'
+                : roll < 0.82
+                ? 'acid_wasp'
+                : 'shift_roach';
           }
+
+          const hpMap: Record<BugType, number> = {
+            speed_ant: 40,
+            cap_beetle: 84,
+            acid_wasp: 64,
+            shift_roach: 60,
+            king_crab: 145,
+          };
+          const maxHp = hpMap[bType] * (1 + Math.max(0, lvl - 3) * 0.08);
+
+          const isLateralSpawn =
+            lvl === 31
+              ? Math.random() < 0.72
+              : lvl >= 32
+              ? Math.random() < 0.45
+              : false;
+          const lateralFromLeft = lvl === 31 ? true : Math.random() < 0.5;
+          const lateralRow = lvl === 31 ? 2 : 2 + Math.floor(Math.random() * 2);
+
+          bugs.push({
+            id: `bug-${Date.now()}-${Math.random()}`,
+            type: bType,
+            rail: isLateralSpawn ? (lateralFromLeft ? -0.75 : 3.75) : rail,
+            targetRail: rail,
+            yProgress: isLateralSpawn ? lateralRow : -0.35,
+            hp: maxHp,
+            maxHp,
+            hasShield: bType === 'cap_beetle' || bType === 'king_crab',
+            isSlidingFromSoap: false,
+            hitByDiagonalFoam: false,
+            hitByBridgeBurn: false,
+            hitByVortexSpin: false,
+            slowTimer: 0,
+            flashTimer: 0,
+            attackWindup: 0,
+            koTimer: 0,
+            koStar: 1,
+            isLateralInvasion: isLateralSpawn,
+            lateralDir: isLateralSpawn ? (lateralFromLeft ? 1 : -1) : 0,
+            redirectedBySquare: false,
+          });
         }
       }
 
@@ -5113,7 +5191,13 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
               // Supply kill-streak bonus + XP gain!
               rushSupply = Math.min(
                 currentRushSupplyMax,
-                rushSupply + getSupplyKillBonus(rapidKillStreakCount) * rushModifiers.supplyRateMult
+                rushSupply +
+                  getRushKillSupply({
+                    stars: elim.stars,
+                    hitByBridgeBurn: bug.hitByBridgeBurn,
+                    bossTier: bug.bossTier,
+                  }) *
+                    rushModifiers.supplyRateMult
               );
               rushXp += (bug.bossTier ? 48 : 14) * rushModifiers.xpMult;
               if (rapidKillStreakCount >= 25) {
@@ -5493,7 +5577,12 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
       // Update Warning Beacons at top of rails (in Strategic Mode Lv.4+, mark all forecast conduits!)
       warningBeacons.forEach((b, rIdx) => {
         const mat = b.material as THREE.MeshBasicMaterial;
-        if (inPlacementPhase && stateRef.current.level >= 4 && levelForecast.activeRails.includes(rIdx)) {
+        if (isRushMode && gState === 'playing' && rushWaveWarning?.rails.includes(rIdx)) {
+          // Wave announced on this rail: fast amber-to-red pulse until it starts.
+          const urgent = rushWaveWarning.secondsLeft < 1.2;
+          mat.color.setHex(urgent ? 0xef4444 : 0xf59e0b);
+          mat.opacity = 0.55 + Math.sin(elapsed * (urgent ? 22 : 12)) * 0.35;
+        } else if (inPlacementPhase && stateRef.current.level >= 4 && levelForecast.activeRails.includes(rIdx)) {
           mat.color.setHex(levelForecast.bossTier !== 'none' ? 0xf97316 : 0x38bdf8);
           mat.opacity = 0.36 + Math.sin(elapsed * 7 + rIdx) * 0.2;
         } else if (warningRails[rIdx]) {

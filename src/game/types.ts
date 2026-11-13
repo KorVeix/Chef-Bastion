@@ -77,6 +77,8 @@ export interface UtensilPiece {
   ammo?: number;       // Remaining charges for aerosol_torch in Rush
   maxAmmo?: number;    // Max charges for current tier
   depleteTimer?: number; // > 0 when ammo === 0: blinks for 3.0s then disappears
+  wearRemaining?: number; // Rush only: seconds of service left before the weapon wears out
+  wearMax?: number;       // Rush only: full service time for its current level
 }
 
 export interface BugEnemy {

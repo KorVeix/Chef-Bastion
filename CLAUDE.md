@@ -22,17 +22,17 @@
 - **Arquitectura actual**:
   - `src/game/types.ts`: contratos TypeScript (utensilios, biomas, jefes, invasión lateral, onboarding).
   - `src/game/rules.ts`: reglas puras de la campaña y el Modo Estratégico. Combos `line_foam`, `bridge_uv`, `slip_vortex`, `deflect_90`; campaña de 60 niveles con reloj de 120 s desde Nv.5; biomas en ciclos de 19 niveles; Grandes Jefes de 3 fases en los X0 (`getGrandBossPhase`) y mini-jefes en los X5; curva de velocidad con techo `0.78x`.
-  - `src/game/roguelite.ts`: modo Supervivencia (Rush): suministro, coste de despliegue, cupo de armas en mesa, fusiones y evoluciones, director de eventos.
+  - `src/game/roguelite.ts`: modo Supervivencia (Rush): suministro (30 inicial, 4/s y sobre todo por combos), coste de despliegue, cupo de 3 a 5 armas, desgaste de armas (22/30/40 s, evoluciones 55 s), director de oleadas avisadas 3 s antes en 1-2 carriles, fusiones y evoluciones, director de eventos.
   - `src/game/musicEngine.ts`: música adaptativa procedural (sin archivos de audio).
   - `src/game/audio.ts`: efectos con Web Audio y háptica (`@capacitor/haptics` en nativo).
   - `src/game/models3d.ts`: cel-shading (`MeshToonMaterial`) + contorno de tinta (`addInkOutline`). El Chef (`buildChefBastionMesh`, escala `0.46`) no se toca.
   - `src/components/ChefBastionCanvas.tsx` (~5.800 líneas) y `src/App.tsx` (~2.900 líneas): escena 3D, bucle de juego y UI. Son los archivos más caros de modificar: preferir extraer lógica pura a `src/game/` con tests antes que añadir más código aquí.
-  - Tests: `rules.test.ts`, `roguelite.test.ts` y `musicEngine.test.ts` con `node:test` (`bun run test`).
+  - Tests: `rules.test.ts`, `roguelite.test.ts`, `musicEngine.test.ts` y `rushDesign.test.ts` con `node:test` (`bun run test`). `rushDesign.test.ts` incluye una simulación de diseño: tapar carriles y no mover nada debe perder pronto y responder a cada oleada debe aguantar al menos el doble. Si un cambio la rompe, se ajusta el diseño, no el test.
   - CI: `.github/workflows/main.yml` pasa tipado, tests y build en cada PR y push a `main`, genera el APK debug y, bajo demanda, el AAB firmado (ver README, sección 4).
 - **Reglas del autor vigentes**:
   - El **Modo Estratégico** (campaña) no se modifica sin una orden explícita del autor.
   - El juego es 100% cliente y offline: sin backend, sin claves de API y sin assets externos.
 - **Pendiente**:
-  - Rediseño del modo Supervivencia para que la estrategia dominante no sea cubrir carriles y olvidarse (exigir recolocar y encadenar combos).
+  - Validar en un móvil real el equilibrio del modo Supervivencia rediseñado (la simulación de `rushDesign.test.ts` es un modelo, no el motor).
   - Medir el rendimiento real en un Android de gama media (se reportaron ~10 FPS desde Frenesí 2 en Rush).
   - iOS (Capacitor + Xcode en el Mac), iconos y splash nativos, y ficha de Play Store.

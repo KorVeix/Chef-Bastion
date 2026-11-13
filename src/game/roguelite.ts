@@ -1,6 +1,9 @@
 import {
   ArmorId,
+  BugEnemy,
+  BugType,
   HatId,
+  KillStarRating,
   SpecialWeaponId,
   SupremeEvolutionId,
   UtensilPiece,
@@ -14,10 +17,13 @@ import {
 export const RUSH_SUPPLY_MAX = 100;
 export const RUSH_SUPPLY_DEPLOY_COST = 24;
 export const RUSH_COST_ESCALATION_MULT = 1.3; // +30% cumulative per placed weapon (merging does NOT escalate!)
-export const RUSH_SUPPLY_BASE_PER_SEC = 15;
+// Supply comes mostly from combo kills: the passive trickle alone cannot keep a static board alive.
+export const RUSH_INITIAL_SUPPLY = 30;
+export const RUSH_SUPPLY_BASE_PER_SEC = 4;
 export const RUSH_TRAY_SLOTS = 4;
-export const RUSH_INITIAL_BOARD_CAP = 4;
-export const RUSH_MAX_BOARD_CAP = 8;
+// Never enough weapons to wall off the 4 rails: the player must read each wave and reposition.
+export const RUSH_INITIAL_BOARD_CAP = 3;
+export const RUSH_MAX_BOARD_CAP = 5;
 export const AEROSOL_DEPLETE_BLINK_SECONDS = 3.0;
 export const RUSH_CENTRAL_RAIL_ONLY_SECONDS = 15.0;
 export const RUSH_OPENING_CENTER_RAIL = 1;
@@ -73,11 +79,274 @@ export function computeRushSupplyMax(currentDeployCost: number): number {
 }
 
 /**
- * Board weapon cap: 4 at start (rushLevel = 1), +1 per XP level-up, max 8.
+ * Board weapon cap: 3 at start (rushLevel = 1), +1 per XP level-up, max 5.
  */
 export function computeRushBoardWeaponCap(rushLevel: number): number {
   const bonus = Math.max(0, Math.floor(rushLevel) - 1);
   return Math.min(RUSH_MAX_BOARD_CAP, RUSH_INITIAL_BOARD_CAP + bonus);
+}
+
+// ============================================================================
+// 1b. DESGASTE, SUMINISTRO POR COMBO Y DIRECTOR DE OLEADAS AVISADAS
+// ============================================================================
+
+// Service life of a placed weapon before it wears out (blinks 3s and vanishes).
+// Aerosols keep using their charges instead. Merging or evolving renews the service life.
+export const RUSH_WEAR_SECONDS_BY_LEVEL: Readonly<Record<1 | 2 | 3, number>> = { 1: 22, 2: 30, 3: 40 };
+export const RUSH_EVOLUTION_WEAR_SECONDS = 55;
+
+export function getRushWearSeconds(
+  type: UtensilType,
+  level: number,
+  evolutionId?: SupremeEvolutionId
+): number | null {
+  if (evolutionId) return RUSH_EVOLUTION_WEAR_SECONDS;
+  if (type === 'aerosol_torch') return null;
+  const tier = Math.min(3, Math.max(1, Math.floor(level))) as 1 | 2 | 3;
+  return RUSH_WEAR_SECONDS_BY_LEVEL[tier];
+}
+
+function freshWearFields(
+  type: UtensilType,
+  level: number,
+  evolutionId: SupremeEvolutionId | undefined
+): Pick<UtensilPiece, 'wearRemaining' | 'wearMax'> {
+  const seconds = getRushWearSeconds(type, level, evolutionId);
+  return seconds === null
+    ? { wearRemaining: undefined, wearMax: undefined }
+    : { wearRemaining: seconds, wearMax: seconds };
+}
+
+/**
+ * Advances a placed weapon's service life. When it runs out the weapon stops firing and starts the same
+ * 3.0s blink-and-vanish countdown used by empty aerosols, freeing its slot and lowering the deploy cost.
+ */
+export function tickRushWear(piece: UtensilPiece, dt: number): { piece: UtensilPiece; wornOut: boolean } {
+  if (piece.wearRemaining === undefined || piece.depleteTimer !== undefined) {
+    return { piece, wornOut: false };
+  }
+  const next = Math.max(0, Number((piece.wearRemaining - Math.max(0, dt)).toFixed(4)));
+  if (next <= 0) {
+    return {
+      piece: { ...piece, wearRemaining: 0, comboType: 'none', depleteTimer: AEROSOL_DEPLETE_BLINK_SECONDS },
+      wornOut: true,
+    };
+  }
+  return { piece: { ...piece, wearRemaining: next }, wornOut: false };
+}
+
+/** 0..1 share of service life left, or null for weapons without wear (aerosols, tray pieces). */
+export function getRushWearFraction(piece: Pick<UtensilPiece, 'wearRemaining' | 'wearMax'>): number | null {
+  if (piece.wearRemaining === undefined || !piece.wearMax) return null;
+  return Math.min(1, Math.max(0, piece.wearRemaining / piece.wearMax));
+}
+
+/**
+ * Supply earned per kill: combos are the economy. A plain hit barely pays; a 2★ flank or a UV-bridge burn
+ * pays for most of a new weapon, and a 3★ master kill pays for one outright.
+ */
+export function getRushKillSupply(kill: {
+  stars: KillStarRating;
+  hitByBridgeBurn?: boolean;
+  bossTier?: BugEnemy['bossTier'];
+}): number {
+  if (kill.bossTier) return 40;
+  if (kill.stars === 3) return 26;
+  if (kill.stars === 2 || kill.hitByBridgeBurn) return 14;
+  return 3;
+}
+
+export const RUSH_WAVE_WARNING_SECONDS = 3.0;
+
+export type RushWavePatternId =
+  | 'ant_trickle'
+  | 'ant_swarm'
+  | 'armored_column'
+  | 'wasp_raid'
+  | 'roach_cross'
+  | 'pincer';
+
+export interface RushWaveSpawn {
+  rail: number;
+  type: BugType;
+}
+
+export interface RushWavePlan {
+  pattern: RushWavePatternId;
+  hotRails: number[];
+  spawns: RushWaveSpawn[];
+  spacingSec: number;
+}
+
+export interface RushWaveDirectorState {
+  stage: 'calm' | 'warning' | 'active';
+  timer: number;
+  plan: RushWavePlan | null;
+  nextSpawnIndex: number;
+  wavesStarted: number;
+}
+
+export interface RushWaveTick {
+  state: RushWaveDirectorState;
+  spawns: RushWaveSpawn[];
+  /** Set only on the tick a new wave is announced, so the canvas can pop its warning once. */
+  announced: RushWavePlan | null;
+  /** Rails to light up while a wave is being announced, with the seconds left until it starts. */
+  warning: { rails: number[]; pattern: RushWavePatternId; secondsLeft: number } | null;
+}
+
+export const RUSH_WAVE_PATTERN_LABELS: Readonly<Record<RushWavePatternId, string>> = {
+  ant_trickle: '🐜',
+  ant_swarm: '🐜🐜🐜',
+  armored_column: '🛡️🐀',
+  wasp_raid: '🦟',
+  roach_cross: '🪳',
+  pincer: '🐜 + 🛡️🐀',
+};
+
+export function createRushWaveDirector(): RushWaveDirectorState {
+  // The opening ant is already on the board; the first announced wave arrives a few seconds later.
+  return { stage: 'calm', timer: 3.0, plan: null, nextSpawnIndex: 0, wavesStarted: 0 };
+}
+
+function pickDistinctRails(count: number, rng: () => number): number[] {
+  const rails = [0, 1, 2, 3];
+  const picked: number[] = [];
+  while (picked.length < count && rails.length > 0) {
+    const idx = Math.floor(rng() * rails.length) % rails.length;
+    picked.push(rails.splice(idx, 1)[0]);
+  }
+  return picked.sort((a, b) => a - b);
+}
+
+function repeatSpawns(rail: number, type: BugType, count: number): RushWaveSpawn[] {
+  return Array.from({ length: count }, () => ({ rail, type }));
+}
+
+function interleave<T>(a: readonly T[], b: readonly T[]): T[] {
+  const out: T[] = [];
+  for (let i = 0; i < Math.max(a.length, b.length); i++) {
+    if (i < a.length) out.push(a[i]);
+    if (i < b.length) out.push(b[i]);
+  }
+  return out;
+}
+
+/**
+ * Plans the next wave: every wave is concentrated on 1-2 rails and asks for a specific answer
+ * (fan of foam for swarms, UV bridge or soap for shields, soap + mop or the square for roaches).
+ */
+export function planRushWave(elapsedSec: number, rng: () => number = Math.random): RushWavePlan {
+  const extra = elapsedSec >= 95 ? Math.min(3, Math.floor((elapsedSec - 95) / 60) + 1) : 0;
+
+  if (elapsedSec < RUSH_CENTRAL_RAIL_ONLY_SECONDS) {
+    return {
+      pattern: 'ant_trickle',
+      hotRails: [RUSH_OPENING_CENTER_RAIL],
+      spawns: repeatSpawns(RUSH_OPENING_CENTER_RAIL, 'speed_ant', 3),
+      spacingSec: 1.6,
+    };
+  }
+
+  const roll = rng();
+  let pattern: RushWavePatternId;
+  if (elapsedSec < 35) {
+    pattern = roll < 0.6 ? 'ant_trickle' : 'armored_column';
+  } else if (elapsedSec < 95) {
+    pattern = roll < 0.3 ? 'ant_swarm' : roll < 0.6 ? 'armored_column' : roll < 0.8 ? 'pincer' : 'wasp_raid';
+  } else {
+    pattern =
+      roll < 0.22
+        ? 'ant_swarm'
+        : roll < 0.44
+        ? 'armored_column'
+        : roll < 0.68
+        ? 'pincer'
+        : roll < 0.84
+        ? 'roach_cross'
+        : 'wasp_raid';
+  }
+
+  if (pattern === 'pincer') {
+    const [antRail, shieldRail] = pickDistinctRails(2, rng);
+    return {
+      pattern,
+      hotRails: [antRail, shieldRail].sort((a, b) => a - b),
+      spawns: interleave(
+        repeatSpawns(antRail, 'speed_ant', 2 + extra),
+        repeatSpawns(shieldRail, 'cap_beetle', 1 + Math.floor(extra / 2))
+      ),
+      spacingSec: 1.0,
+    };
+  }
+
+  const [rail] = pickDistinctRails(1, rng);
+  switch (pattern) {
+    case 'ant_trickle':
+      return { pattern, hotRails: [rail], spawns: repeatSpawns(rail, 'speed_ant', 3), spacingSec: 1.4 };
+    case 'ant_swarm':
+      return { pattern, hotRails: [rail], spawns: repeatSpawns(rail, 'speed_ant', 4 + extra), spacingSec: 0.55 };
+    case 'armored_column':
+      return {
+        pattern,
+        hotRails: [rail],
+        spawns: repeatSpawns(rail, 'cap_beetle', elapsedSec < 35 ? 1 : 2 + Math.floor(extra / 2)),
+        spacingSec: 1.6,
+      };
+    case 'wasp_raid':
+      return { pattern, hotRails: [rail], spawns: repeatSpawns(rail, 'acid_wasp', 2 + Math.floor(extra / 2)), spacingSec: 1.3 };
+    default:
+      return { pattern: 'roach_cross', hotRails: [rail], spawns: repeatSpawns(rail, 'shift_roach', 2 + Math.floor(extra / 2)), spacingSec: 1.2 };
+  }
+}
+
+/**
+ * Advances the wave director: calm -> announced (rails light up for 3s) -> active (spawns only on the
+ * announced rails) -> calm. Spawns wait while the board is at its concurrent-bug limit (`canSpawn`).
+ * `paceMult` (< 1 later in the run) tightens the spacing inside a wave and the calm between waves.
+ */
+export function tickRushWaveDirector(
+  state: RushWaveDirectorState,
+  dt: number,
+  elapsedSec: number,
+  opts: { canSpawn: boolean; paceMult?: number; rng?: () => number }
+): RushWaveTick {
+  const rng = opts.rng ?? Math.random;
+  const pace = Math.min(1.2, Math.max(0.5, opts.paceMult ?? 1));
+  const next: RushWaveDirectorState = { ...state, timer: state.timer - Math.max(0, dt) };
+  const spawns: RushWaveSpawn[] = [];
+  let announced: RushWavePlan | null = null;
+
+  if (next.stage === 'calm' && next.timer <= 0) {
+    next.plan = planRushWave(elapsedSec, rng);
+    next.stage = 'warning';
+    next.timer = RUSH_WAVE_WARNING_SECONDS;
+    next.nextSpawnIndex = 0;
+    next.wavesStarted += 1;
+    announced = next.plan;
+  } else if (next.stage === 'warning' && next.timer <= 0) {
+    next.stage = 'active';
+    next.timer = 0;
+  }
+
+  if (next.stage === 'active' && next.plan) {
+    if (next.timer <= 0 && opts.canSpawn) {
+      spawns.push(next.plan.spawns[next.nextSpawnIndex]);
+      next.nextSpawnIndex += 1;
+      next.timer = next.plan.spacingSec * pace;
+      if (next.nextSpawnIndex >= next.plan.spawns.length) {
+        next.stage = 'calm';
+        next.timer = Math.max(1.2, 2.5 - elapsedSec / 120) * pace;
+      }
+    }
+  }
+
+  const warning =
+    next.stage === 'warning' && next.plan
+      ? { rails: next.plan.hotRails, pattern: next.plan.pattern, secondsLeft: Math.max(0, next.timer) }
+      : null;
+
+  return { state: next, spawns, announced, warning };
 }
 
 /**
@@ -362,6 +631,7 @@ export function executeRushDropOrMerge(
           {
             ...sourcePiece,
             ...initAmmoFields,
+            ...freshWearFields(sourcePiece.type, sourcePiece.level, sourcePiece.evolutionId),
             rail: targetRail,
             row: targetRow,
             gunkTimer: 0,
@@ -396,6 +666,7 @@ export function executeRushDropOrMerge(
               ammo: undefined,
               maxAmmo: undefined,
               depleteTimer: undefined,
+              ...freshWearFields(p.type, 4, evo.id),
               gunkTimer: 0,
               cooldown: 0.08,
               fireTimer: 0.05,
@@ -438,6 +709,8 @@ export function executeRushDropOrMerge(
           ? {
               ...p,
               ...mergedAmmoFields,
+              ...freshWearFields(p.type, mergedLevel, undefined),
+              depleteTimer: undefined,
               level: mergedLevel,
               gunkTimer: 0,
               cooldown: 0.1,
