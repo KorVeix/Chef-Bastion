@@ -239,6 +239,8 @@ interface ChefBastionCanvasProps {
     evolutionsCount?: number;
     comandasPicked?: number;
     milestonesCoins?: number;
+    killsByStar?: [number, number, number];
+    breachesByBug?: Partial<Record<BugType, number>>;
   }) => void;
 }
 
@@ -1180,6 +1182,9 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
         : !isDynamicOnboardingLevel(stateRef.current.level);
     let phaseKills = 0;
     let totalBugsCleaned = 0;
+    // Per-match metrics (kills by star rating and which bug ruined each plate).
+    let killsByStar: [number, number, number] = [0, 0, 0];
+    let breachesByBug: Partial<Record<BugType, number>> = {};
     let score = 0;
     let sanitationSeals = 3;
     let armoredPlates = 0;
@@ -1778,6 +1783,8 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
       startWaveRef.current = false;
       phaseKills = 0;
       totalBugsCleaned = 0;
+      killsByStar = [0, 0, 0];
+      breachesByBug = {};
       score = 0;
       sanitationSeals = 3;
       armoredPlates = 0;
@@ -5130,6 +5137,7 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
             const elim = classifyBugElimination(bug);
             bug.koTimer = bug.bossTier ? 0.55 : 0.38;
             bug.koStar = elim.stars;
+            killsByStar[elim.stars - 1] += 1;
             phaseKills += bug.bossTier ? 3 : 1;
             totalBugsCleaned += 1;
             const ptsAwarded =
@@ -5381,6 +5389,7 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
                 continue;
               }
             } else if (sanitationSeals > 0) {
+              breachesByBug[bug.type] = (breachesByBug[bug.type] ?? 0) + 1;
               const plateGroup = kitchenProps.bastionPlates[currentRailInt];
               if (plateGroup) {
                 const food = plateGroup.getObjectByName('food_content');
@@ -5420,6 +5429,7 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
                 continue;
               }
             } else if (!gameEndedLock) {
+              breachesByBug[bug.type] = (breachesByBug[bug.type] ?? 0) + 1;
               intactPlates[currentRailInt] = false;
               gameEndedLock = true;
               const trans = checkPhaseTransition(phase, phaseKills, stateRef.current.level);
@@ -5430,6 +5440,8 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
                   phaseReached: phase,
                   remainingKillsToNext: remaining,
                   bugsCleaned: totalBugsCleaned,
+                  killsByStar: [...killsByStar] as [number, number, number],
+                  breachesByBug: { ...breachesByBug },
                   vipSaved: false,
                   allFourPlatesIntact: false,
                   survivedSeconds: Math.floor(rushElapsedSec),
@@ -5465,6 +5477,8 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
             phaseReached: 3,
             remainingKillsToNext: 0,
             bugsCleaned: totalBugsCleaned,
+            killsByStar: [...killsByStar] as [number, number, number],
+            breachesByBug: { ...breachesByBug },
             vipSaved,
             allFourPlatesIntact,
           });
