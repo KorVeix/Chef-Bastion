@@ -1,0 +1,178 @@
+/**
+ * Guiones del Modo Estratégico: cada nivel es un guion fijo (qué bicho, en qué carril y en qué segundo)
+ * con las armas justas para resolverlo. Sin azar: el mismo guion en cada intento.
+ *
+ * Reglas de diseño (del autor):
+ * - Cada 2–3 niveles aparece un bicho nuevo con su forma de matarlo; el nivel siguiente lo refuerza
+ *   con más cantidad y después se retira: ningún tipo de bicho sale en más de 3 niveles seguidos.
+ * - La dificultad sale de la composición (cuántas amenazas coinciden, en qué carriles y qué movimientos
+ *   exigen), no de inflar la vida: la vida de cada bicho es fija.
+ * - Se gana al limpiar el guion.
+ *
+ * Cada guion trae su solución de referencia y un plan que falla sin el combo que enseña; los tests
+ * (`strategicScripts.test.ts`) los pasan por `simulateStrategic`.
+ */
+import type { BugType, UtensilType } from './types';
+import type { SimLayoutStep, SimSpawn } from './strategicSim';
+
+export interface StrategicScript {
+  level: number;
+  /** Armas del nivel (en la bandeja al empezar). */
+  loadout: UtensilType[];
+  /** Qué enseña o exige el nivel (para la ficha previa). */
+  teaches: string;
+  /** Tutorial guiado a mostrar (claves de `getTutorialGuideForLevel`), si lo hay. */
+  tutorial: 'line_foam' | 'bridge_uv' | 'slip_vortex' | 'corner_square' | null;
+  spawns: SimSpawn[];
+  /** Solución de referencia: debe limpiar el guion sin perder ningún plato. */
+  solution: SimLayoutStep[];
+  /** Plan sin el combo que enseña el nivel: debe dejar pasar al menos un bicho. */
+  failsWithout: { label: string; plan: SimLayoutStep[] };
+}
+
+const at = (t: number, type: BugType, ...rails: number[]): SimSpawn[] =>
+  rails.map((rail) => ({ t, type, rail }));
+
+const foam = (rail: number, scourerRow = 3, sprayRow = 5) => [
+  { type: 'scourer_nanas' as const, rail, row: scourerRow },
+  { type: 'spray_flus' as const, rail, row: sprayRow },
+];
+
+const bridge = (leftRail: number, row: number) => [
+  { type: 'aerosol_torch' as const, rail: leftRail, row },
+  { type: 'aerosol_torch' as const, rail: leftRail + 1, row },
+];
+
+export const STRATEGIC_SCRIPTS: readonly StrategicScript[] = [
+  {
+    level: 1,
+    loadout: ['scourer_nanas', 'spray_flus'],
+    teaches: 'Estropajo delante del Flus-Flus: abanico de 5 burbujas que cubre 3 carriles.',
+    tutorial: 'line_foam',
+    spawns: [
+      ...at(2, 'speed_ant', 1),
+      ...at(8, 'speed_ant', 2),
+      ...at(14, 'speed_ant', 1),
+      ...at(20, 'speed_ant', 2),
+      ...at(26, 'speed_ant', 1, 2),
+      ...at(34, 'speed_ant', 2),
+      ...at(40, 'speed_ant', 1, 2),
+    ],
+    solution: [{ t: 0, placements: foam(1) }],
+    failsWithout: {
+      label: 'Flus-Flus sin Estropajo',
+      plan: [{ t: 0, placements: [{ type: 'spray_flus', rail: 1, row: 5 }] }],
+    },
+  },
+  {
+    level: 2,
+    loadout: ['scourer_nanas', 'spray_flus'],
+    teaches: 'Más hormigas y en más carriles: mueve el abanico hacia donde entran.',
+    tutorial: null,
+    spawns: [
+      // Tramo 1 (carriles 1-3): abanico en el carril 2.
+      ...at(2, 'speed_ant', 1),
+      ...at(6, 'speed_ant', 0, 2),
+      ...at(12, 'speed_ant', 1),
+      ...at(16, 'speed_ant', 0, 1, 2),
+      // Tramo 2 (carriles 2-4): hay que mover el abanico al carril 3.
+      ...at(28, 'speed_ant', 3),
+      ...at(32, 'speed_ant', 2, 3),
+      ...at(38, 'speed_ant', 1, 3),
+      ...at(44, 'speed_ant', 1, 2, 3),
+    ],
+    solution: [
+      { t: 0, placements: foam(1) },
+      { t: 24, placements: foam(2) },
+    ],
+    failsWithout: {
+      label: 'Abanico quieto en el carril 2',
+      plan: [{ t: 0, placements: foam(1) }],
+    },
+  },
+  {
+    level: 3,
+    loadout: ['scourer_nanas', 'spray_flus', 'aerosol_torch', 'aerosol_torch'],
+    teaches: 'Ratas blindadas: 2 Aerosoles UV en carriles vecinos y misma fila funden el escudo.',
+    tutorial: 'bridge_uv',
+    spawns: [
+      // Mismo volumen de hormigas que el Nv.2, por la izquierda…
+      ...at(2, 'speed_ant', 0),
+      ...at(6, 'speed_ant', 1),
+      ...at(10, 'speed_ant', 0, 2),
+      ...at(16, 'speed_ant', 1),
+      ...at(22, 'speed_ant', 0, 1),
+      ...at(30, 'speed_ant', 2),
+      ...at(36, 'speed_ant', 0, 1, 2),
+      // …y 2 ratas blindadas por el carril 4, fuera del abanico.
+      ...at(12, 'cap_beetle', 3),
+      ...at(32, 'cap_beetle', 3),
+    ],
+    solution: [{ t: 0, placements: [...foam(1), ...bridge(2, 2)] }],
+    failsWithout: {
+      label: 'Aerosoles separados (sin puente)',
+      plan: [
+        {
+          t: 0,
+          placements: [
+            ...foam(1),
+            { type: 'aerosol_torch', rail: 3, row: 2 },
+            { type: 'aerosol_torch', rail: 3, row: 4 },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    level: 4,
+    loadout: ['scourer_nanas', 'spray_flus', 'aerosol_torch', 'aerosol_torch'],
+    teaches: 'Solo ratas blindadas, más y en todos los carriles: abanico y puente a la vez.',
+    tutorial: null,
+    spawns: [
+      ...at(2, 'cap_beetle', 3),
+      ...at(8, 'cap_beetle', 0),
+      ...at(14, 'cap_beetle', 2, 3),
+      ...at(22, 'cap_beetle', 1),
+      ...at(28, 'cap_beetle', 0, 3),
+      ...at(36, 'cap_beetle', 1, 2),
+      ...at(44, 'cap_beetle', 0, 2, 3),
+      ...at(54, 'cap_beetle', 1, 3),
+    ],
+    solution: [{ t: 0, placements: [...foam(1), ...bridge(2, 2)] }],
+    failsWithout: {
+      label: 'Solo el abanico',
+      plan: [{ t: 0, placements: foam(1) }],
+    },
+  },
+];
+
+export function getStrategicScript(level: number): StrategicScript | null {
+  return STRATEGIC_SCRIPTS.find((s) => s.level === level) ?? null;
+}
+
+export function getScriptBugTypes(script: StrategicScript): BugType[] {
+  return [...new Set(script.spawns.map((s) => s.type))];
+}
+
+/** Fase de HUD (1-3) según cuántas apariciones del guion han salido ya. */
+export function getScriptPhase(script: StrategicScript, spawnedCount: number): 1 | 2 | 3 {
+  const total = Math.max(1, script.spawns.length);
+  const frac = spawnedCount / total;
+  return frac < 1 / 3 ? 1 : frac < 2 / 3 ? 2 : 3;
+}
+
+/** Apariciones con `t` en (prevT, t]: las que el motor debe soltar en este fotograma. */
+export function takeDueScriptSpawns(
+  script: StrategicScript,
+  cursor: number,
+  elapsed: number
+): { spawns: SimSpawn[]; cursor: number } {
+  const sorted = [...script.spawns].sort((a, b) => a.t - b.t);
+  const out: SimSpawn[] = [];
+  let c = cursor;
+  while (c < sorted.length && sorted[c].t <= elapsed) {
+    out.push(sorted[c]);
+    c += 1;
+  }
+  return { spawns: out, cursor: c };
+}
