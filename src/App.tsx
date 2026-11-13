@@ -61,6 +61,8 @@ import {
   UTENSIL_MICRO_TIPS,
   UTENSIL_ROLE_TAGS,
   WORLD_UNLOCK_LEVELS,
+  migrateLegacyProgressIds,
+  VALID_SPECIALS,
 } from './game/rules';
 import {
   ArmorId,
@@ -93,10 +95,18 @@ function loadSavedProgress(): PlayerProgress {
     localStorage.removeItem(LEGACY_BOARD_STORAGE_KEY);
     const raw = localStorage.getItem(SAVE_STORAGE_KEY);
     if (!raw) return DEFAULT_PROGRESS;
-    const parsed = JSON.parse(raw) as Partial<PlayerProgress>;
+    const parsed = migrateLegacyProgressIds(JSON.parse(raw) as Partial<PlayerProgress>);
+    const equippedSpecial = VALID_SPECIALS.includes(parsed.equippedSpecial as SpecialWeaponId)
+      ? (parsed.equippedSpecial as SpecialWeaponId)
+      : DEFAULT_PROGRESS.equippedSpecial;
+    const unlockedSpecials = Array.isArray(parsed.unlockedSpecials)
+      ? parsed.unlockedSpecials.filter((id) => VALID_SPECIALS.includes(id))
+      : DEFAULT_PROGRESS.unlockedSpecials;
     return {
       ...DEFAULT_PROGRESS,
       ...parsed,
+      equippedSpecial,
+      unlockedSpecials: unlockedSpecials.length > 0 ? unlockedSpecials : DEFAULT_PROGRESS.unlockedSpecials,
       kitchenUpgrades: normalizeKitchenUpgrades(parsed.kitchenUpgrades),
     };
   } catch {

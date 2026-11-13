@@ -942,7 +942,7 @@ test('Comprehension & Anti-Overlap Polish: 0.08x Inspector, 0.20x Comanda Slow-M
       pieces: boardPieces,
       intactPlates: [true, true, false, true],
       vipPlateRail: 0,
-      equippedSpecial: 'karcher_blast',
+      equippedSpecial: 'hydro_blast',
       ultimateCharge: 65,
       isRushMode: true,
     }
@@ -957,7 +957,7 @@ test('Comprehension & Anti-Overlap Polish: 0.08x Inspector, 0.20x Comanda Slow-M
       pieces: boardPieces,
       intactPlates: [true, true, false, true],
       vipPlateRail: 0,
-      equippedSpecial: 'karcher_blast',
+      equippedSpecial: 'hydro_blast',
       ultimateCharge: 65,
       isRushMode: false,
     }
@@ -970,7 +970,7 @@ test('Comprehension & Anti-Overlap Polish: 0.08x Inspector, 0.20x Comanda Slow-M
       pieces: boardPieces,
       intactPlates: [true, true, true, true],
       vipPlateRail: null,
-      equippedSpecial: 'karcher_blast',
+      equippedSpecial: 'hydro_blast',
       ultimateCharge: 100,
       isRushMode: true,
     }
@@ -1055,3 +1055,16 @@ test('Comprehension & Anti-Overlap Polish: 0.08x Inspector, 0.20x Comanda Slow-M
 
 
 
+
+test('Ultimate renombrada: las partidas con el id antiguo cargan la Hidrolimpiadora', async () => {
+  const { migrateLegacyProgressIds, SPECIAL_WEAPONS_CATALOG } = await import('./rules');
+  const migrated = migrateLegacyProgressIds({
+    equippedSpecial: 'karcher_blast',
+    unlockedSpecials: ['karcher_blast', 'baking_volcano', 'hydro_blast'],
+  });
+  assert.equal(migrated.equippedSpecial, 'hydro_blast');
+  assert.deepEqual(migrated.unlockedSpecials, ['hydro_blast', 'baking_volcano']);
+  for (const spec of Object.values(SPECIAL_WEAPONS_CATALOG)) {
+    assert.ok(!/k[aä]rcher/i.test(spec.name + spec.desc), `marca registrada en «${spec.name}»`);
+  }
+});

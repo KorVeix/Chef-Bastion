@@ -2634,7 +2634,7 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
         }
       }
 
-      // Check Ultimate trigger (Roomba Kamikaze / Kärcher / Volcano — Volcano uses real chemical orange/red fire!)
+      // Check Ultimate trigger (Roomba Kamikaze / Hidrolimpiadora / Volcano — Volcano uses real chemical orange/red fire!)
       if (triggerUltimateRef.current && gState === 'playing') {
         triggerUltimateRef.current = false;
         inPlacementPhase = false;
@@ -2661,7 +2661,7 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
           createdAt: Date.now(),
         });
 
-        if (specId === 'karcher_blast') {
+        if (specId === 'hydro_blast') {
           for (const b of bugs) {
             if (b.koTimer <= 0) {
               b.yProgress = Math.max(-0.2, b.yProgress - 1.35);

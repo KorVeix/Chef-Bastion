@@ -1838,7 +1838,7 @@ export function buildOvercookedKitchenProps(railToWorldX: (r: number) => number)
 
 /**
  * Builds a 3D showcase prop for the Wardrobe "⚔️ Armas Élite" tab so players can inspect
- * their equipped or previewed Ultimate weapon (Kärcher, Volcán Químico, or Roomba Kamikaze) in 3D.
+ * their equipped or previewed Ultimate weapon (Hidrolimpiadora, Volcán Químico, or Roomba Kamikaze) in 3D.
  */
 export function buildWardrobeSpecialShowcaseMesh(specialId: SpecialWeaponId): THREE.Group {
   const root = new THREE.Group();
@@ -1889,8 +1889,8 @@ export function buildWardrobeSpecialShowcaseMesh(specialId: SpecialWeaponId): TH
     return root;
   }
 
-  // Default: karcher_blast ("Hidrolimpiadora Kärcher Alta Presión")
-  const karcherGroup = new THREE.Group();
+  // Default: hydro_blast ("Hidrolimpiadora Industrial")
+  const hydroGroup = new THREE.Group();
   const tank = new THREE.Mesh(
     new THREE.BoxGeometry(0.5, 0.68, 0.42),
     createToonMaterial(0xfacc15)
@@ -1907,9 +1907,9 @@ export function buildWardrobeSpecialShowcaseMesh(specialId: SpecialWeaponId): TH
   );
   lance.position.set(0.26, 0.76, 0.12);
   lance.rotation.z = -0.35;
-  karcherGroup.add(tank, cap, lance);
-  addInkOutline(karcherGroup);
-  root.add(karcherGroup);
+  hydroGroup.add(tank, cap, lance);
+  addInkOutline(hydroGroup);
+  root.add(hydroGroup);
   return root;
 }
 
