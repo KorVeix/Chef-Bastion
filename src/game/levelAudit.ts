@@ -21,46 +21,35 @@ import {
   checkPhaseTransition,
 } from './rules';
 import { getStrategicScript } from './strategicScripts';
+import { BUG_BASE_HP, BUG_BASE_SPEED, COMBAT } from './combatTuning';
 
 export type Phase = 1 | 2 | 3;
 
-/** Vida base por bicho (motor: `hpMap` del bucle de aparición del Estratégico). */
-export const STRATEGIC_BUG_BASE_HP: Record<BugType, number> = {
-  speed_ant: 40,
-  cap_beetle: 84,
-  acid_wasp: 64,
-  shift_roach: 60,
-  king_crab: 145,
-};
+/** Vida base por bicho: fuente única en `combatTuning.ts`. */
+export const STRATEGIC_BUG_BASE_HP = BUG_BASE_HP;
 
-/** Velocidad base en filas/s (motor: `speedMap`). */
-export const STRATEGIC_BUG_BASE_SPEED: Record<BugType, number> = {
-  speed_ant: 0.68,
-  cap_beetle: 0.48,
-  acid_wasp: 0.44,
-  shift_roach: 0.6,
-  king_crab: 0.36,
-};
+/** Velocidad base en filas/s: fuente única en `combatTuning.ts`. */
+export const STRATEGIC_BUG_BASE_SPEED = BUG_BASE_SPEED;
 
 export const SHIELDED_BUGS: ReadonlySet<BugType> = new Set<BugType>(['cap_beetle', 'king_crab']);
 
 /** Datos de daño del motor en Estratégico (armas Nv.1, sin sombreros). */
 export const ENGINE_DAMAGE = {
-  sprayShot: 14,
-  sprayInterval: 1.65,
+  sprayShot: COMBAT.flus.damage,
+  sprayInterval: COMBAT.flus.interval,
   /** Con Estropajo delante cada gota se convierte en 5 burbujas de 16. */
-  foamBubbles: 5,
-  foamBubbleDamage: 16,
-  sprayComboInterval: 0.6,
-  bridgeDps: 48,
+  foamBubbles: COMBAT.foam.angles.length,
+  foamBubbleDamage: COMBAT.foam.damage,
+  sprayComboInterval: COMBAT.flus.comboInterval,
+  bridgeDps: COMBAT.bridgeUv.dps,
   /** Ventana del puente: |Δfila| < 0.3. */
-  bridgeWindowRows: 0.6,
-  mopShots: 4,
-  mopShotDamage: 14,
-  mopInterval: 1.45,
-  mopComboShots: 8,
-  mopComboShotDamage: 24,
-  mopComboInterval: 0.85,
+  bridgeWindowRows: COMBAT.bridgeUv.halfWindowRows * 2,
+  mopShots: COMBAT.mop.shots,
+  mopShotDamage: COMBAT.mop.damage,
+  mopInterval: COMBAT.mop.interval,
+  mopComboShots: COMBAT.mop.comboShots,
+  mopComboShotDamage: COMBAT.mop.comboDamage,
+  mopComboInterval: COMBAT.mop.comboInterval,
   /** Fila desde la que bajan los bichos hasta los platos (yProgress 6.85). */
   plateRow: 6.85,
 } as const;

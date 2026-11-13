@@ -24,7 +24,8 @@ import {
   getLevelSpeedMultiplier,
 } from './rules';
 import { ROACH_SHIFT_INTERVAL_SEC, stepRoachZigzag } from './strategicScripts';
-import { STRATEGIC_BUG_BASE_HP, STRATEGIC_BUG_BASE_SPEED, SHIELDED_BUGS } from './levelAudit';
+import { SHIELDED_BUGS } from './levelAudit';
+import { BUG_BASE_HP, BUG_BASE_SPEED, COMBAT } from './combatTuning';
 
 // Cucaracha de guion: zigzag de carril (stepRoachZigzag), clavada al resbalar en el Jabón.
 export const SIM_SUPPORTED_BUGS: ReadonlySet<BugType> = new Set<BugType>([
@@ -128,7 +129,7 @@ function bossMult(bug: SimBug, opts: { thermal: boolean; control: boolean }): nu
 
 const PLATE_ROW = 6.85;
 const SPAWN_ROW = -0.35;
-const FOAM_ANGLES = [-0.55, -0.26, 0, 0.26, 0.55];
+const FOAM_ANGLES = COMBAT.foam.angles;
 
 function frictionFactor(level: number): number {
   const f = getBiomeForLevel(level).friction;
@@ -239,7 +240,15 @@ export function simulateStrategic(opts: {
       }
       const inCombo = piece.comboType !== 'none';
       const interval =
-        piece.type === 'spray_flus' ? (inCombo ? 0.6 : 1.65) : piece.type === 'mop_vortex' ? (inCombo ? 0.85 : 1.45) : 999;
+        piece.type === 'spray_flus'
+          ? inCombo
+            ? COMBAT.flus.comboInterval
+            : COMBAT.flus.interval
+          : piece.type === 'mop_vortex'
+          ? inCombo
+            ? COMBAT.mop.comboInterval
+            : COMBAT.mop.interval
+          : 999;
       piece.fireTimer -= dt;
       if (piece.fireTimer > 0 || interval >= 100) continue;
       piece.fireTimer = interval;
@@ -248,26 +257,26 @@ export function simulateStrategic(opts: {
           x: piece.rail,
           y: piece.row - 0.25,
           vx: 0,
-          vy: -5.0,
-          damage: inCombo ? 19 : 14,
+          vy: -COMBAT.flus.speed,
+          damage: inCombo ? COMBAT.flus.comboDamage : COMBAT.flus.damage,
           pierce: false,
-          life: 2.3,
+          life: COMBAT.flus.life,
           flavor: 'water_drop',
           fromVortex: false,
           fromDiagonalFoam: false,
         });
       } else if (piece.type === 'mop_vortex') {
-        const dirs = inCombo ? 8 : 4;
+        const dirs = inCombo ? COMBAT.mop.comboShots : COMBAT.mop.shots;
         for (let d = 0; d < dirs; d++) {
           const ang = (d / dirs) * Math.PI * 2 + t * 2;
           projectiles.push({
             x: piece.rail,
             y: piece.row,
-            vx: Math.cos(ang) * 2.5,
-            vy: Math.sin(ang) * 2.5,
-            damage: inCombo ? 24 : 14,
+            vx: Math.cos(ang) * COMBAT.mop.speed,
+            vy: Math.sin(ang) * COMBAT.mop.speed,
+            damage: inCombo ? COMBAT.mop.comboDamage : COMBAT.mop.damage,
             pierce: true,
-            life: 0.88,
+            life: COMBAT.mop.life,
             flavor: 'vortex_soap',
             fromVortex: true,
             fromDiagonalFoam: false,
@@ -285,7 +294,7 @@ export function simulateStrategic(opts: {
         rail: sp.rail,
         targetRail: sp.rail,
         y: SPAWN_ROW,
-        hp: sp.boss ? sp.boss.hp : STRATEGIC_BUG_BASE_HP[sp.type],
+        hp: sp.boss ? sp.boss.hp : BUG_BASE_HP[sp.type],
         hasShield: sp.boss ? true : SHIELDED_BUGS.has(sp.type),
         slowTimer: 0,
         knockbackCooldown: 0,
@@ -332,14 +341,14 @@ export function simulateStrategic(opts: {
             surviving.push({
               x: scourer.rail,
               y: scourer.row - 0.38,
-              vx: Math.sin(ang) * 3.2,
-              vy: -Math.cos(ang) * 4.5,
-              damage: 16,
-              pierce: Math.abs(ang) > 0.2,
-              life: 1.4,
+              vx: Math.sin(ang) * COMBAT.foam.speedX,
+              vy: -Math.cos(ang) * COMBAT.foam.speedY,
+              damage: COMBAT.foam.damage,
+              pierce: Math.abs(ang) > COMBAT.foam.pierceAngle,
+              life: COMBAT.foam.life,
               flavor: 'foam_fan',
               fromVortex: false,
-              fromDiagonalFoam: Math.abs(ang) > 0.2,
+              fromDiagonalFoam: Math.abs(ang) > COMBAT.foam.pierceAngle,
             });
           }
           continue;
@@ -361,9 +370,9 @@ export function simulateStrategic(opts: {
             proj.pierce = true;
             proj.thermal = true;
             proj.fromDiagonalFoam = true;
-            proj.damage = 45 * hitPiece.level;
+            proj.damage = COMBAT.gelWc.reflectDamagePerLevel * hitPiece.level;
           } else {
-            hitPiece.gunkTimer = 3.5;
+            hitPiece.gunkTimer = COMBAT.wasp.gunkSec;
             continue;
           }
         }
@@ -422,7 +431,7 @@ export function simulateStrategic(opts: {
       const speed =
         bug.stunTimer > 0
           ? 0.08
-          : STRATEGIC_BUG_BASE_SPEED[bug.type] * speedMult * (bug.slowTimer > 0 ? 0.55 : 1.0);
+          : BUG_BASE_SPEED[bug.type] * speedMult * (bug.slowTimer > 0 ? COMBAT.slowSpeedFactor : 1.0);
       if (bug.roachTimer !== null) {
         const z = stepRoachZigzag(
           {
@@ -441,18 +450,18 @@ export function simulateStrategic(opts: {
       bug.rail = damp(bug.rail, bug.targetRail, 9, dt);
       bug.y += speed * dt;
 
-      if (bug.type === 'acid_wasp' && bug.y > 0.5 && bug.y < 3.6 && bug.stunTimer <= 0) {
-        bug.attackWindup += dt * 0.45;
+      if (bug.type === 'acid_wasp' && bug.y > COMBAT.wasp.minRow && bug.y < COMBAT.wasp.maxRow && bug.stunTimer <= 0) {
+        bug.attackWindup += dt * COMBAT.wasp.windupPerSec;
         if (bug.attackWindup >= 1.0) {
           bug.attackWindup = 0;
           projectiles.push({
             x: Math.round(bug.rail),
             y: bug.y + 0.3,
             vx: 0,
-            vy: 3.1,
-            damage: 10,
+            vy: COMBAT.wasp.acidSpeed,
+            damage: COMBAT.wasp.acidDamage,
             pierce: false,
-            life: 2.2,
+            life: COMBAT.wasp.acidLife,
             flavor: 'enemy_acid',
             fromVortex: false,
             fromDiagonalFoam: false,
@@ -480,20 +489,20 @@ export function simulateStrategic(opts: {
       const bridge = links.find(
         (l) => l.kind === 'bridge_uv' && l.fromRow === rowInt && (l.fromRail === railInt || l.toRail === railInt)
       );
-      if (bridge && Math.abs(bug.y - rowInt) < 0.3) {
+      if (bridge && Math.abs(bug.y - rowInt) < COMBAT.bridgeUv.halfWindowRows) {
         if (bug.hasShield || (bug.bossTier && !bug.armorBroken)) {
           bug.hasShield = false;
           bug.armorBroken = true;
-          if (bug.bossTier === 'mini' && bug.puzzle === 'uv_overheat') bug.stunTimer = 3.2;
+          if (bug.bossTier === 'mini' && bug.puzzle === 'uv_overheat') bug.stunTimer = COMBAT.bridgeUv.miniBossStunSec;
         }
-        bug.hp -= 48 * bossMult(bug, { thermal: true, control: false }) * dt;
+        bug.hp -= COMBAT.bridgeUv.dps * bossMult(bug, { thermal: true, control: false }) * dt;
       }
 
       const flying = bug.type === 'acid_wasp';
       const soap = pieceAt('soap_bar', railInt, rowInt);
       if (soap && !flying && !bug.isSlidingFromSoap && Math.abs(bug.y - rowInt) < 0.32) {
         bug.isSlidingFromSoap = true;
-        bug.slowTimer = Math.max(bug.slowTimer, 2.6);
+        bug.slowTimer = Math.max(bug.slowTimer, COMBAT.soap.slowSec);
         if (bug.bossTier === 'mini' && bug.puzzle === 'soap_stun') {
           bug.stunTimer = 3.5;
           bug.hasShield = false;
@@ -513,10 +522,11 @@ export function simulateStrategic(opts: {
           bug.knockbackCooldown = 1.25;
         }
         const vortexDps = bug.bossTier
-          ? (bug.isSlidingFromSoap ? 88 : 46) * bossMult(bug, { thermal: false, control: true })
+          ? (bug.isSlidingFromSoap ? COMBAT.mop.bossContactDpsSlipped : COMBAT.mop.bossContactDps) *
+            bossMult(bug, { thermal: false, control: true })
           : bug.isSlidingFromSoap
-          ? 240
-          : 65;
+          ? COMBAT.mop.contactDpsSlipped
+          : COMBAT.mop.contactDps;
         bug.hp -= vortexDps * dt;
       }
 
