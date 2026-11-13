@@ -5197,16 +5197,36 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
 
             if (isRushMode) {
               // Supply kill-streak bonus + XP gain!
-              rushSupply = Math.min(
-                currentRushSupplyMax,
-                rushSupply +
-                  getRushKillSupply({
-                    stars: elim.stars,
-                    hitByBridgeBurn: bug.hitByBridgeBurn,
-                    bossTier: bug.bossTier,
-                  }) *
-                    rushModifiers.supplyRateMult
-              );
+              const killSupply =
+                getRushKillSupply({
+                  stars: elim.stars,
+                  hitByBridgeBurn: bug.hitByBridgeBurn,
+                  bossTier: bug.bossTier,
+                }) * rushModifiers.supplyRateMult;
+              rushSupply = Math.min(currentRushSupplyMax, rushSupply + killSupply);
+              // Mockup: combo kills pop the supply they pay ("+26 · COMBO 3★") so the economy is readable.
+              if (killSupply >= 10) {
+                const supplyPos = projectWorldToScreenPct(
+                  gridToWorldX(bug.rail),
+                  0.85,
+                  gridToWorldZ(bug.yProgress)
+                );
+                stateRef.current.onFloatingCombo?.({
+                  id: `rush-supply-${bug.id}-${killNowMs}`,
+                  multiplier: elim.stars,
+                  label: `+${Math.round(killSupply)}`,
+                  detail: bug.bossTier
+                    ? '👑 JEFE'
+                    : elim.stars === 1
+                    ? 'PUENTE UV'
+                    : `COMBO ${elim.stars}★`,
+                  color: bug.bossTier || elim.stars === 3 ? 'yellow' : 'green',
+                  emphasis: Boolean(bug.bossTier) || elim.stars === 3,
+                  xPct: supplyPos.xPct,
+                  yPct: supplyPos.yPct,
+                  createdAt: killNowMs,
+                });
+              }
               rushXp += (bug.bossTier ? 48 : 14) * rushModifiers.xpMult;
               if (rapidKillStreakCount >= 25) {
                 unlockRushMilestoneIfNew('rush_streak_25');
@@ -5271,7 +5291,8 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
                 0.85,
                 gridToWorldZ(bug.yProgress)
               );
-              stateRef.current.onFloatingCombo?.({
+              // Supervivencia already shows the supply popup above; points only matter in campaign.
+              if (!isRushMode) stateRef.current.onFloatingCombo?.({
                 id: `combo-kill-${bug.id}-${nowMs}`,
                 multiplier: combatComboStreak,
                 label: bug.bossTier ? '👑 ¡JEFE!' : `+${ptsAwarded}`,

@@ -23,6 +23,7 @@
   - `src/game/types.ts`: contratos TypeScript (utensilios, biomas, jefes, invasión lateral, onboarding).
   - `src/game/rules.ts`: reglas puras de la campaña y el Modo Estratégico. Combos `line_foam`, `bridge_uv`, `slip_vortex`, `deflect_90`; campaña de 60 niveles con reloj de 120 s desde Nv.5; biomas en ciclos de 19 niveles; Grandes Jefes de 3 fases en los X0 (`getGrandBossPhase`) y mini-jefes en los X5; curva de velocidad con techo `0.78x`.
   - `src/game/roguelite.ts`: modo Supervivencia (Rush): suministro (30 inicial, 4/s y sobre todo por combos), coste de despliegue, cupo de 3 a 5 armas, desgaste de armas (22/30/40 s, evoluciones 55 s), director de oleadas avisadas 3 s antes en 1-2 carriles, fusiones y evoluciones, director de eventos.
+  - `docs/mockups/supervivencia.jpg`: mockup de referencia de Supervivencia (del autor). HUD compacto de 2 filas que deja ver los 4 respiraderos, aviso de oleada sobre el respiradero, «+N · COMBO k★» con el suministro que paga cada combo y barra «SUMINISTRO x · COSTE y». Usarlo como especificación visual al pedir cambios a Gemini.
   - `src/game/musicEngine.ts`: música adaptativa procedural (sin archivos de audio).
   - `src/game/analytics.ts`: métricas locales por partida (solo en el dispositivo, sin red ni claves): Supervivencia, campaña, bajas con combo y qué bicho rompe platos. Panel en Ajustes con «Copiar métricas» para la beta; `setMetricsSink` permite conectar un SDK más adelante (con consentimiento).
   - `src/game/audio.ts`: efectos con Web Audio y háptica (`@capacitor/haptics` en nativo).

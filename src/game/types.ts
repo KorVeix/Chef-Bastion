@@ -233,6 +233,8 @@ export interface FloatingComboEvent {
   label: string;
   detail: string;
   color: 'yellow' | 'cyan' | 'orange' | 'pink' | 'green';
+  /** Larger text for the big moments (3★ combo supply, boss). */
+  emphasis?: boolean;
   xPct: number;
   yPct: number;
   createdAt: number;
