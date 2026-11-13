@@ -1017,7 +1017,47 @@ export function buildKnifeRoombaMesh(): THREE.Group {
 // 4. PLAGAS 3D SUAVIZADAS CON CONTORNO DE TINTA LIMPIO (ESCALA 0.75)
 // ============================================================================
 
+// Plantilla por tipo de bicho: las geometrías y materiales base se crean una sola vez y cada
+// bicho es un clon que los comparte. El Canvas clona los materiales toon por instancia (destello
+// blanco) y solo esos clones se liberan al retirar el bicho (`disposeBugInstance`).
+const bugTemplateCache = new Map<BugType, THREE.Group>();
+
 export function buildBugMesh(type: BugType): THREE.Group {
+  let template = bugTemplateCache.get(type);
+  if (!template) {
+    template = buildBugMeshTemplate(type);
+    bugTemplateCache.set(type, template);
+  }
+  return template.clone(true);
+}
+
+/** Libera solo los materiales propios del clon (los de `userData.toonMats`); la plantilla se conserva. */
+export function disposeBugInstance(mesh: THREE.Object3D): void {
+  const mats = mesh.userData.toonMats as { mat: THREE.Material }[] | undefined;
+  mats?.forEach((entry) => entry.mat.dispose());
+  mesh.userData.toonMats = [];
+}
+
+/**
+ * Libera geometrías y materiales de un objeto construido desde cero (utensilios). Las texturas
+ * cacheadas del módulo (`map`) no se tocan: `Material.dispose()` no libera texturas.
+ */
+export function disposeObjectTree(root: THREE.Object3D): void {
+  const geometries = new Set<THREE.BufferGeometry>();
+  const materials = new Set<THREE.Material>();
+  root.traverse((child) => {
+    const mesh = child as THREE.Mesh;
+    if (!mesh.isMesh && !(child as THREE.Points).isPoints && !(child as THREE.Line).isLine) return;
+    if (mesh.geometry) geometries.add(mesh.geometry);
+    const mat = mesh.material;
+    if (Array.isArray(mat)) mat.forEach((m) => materials.add(m));
+    else if (mat) materials.add(mat);
+  });
+  geometries.forEach((g) => g.dispose());
+  materials.forEach((m) => m.dispose());
+}
+
+function buildBugMeshTemplate(type: BugType): THREE.Group {
   const root = new THREE.Group();
   root.scale.setScalar(0.75);
   const isBoss = type === 'king_crab';

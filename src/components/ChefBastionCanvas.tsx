@@ -5,6 +5,8 @@ import { soundEngine } from '../game/audio';
 import {
   addInkOutline,
   buildBugMesh,
+  disposeBugInstance,
+  disposeObjectTree,
   buildChefBastionMesh,
   buildGhostUtensilMesh,
   buildKnifeRoombaMesh,
@@ -110,6 +112,7 @@ import {
   type StrategicScript,
 } from '../game/strategicScripts';
 import { STRATEGIC_BUG_BASE_HP } from '../game/levelAudit';
+import { BUG_BASE_HP, BUG_BASE_SPEED, COMBAT } from '../game/combatTuning';
 import {
   ActiveBossHudInfo,
   ArmorId,
@@ -1717,7 +1720,10 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
     function resetSimulation() {
       bugs.forEach((b) => {
         const m = bugMeshes.get(b.id);
-        if (m) bugsGroup.remove(m);
+        if (m) {
+          bugsGroup.remove(m);
+          disposeBugInstance(m);
+        }
       });
       bugMeshes.clear();
       projInstanced.count = 0;
@@ -1725,6 +1731,7 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
       chemTickAccum = 0;
       utensilMeshes.forEach((entry) => {
         utensilsGroup.remove(entry.group);
+        disposeObjectTree(entry.group);
       });
       utensilMeshes.clear();
 
@@ -3568,7 +3575,10 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
           entry.level !== piece.level ||
           entry.evolutionId !== piece.evolutionId
         ) {
-          if (entry) utensilsGroup.remove(entry.group);
+          if (entry) {
+            utensilsGroup.remove(entry.group);
+            disposeObjectTree(entry.group);
+          }
           const group = buildUtensilMesh(
             piece.type,
             isSoftwareGl,
@@ -3886,14 +3896,14 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
           const isInCombo = piece.comboType !== 'none';
           const baseFireInterval =
             piece.type === 'spray_flus'
-              ? (isInCombo ? 0.6 : isRushMode ? 1.05 : 1.65) /
+              ? (isInCombo ? COMBAT.flus.comboInterval : isRushMode ? COMBAT.flus.rushInterval : COMBAT.flus.interval) /
                 (stateRef.current.hatId === 'duck_shower_cap' ? 1.15 : 1.0)
               : piece.type === 'bleach_cannon'
               ? (isInCombo ? 0.85 : 1.55) / liveMenuBuffs.thermalRateMult
               : piece.type === 'mop_vortex'
               ? isInCombo
-                ? 0.85
-                : 1.45
+                ? COMBAT.mop.comboInterval
+                : COMBAT.mop.interval
               : piece.type === 'aerosol_torch' && !isInCombo && (isRushMode || piece.level >= 2)
               ? (isRushMode && piece.level === 1 ? 1.45 : 1.25) / liveMenuBuffs.thermalRateMult
               : 999;
@@ -3906,7 +3916,8 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
               if (piece.type === 'spray_flus') {
                 spawnForwardSprayMist(targetX, 0.52, targetZ);
               }
-              const rawDmg = piece.type === 'bleach_cannon' ? 30 : isInCombo ? 19 : 14;
+              const rawDmg =
+                piece.type === 'bleach_cannon' ? 30 : isInCombo ? COMBAT.flus.comboDamage : COMBAT.flus.damage;
               const shotCount =
                 1 +
                 (piece.level >= 3 ? 1 : 0) +
@@ -3919,7 +3930,7 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
                   x: piece.rail + offsetX,
                   y: piece.row - 0.25,
                   vx: offsetX * 0.55,
-                  vy: -5.0,
+                  vy: -COMBAT.flus.speed,
                   damage: Math.round(rawDmg * tierDmgMult * rushDmg * liveMenuBuffs.frontalDamageMult),
                   isEnemy: false,
                   flavor: piece.type === 'bleach_cannon' ? 'bleach_glob' : 'water_drop',
@@ -3928,27 +3939,27 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
                   fromDiagonalFoam: false,
                   fromVortex: false,
                   bouncesLeft: isRushMode && rushModifiers.wallRicochet ? 2 : 0,
-                  life: 2.3,
+                  life: COMBAT.flus.life,
                 });
               }
             } else if (piece.type === 'mop_vortex') {
               stampChemTile(piece.rail, piece.row, 'wet_soap');
-              const dirs = (isInCombo ? 8 : 4) + (piece.level >= 2 ? 2 : 0);
+              const dirs = (isInCombo ? COMBAT.mop.comboShots : COMBAT.mop.shots) + (piece.level >= 2 ? 2 : 0);
               for (let dIdx = 0; dIdx < dirs; dIdx++) {
                 const ang = (dIdx / dirs) * Math.PI * 2 + elapsed * 2;
                 projectiles.push({
                   id: `proj-vortex-${piece.id}-${dIdx}-${Date.now()}`,
                   x: piece.rail,
                   y: piece.row,
-                  vx: Math.cos(ang) * 2.5,
-                  vy: Math.sin(ang) * 2.5,
-                  damage: Math.round((isInCombo ? 24 : 14) * tierDmgMult * rushDmg),
+                  vx: Math.cos(ang) * COMBAT.mop.speed,
+                  vy: Math.sin(ang) * COMBAT.mop.speed,
+                  damage: Math.round((isInCombo ? COMBAT.mop.comboDamage : COMBAT.mop.damage) * tierDmgMult * rushDmg),
                   isEnemy: false,
                   flavor: 'vortex_soap',
                   pierceShield: true,
                   fromDiagonalFoam: false,
                   fromVortex: true,
-                  life: 0.88,
+                  life: COMBAT.mop.life,
                 });
               }
             } else if (piece.type === 'aerosol_torch') {
@@ -3981,6 +3992,7 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
       for (const [id, entry] of utensilMeshes.entries()) {
         if (!activePieceIds.has(id)) {
           utensilsGroup.remove(entry.group);
+          disposeObjectTree(entry.group);
           utensilMeshes.delete(id);
         }
       }
@@ -4104,14 +4116,7 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
                 : 'shift_roach';
           }
 
-          const hpMap: Record<BugType, number> = {
-            speed_ant: 40,
-            cap_beetle: 84,
-            acid_wasp: 64,
-            shift_roach: 60,
-            king_crab: 145,
-          };
-          const maxHp = hpMap[bType] * (1 + Math.max(0, lvl - 3) * 0.08);
+          const maxHp = BUG_BASE_HP[bType] * (1 + Math.max(0, lvl - 3) * 0.08);
 
           const isLateralSpawn =
             lvl === 31
@@ -4407,9 +4412,9 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
                   id: `foam-${proj.id}-${aIdx}`,
                   x: scourer.rail!,
                   y: scourer.row! - 0.38,
-                  vx: Math.sin(ang) * 3.2,
-                  vy: -Math.cos(ang) * 4.5,
-                  damage: Math.round(16 * dmgBonus * frontalMult),
+                  vx: Math.sin(ang) * COMBAT.foam.speedX,
+                  vy: -Math.cos(ang) * COMBAT.foam.speedY,
+                  damage: Math.round(COMBAT.foam.damage * dmgBonus * frontalMult),
                   isEnemy: false,
                   flavor: 'foam_fan',
                   pierceShield: Math.abs(ang) > 0.2,
@@ -4441,7 +4446,7 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
                 proj.pierceShield = true;
                 proj.isExplosiveOrThermal = true;
                 proj.fromDiagonalFoam = true;
-                proj.damage = 45 * hitPiece.level;
+                proj.damage = COMBAT.gelWc.reflectDamagePerLevel * hitPiece.level;
                 soundEngine.playFoamSplit();
               } else if (hazmatShieldAvailable) {
                 hazmatShieldAvailable = false;
@@ -4473,7 +4478,7 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
                 continue;
               } else {
                 stampChemTile(hitPiece.rail, hitPiece.row, 'acid_pool');
-                const baseAcidGunk = stateRef.current.hatId === 'bucket_helmet' ? 1.8 : 3.5;
+                const baseAcidGunk = stateRef.current.hatId === 'bucket_helmet' ? 1.8 : COMBAT.wasp.gunkSec;
                 hitPiece.gunkTimer = Number(
                   (baseAcidGunk * upgradeEffects.acidDurationMult).toFixed(2)
                 );
@@ -4768,6 +4773,7 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
               const m = bugMeshes.get(bug.id);
               if (m) {
                 bugsGroup.remove(m);
+                disposeBugInstance(m);
                 bugMeshes.delete(bug.id);
               }
             }
@@ -4828,13 +4834,7 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
               ? 1.04
               : 1.0;
 
-          const speedMap: Record<BugType, number> = {
-            speed_ant: 0.68,
-            cap_beetle: 0.48,
-            acid_wasp: 0.44,
-            shift_roach: 0.6,
-            king_crab: 0.36,
-          };
+          const speedMap = BUG_BASE_SPEED;
           const worldMult = WORLDS_CATALOG[stateRef.current.worldId].speedMult;
           const levelMult = isRushMode
             ? rushDirector.speedMultiplier * rushModifiers.chaosSpeedMult
@@ -4845,7 +4845,7 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
           // Grand Boss Phase 3 Frenzy: +30% speed!
           const bossFrenzyFactor =
             bug.bossTier === 'grand' && (bug.bossPhase ?? 1) === 3 ? 1.3 : 1.0;
-          const controlSlowFactor = bug.slowTimer > 0 ? 0.55 : 1.0;
+          const controlSlowFactor = bug.slowTimer > 0 ? COMBAT.slowSpeedFactor : 1.0;
           const isChefStunned = Boolean(bug.chefStunTimer && bug.chefStunTimer > 0);
           const isStunnedBoss = Boolean(bug.bossStunTimer && bug.bossStunTimer > 0);
           const effectiveSpeed = isChefStunned
@@ -4935,8 +4935,13 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
           }
 
           // Acid Wasp ranged attack telegraph & acid shot
-          if (bug.type === 'acid_wasp' && bug.yProgress > 0.5 && bug.yProgress < 3.6 && !isStunnedBoss) {
-            bug.attackWindup += waveSimDt * 0.45;
+          if (
+            bug.type === 'acid_wasp' &&
+            bug.yProgress > COMBAT.wasp.minRow &&
+            bug.yProgress < COMBAT.wasp.maxRow &&
+            !isStunnedBoss
+          ) {
+            bug.attackWindup += waveSimDt * COMBAT.wasp.windupPerSec;
             if (bug.attackWindup >= 1.0) {
               bug.attackWindup = 0;
               projectiles.push({
@@ -4944,14 +4949,14 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
                 x: Math.round(bug.rail),
                 y: bug.yProgress + 0.3,
                 vx: 0,
-                vy: 3.1,
-                damage: 10,
+                vy: COMBAT.wasp.acidSpeed,
+                damage: COMBAT.wasp.acidDamage,
                 isEnemy: true,
                 flavor: 'enemy_acid',
                 pierceShield: false,
                 fromDiagonalFoam: false,
                 fromVortex: false,
-                life: 2.2,
+                life: COMBAT.wasp.acidLife,
               });
             }
           }
@@ -5069,7 +5074,7 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
               hitstopTimer = Math.max(hitstopTimer, HEAVY_IMPACT_HITSTOP_SECONDS);
               bug.flashTimer = Math.max(bug.flashTimer, ENEMY_WHITE_FLASH_SECONDS);
               if (bug.bossTier === 'mini' && bug.bossPuzzleType === 'uv_overheat') {
-                bug.bossStunTimer = 3.2 * liveMenuBuffs.controlDurationMult;
+                bug.bossStunTimer = COMBAT.bridgeUv.miniBossStunSec * liveMenuBuffs.controlDurationMult;
               }
               spawnParticles(
                 gridToWorldX(bug.rail),
@@ -5104,7 +5109,7 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
                   isControlCombo: false,
                 })
               : 1.0;
-            bug.hp -= 48 * liveMenuBuffs.thermalRateMult * uvMult * waveSimDt;
+            bug.hp -= COMBAT.bridgeUv.dps * liveMenuBuffs.thermalRateMult * uvMult * waveSimDt;
             bug.hitByBridgeBurn = true;
             if (isRushMode) {
               for (const p of piecesRef.current) {
@@ -5133,7 +5138,7 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
           if (soapHere && !bug.isFlying && !bug.isSlidingFromSoap) {
             bug.isSlidingFromSoap = true;
             bug.wetTimer = Math.max(bug.wetTimer ?? 0, 3.6);
-            bug.slowTimer = Math.max(bug.slowTimer, 2.6 * liveMenuBuffs.controlDurationMult);
+            bug.slowTimer = Math.max(bug.slowTimer, COMBAT.soap.slowSec * liveMenuBuffs.controlDurationMult);
             stampChemTile(currentRailInt, currentRowInt, 'wet_soap');
             if (bug.bossTier === 'mini' && bug.bossPuzzleType === 'soap_stun') {
               bug.bossStunTimer = 3.5 * liveMenuBuffs.controlDurationMult;
@@ -5221,11 +5226,11 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
               : 1.0;
             const rawVortexDps = bug.bossTier
               ? bug.isSlidingFromSoap
-                ? 88
-                : 46
+                ? COMBAT.mop.bossContactDpsSlipped
+                : COMBAT.mop.bossContactDps
               : bug.isSlidingFromSoap
-              ? 240
-              : 65;
+              ? COMBAT.mop.contactDpsSlipped
+              : COMBAT.mop.contactDps;
             bug.hp -= rawVortexDps * vortexMult * waveSimDt;
             evaluateGrandBossTransition(bug);
           }
@@ -5710,6 +5715,7 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
       for (const [id, m] of bugMeshes.entries()) {
         if (!activeBugIds.has(id)) {
           bugsGroup.remove(m);
+          disposeBugInstance(m);
           bugMeshes.delete(id);
         }
       }
