@@ -45,6 +45,7 @@ import {
   RUSH_ADRENALINE_MILESTONES,
   RUSH_INITIAL_SUPPLY,
   RUSH_SUPPLY_BASE_PER_SEC,
+  RUSH_MAX_SPRAY_FLUS_ON_BOARD,
   RUSH_WAVE_WARNING_SECONDS,
   RushWaveDirectorState,
   RushWavePlan,
@@ -2076,6 +2077,26 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
         if (res.outcome === 'cap_reached') {
           soundEngine.playShieldClink();
           rushCapFlashTimer = 0.9;
+          selectedPieceIdRef.current = null;
+          setInspectionTarget(null);
+          hudEmitTimer = 1.0;
+          return;
+        }
+
+        if (res.outcome === 'type_cap_reached') {
+          // Max 2 Flus-Flus on the counter: fuse the card into one of them or move one to the hot rail.
+          soundEngine.playShieldClink();
+          const capPos = projectWorldToScreenPct(gridToWorldX(cell.rail), 0.75, gridToWorldZ(cell.row));
+          stateRef.current.onFloatingCombo?.({
+            id: `flus-cap-${Date.now()}`,
+            multiplier: 1,
+            label: `MÁX ${RUSH_MAX_SPRAY_FLUS_ON_BOARD} FLUS-FLUS`,
+            detail: 'fusiona o muévelo',
+            color: 'orange',
+            xPct: capPos.xPct,
+            yPct: capPos.yPct,
+            createdAt: Date.now(),
+          });
           selectedPieceIdRef.current = null;
           setInspectionTarget(null);
           hudEmitTimer = 1.0;
