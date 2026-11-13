@@ -4050,6 +4050,7 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
             ...(sp.type === 'shift_roach'
               ? { roachShiftTimer: ROACH_SHIFT_INTERVAL_SEC, roachShiftDir: sp.dir ?? (sp.rail <= 1 ? 1 : -1) }
               : {}),
+            ...(sp.type === 'acid_wasp' ? { isFlying: true } : {}),
           });
         }
         phase = getScriptPhase(activeScript, scriptCursor);
@@ -4485,6 +4486,8 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
             const hitWidth = proj.aoeRadius ?? 0.48;
             for (const bug of bugs) {
               if (bug.koTimer > 0 || bug.yProgress < -0.15) continue;
+              // Avispa de guion: vuela, el remolino de la Fregona (suelo) no la alcanza.
+              if (bug.isFlying && proj.fromVortex) continue;
               if (
                 Math.abs(bug.rail - proj.x) < hitWidth &&
                 Math.abs(bug.yProgress - proj.y) < 0.5
@@ -5127,7 +5130,7 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
               p.row === currentRowInt &&
               Math.abs(bug.yProgress - currentRowInt) < 0.32
           );
-          if (soapHere && !bug.isSlidingFromSoap) {
+          if (soapHere && !bug.isFlying && !bug.isSlidingFromSoap) {
             bug.isSlidingFromSoap = true;
             bug.wetTimer = Math.max(bug.wetTimer ?? 0, 3.6);
             bug.slowTimer = Math.max(bug.slowTimer, 2.6 * liveMenuBuffs.controlDurationMult);
@@ -5184,7 +5187,7 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
               p.row === currentRowInt &&
               Math.abs(bug.yProgress - currentRowInt) < 0.45
           );
-          if (vortexHere) {
+          if (vortexHere && !bug.isFlying) {
             bug.hitByVortexSpin = true;
             bug.wetTimer = Math.max(bug.wetTimer ?? 0, 3.0);
             bug.slowTimer = Math.max(bug.slowTimer, 2.2 * liveMenuBuffs.controlDurationMult);

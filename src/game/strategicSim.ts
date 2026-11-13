@@ -8,7 +8,8 @@
  *
  * Mini-jefes: multiplicadores de `computeBossDamageMultiplier`, coraza que funde el puente UV y
  * aturdimiento del puzle (puente UV, Jabón o Escuadra).
- * No modela (todavía): ácido de avispa, Gel WC, Lejía, invasión lateral ni Grandes Jefes (3 fases).
+ * Avispa (de guion, vuela): Jabón y Fregona no la tocan; ácido cada ~2,2 s entre las filas 0,5 y 3,6 que pringa armas 3,5 s; el Gel WC lo devuelve (45).
+ * No modela (todavía): Lejía, invasión lateral ni Grandes Jefes (3 fases).
  * Un guion que los use debe ampliar antes este simulador (ver `SIM_SUPPORTED_BUGS`).
  */
 import type { BossPuzzleType, BossTier, BugEnemy, BugType, UtensilPiece, UtensilType } from './types';
@@ -27,6 +28,7 @@ import { STRATEGIC_BUG_BASE_HP, STRATEGIC_BUG_BASE_SPEED, SHIELDED_BUGS } from '
 
 // Cucaracha de guion: zigzag de carril (stepRoachZigzag), clavada al resbalar en el Jabón.
 export const SIM_SUPPORTED_BUGS: ReadonlySet<BugType> = new Set<BugType>([
+  'acid_wasp',
   'speed_ant',
   'cap_beetle',
   'shift_roach',
@@ -92,6 +94,7 @@ interface SimBug {
   puzzle: BossPuzzleType | null;
   armorBroken: boolean;
   stunTimer: number;
+  attackWindup: number;
   roachTimer: number | null;
   roachDir: 1 | -1;
 }
@@ -104,9 +107,12 @@ interface SimProjectile {
   damage: number;
   pierce: boolean;
   life: number;
-  flavor: 'water_drop' | 'foam_fan' | 'vortex_soap';
+  flavor: 'water_drop' | 'foam_fan' | 'vortex_soap' | 'enemy_acid' | 'reflected_bubble';
   fromVortex: boolean;
   fromDiagonalFoam: boolean;
+  /** Ácido de avispa: pringa la primera arma que toca (3,5 s sin funcionar) salvo el Gel WC, que lo devuelve. */
+  isEnemy?: boolean;
+  thermal?: boolean;
 }
 
 function bossMult(bug: SimBug, opts: { thermal: boolean; control: boolean }): number {
@@ -289,6 +295,7 @@ export function simulateStrategic(opts: {
         puzzle: sp.boss?.puzzle ?? null,
         armorBroken: false,
         stunTimer: 0,
+        attackWindup: 0,
         roachTimer: sp.type === 'shift_roach' ? ROACH_SHIFT_INTERVAL_SEC : null,
         roachDir: sp.dir ?? (sp.rail <= 1 ? 1 : -1),
       });
@@ -338,8 +345,35 @@ export function simulateStrategic(opts: {
           continue;
         }
       }
+      if (proj.isEnemy) {
+        const hitPiece = pieces.find(
+          (p) =>
+            p.rail !== null &&
+            p.row !== null &&
+            Math.abs(p.rail - proj.x) < 0.42 &&
+            Math.abs(p.row - proj.y) < 0.42
+        );
+        if (hitPiece) {
+          if (hitPiece.type === 'wc_shield') {
+            proj.isEnemy = false;
+            proj.vy = -Math.abs(proj.vy) * 1.4;
+            proj.flavor = 'reflected_bubble';
+            proj.pierce = true;
+            proj.thermal = true;
+            proj.fromDiagonalFoam = true;
+            proj.damage = 45 * hitPiece.level;
+          } else {
+            hitPiece.gunkTimer = 3.5;
+            continue;
+          }
+        }
+        if (proj.life > 0 && proj.y > -1.2 && proj.y < 7.2) surviving.push(proj);
+        continue;
+      }
       for (const bug of bugs) {
         if (bug.y < -0.15) continue;
+        // Las avispas vuelan: el remolino de la Fregona (suelo) no las alcanza.
+        if (proj.fromVortex && bug.type === 'acid_wasp') continue;
         if (Math.abs(bug.rail - proj.x) < 0.48 && Math.abs(bug.y - proj.y) < 0.5) {
           if (proj.fromVortex && bug.knockbackCooldown <= 0) {
             const kb = applyPhysicalKnockback(
@@ -360,7 +394,7 @@ export function simulateStrategic(opts: {
           if (bug.bossTier) {
             const control =
               proj.fromDiagonalFoam || proj.fromVortex || bug.isSlidingFromSoap || bug.redirectedBySquare;
-            bug.hp -= proj.damage * bossMult(bug, { thermal: false, control });
+            bug.hp -= proj.damage * bossMult(bug, { thermal: Boolean(proj.thermal), control });
             if (proj.fromVortex) bug.slowTimer = Math.max(bug.slowTimer, 1.8);
           } else if (bug.hasShield && !proj.pierce) {
             // ¡CLINK! sin daño.
@@ -407,6 +441,26 @@ export function simulateStrategic(opts: {
       bug.rail = damp(bug.rail, bug.targetRail, 9, dt);
       bug.y += speed * dt;
 
+      if (bug.type === 'acid_wasp' && bug.y > 0.5 && bug.y < 3.6 && bug.stunTimer <= 0) {
+        bug.attackWindup += dt * 0.45;
+        if (bug.attackWindup >= 1.0) {
+          bug.attackWindup = 0;
+          projectiles.push({
+            x: Math.round(bug.rail),
+            y: bug.y + 0.3,
+            vx: 0,
+            vy: 3.1,
+            damage: 10,
+            pierce: false,
+            life: 2.2,
+            flavor: 'enemy_acid',
+            fromVortex: false,
+            fromDiagonalFoam: false,
+            isEnemy: true,
+          });
+        }
+      }
+
       const railInt = Math.max(0, Math.min(GRID_RAILS - 1, Math.round(bug.rail)));
       const rowInt = Math.round(bug.y);
 
@@ -435,8 +489,9 @@ export function simulateStrategic(opts: {
         bug.hp -= 48 * bossMult(bug, { thermal: true, control: false }) * dt;
       }
 
+      const flying = bug.type === 'acid_wasp';
       const soap = pieceAt('soap_bar', railInt, rowInt);
-      if (soap && !bug.isSlidingFromSoap && Math.abs(bug.y - rowInt) < 0.32) {
+      if (soap && !flying && !bug.isSlidingFromSoap && Math.abs(bug.y - rowInt) < 0.32) {
         bug.isSlidingFromSoap = true;
         bug.slowTimer = Math.max(bug.slowTimer, 2.6);
         if (bug.bossTier === 'mini' && bug.puzzle === 'soap_stun') {
@@ -451,7 +506,7 @@ export function simulateStrategic(opts: {
       }
 
       const mopHere = pieceAt('mop_vortex', railInt, rowInt);
-      if (mopHere && Math.abs(bug.y - rowInt) < 0.45) {
+      if (mopHere && !flying && Math.abs(bug.y - rowInt) < 0.45) {
         bug.slowTimer = Math.max(bug.slowTimer, 2.2);
         if (!bug.isSlidingFromSoap && bug.knockbackCooldown <= 0) {
           bug.y = Math.max(-0.2, bug.y - (bug.bossTier === 'mini' ? 0.45 : 1.0));
