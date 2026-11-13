@@ -12,7 +12,7 @@
  * Cada guion trae su solución de referencia y un plan que falla sin el combo que enseña; los tests
  * (`strategicScripts.test.ts`) los pasan por `simulateStrategic`.
  */
-import type { BugType, UtensilType } from './types';
+import type { BossPuzzleType, BugType, UtensilType } from './types';
 import type { SimLayoutStep, SimSpawn } from './strategicSim';
 
 export interface StrategicScript {
@@ -32,6 +32,11 @@ export interface StrategicScript {
 
 const at = (t: number, type: BugType, ...rails: number[]): SimSpawn[] =>
   rails.map((rail) => ({ t, type, rail }));
+
+/** Mini-jefe del guion: cangrejo rey con su puzle y vida fijados en el guion. */
+const miniBoss = (t: number, rail: number, puzzle: BossPuzzleType, hp: number): SimSpawn[] => [
+  { t, type: 'king_crab', rail, boss: { tier: 'mini', puzzle, hp } },
+];
 
 const foam = (rail: number, scourerRow = 3, sprayRow = 5) => [
   { type: 'scourer_nanas' as const, rail, row: scourerRow },
@@ -172,6 +177,36 @@ export const STRATEGIC_SCRIPTS: readonly StrategicScript[] = [
       ...at(36, 'cap_beetle', 0, 1, 2, 3),
     ],
     // Nv.4 tiene fase de colocación: el reloj del guion empieza con las armas ya puestas.
+    solution: [{ t: 0, placements: [...foam(1), ...bridge(2, 2)] }],
+    failsWithout: {
+      label: 'Solo el abanico',
+      plan: [{ t: 0, placements: foam(1) }],
+    },
+  },
+  {
+    level: 5,
+    loadout: ['scourer_nanas', 'spray_flus', 'aerosol_torch', 'aerosol_torch'],
+    teaches:
+      'Examen: ratas blindadas por todos lados y un mini-jefe acorazado por el borde. El puente UV le funde la coraza y lo aturde.',
+    tutorial: null,
+    spawns: [
+      ...at(0.5, 'cap_beetle', 3),
+      ...at(2.5, 'cap_beetle', 1),
+      ...at(5, 'cap_beetle', 0, 2, 3),
+      ...at(8.5, 'cap_beetle', 1),
+      ...at(11, 'cap_beetle', 0, 3),
+      ...at(13.5, 'cap_beetle', 2, 3),
+      ...at(16, 'cap_beetle', 0, 1),
+      // El mini-jefe entra por el carril 4 mientras las ratas tienen ocupado el abanico.
+      ...miniBoss(19, 3, 'uv_overheat', 250),
+      ...at(20, 'cap_beetle', 0),
+      ...at(23, 'cap_beetle', 1, 2),
+      ...at(26, 'cap_beetle', 0, 1),
+      ...at(29, 'cap_beetle', 2),
+      ...at(31, 'cap_beetle', 0, 1, 2),
+      ...at(35, 'cap_beetle', 0, 2),
+      ...at(38, 'cap_beetle', 1, 2, 3),
+    ],
     solution: [{ t: 0, placements: [...foam(1), ...bridge(2, 2)] }],
     failsWithout: {
       label: 'Solo el abanico',

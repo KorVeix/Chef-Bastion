@@ -1370,7 +1370,7 @@ export function getLevelForecast(level: number): LevelForecast {
       bugTypes: [...new Set(script.spawns.map((s) => s.type))],
       activeRails: [...new Set(script.spawns.map((s) => s.rail))].sort((a, b) => a - b),
       hasLateralConduits: false,
-      bossTier: 'none',
+      bossTier: script.spawns.find((s) => s.boss)?.boss?.tier ?? 'none',
     };
   }
   if (safeLvl === 1) {

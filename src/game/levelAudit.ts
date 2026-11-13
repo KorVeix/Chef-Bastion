@@ -20,6 +20,7 @@ import {
   getLevelSpeedMultiplier,
   checkPhaseTransition,
 } from './rules';
+import { getStrategicScript } from './strategicScripts';
 
 export type Phase = 1 | 2 | 3;
 
@@ -382,6 +383,8 @@ export interface AuditFinding {
 
 export interface LevelAuditResult {
   level: number;
+  /** Nivel con guion fijo: lo valida `strategicScripts.test.ts` con el simulador, no esta auditoría. */
+  scripted?: boolean;
   ok: boolean;
   findings: AuditFinding[];
   throughputByPhase: ThroughputResult[];
@@ -510,5 +513,11 @@ export function auditStrategicLevel(spec: StrategicLevelSpec): LevelAuditResult 
 }
 
 export function auditStrategicCampaign(maxLevel = 60): LevelAuditResult[] {
-  return Array.from({ length: maxLevel }, (_, i) => auditStrategicLevel(getStrategicLevelSpec(i + 1)));
+  return Array.from({ length: maxLevel }, (_, i) => {
+    const level = i + 1;
+    if (getStrategicScript(level)) {
+      return { level, scripted: true, ok: true, findings: [], throughputByPhase: [] };
+    }
+    return auditStrategicLevel(getStrategicLevelSpec(level));
+  });
 }

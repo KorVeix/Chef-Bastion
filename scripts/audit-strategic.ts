@@ -6,6 +6,10 @@ import { auditStrategicCampaign } from '../src/game/levelAudit';
 
 const results = auditStrategicCampaign();
 for (const r of results) {
+  if (r.scripted) {
+    console.log(`Nv.${String(r.level).padStart(2)} GUION  validado por el simulador (strategicScripts.test.ts)`);
+    continue;
+  }
   const tp = r.throughputByPhase
     .map((t, i) => `F${i + 1} ${t.requiredDps.toFixed(0)}/${t.maxDps.toFixed(0)}`)
     .join('  ');

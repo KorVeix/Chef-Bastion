@@ -112,6 +112,8 @@ import {
   ActiveBossHudInfo,
   ArmorId,
   BiomeConfig,
+  BossPuzzleType,
+  BossTier,
   BugEnemy,
   BugType,
   ComicPopEvent,
@@ -1458,13 +1460,17 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
       });
     }
 
-    function spawnBossForMilestone(lvl: number) {
-      const tier = getBossTierForLevel(lvl);
+    function spawnBossForMilestone(
+      lvl: number,
+      scripted?: { tier: BossTier; puzzle: BossPuzzleType; hp: number; rail: number }
+    ) {
+      const tier = scripted?.tier ?? getBossTierForLevel(lvl);
       if (!tier || bossSpawnedForLevel) return;
       bossSpawnedForLevel = true;
-      const puzzle = getBossPuzzleTypeForLevel(lvl) ?? 'uv_overheat';
-      const maxHp = tier === 'grand' ? Math.round(340 + lvl * 12) : Math.round(210 + lvl * 8);
-      const spawnRail = puzzle === 'soap_stun' ? 2 : 1;
+      const puzzle = scripted?.puzzle ?? getBossPuzzleTypeForLevel(lvl) ?? 'uv_overheat';
+      const maxHp =
+        scripted?.hp ?? (tier === 'grand' ? Math.round(340 + lvl * 12) : Math.round(210 + lvl * 8));
+      const spawnRail = scripted?.rail ?? (puzzle === 'soap_stun' ? 2 : 1);
       bugs.push({
         id: `boss-${tier}-${lvl}-${Date.now()}`,
         type: 'king_crab',
@@ -3980,6 +3986,7 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
       // Ensure Milestone Mini-Boss (X5) or Grand Boss (X0) spawns reliably when Phase 3 begins in Strategic Mode!
       if (
         !isRushMode &&
+        !activeScript &&
         waveSimDt > 0 &&
         phase === 3 &&
         !bossSpawnedForLevel &&
@@ -4012,6 +4019,10 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
         const due = takeDueScriptSpawns(activeScript, scriptCursor, scriptClock);
         scriptCursor = due.cursor;
         for (const sp of due.spawns) {
+          if (sp.boss) {
+            spawnBossForMilestone(stateRef.current.level, { ...sp.boss, rail: sp.rail });
+            continue;
+          }
           const maxHp = STRATEGIC_BUG_BASE_HP[sp.type];
           bugs.push({
             id: `bug-s${stateRef.current.level}-${scriptCursor}-${Date.now()}-${Math.random()}`,
@@ -5554,7 +5565,7 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
       // Trigger Level Victory in Strategic Mode ONLY when vents are closed AND 0 live enemies remain!
       const liveBugsCount = bugs.filter((b) => b.koTimer <= 0).length;
       const bossPending =
-        getBossTierForLevel(stateRef.current.level) !== null && !bossSpawnedForLevel;
+        !activeScript && getBossTierForLevel(stateRef.current.level) !== null && !bossSpawnedForLevel;
       const readyForVictory =
         !isRushMode &&
         (waveQuotaCompleted || (stateRef.current.level >= 5 && !activeScript && levelTimer <= 0)) &&

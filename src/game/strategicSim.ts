@@ -6,15 +6,18 @@
  * Fregona y Escuadra; bichos que bajan por su carril, escudos y fugas a los platos.
  * Las combinaciones se evalúan con `evaluateBoardCombos`, la misma función que usa el juego.
  *
- * No modela (todavía): ácido de avispa, Gel WC, Lejía, invasión lateral ni jefes. Un guion que
- * los use debe ampliar antes este simulador (ver `SIM_SUPPORTED_BUGS`).
+ * Mini-jefes: multiplicadores de `computeBossDamageMultiplier`, coraza que funde el puente UV y
+ * aturdimiento del puzle (puente UV, Jabón o Escuadra).
+ * No modela (todavía): ácido de avispa, Gel WC, Lejía, invasión lateral ni Grandes Jefes (3 fases).
+ * Un guion que los use debe ampliar antes este simulador (ver `SIM_SUPPORTED_BUGS`).
  */
-import type { BugType, UtensilPiece, UtensilType } from './types';
+import type { BossPuzzleType, BossTier, BugEnemy, BugType, UtensilPiece, UtensilType } from './types';
 import {
   GRID_RAILS,
   GRID_ROWS,
   MIN_PLACEABLE_ROW,
   applyPhysicalKnockback,
+  computeBossDamageMultiplier,
   evaluateBoardCombos,
   getBiomeForLevel,
   getLevelSpeedMultiplier,
@@ -44,6 +47,8 @@ export interface SimSpawn {
   t: number;
   type: BugType;
   rail: number;
+  /** Jefe del guion (siempre con modelo de cangrejo rey en el motor). */
+  boss?: { tier: BossTier; puzzle: BossPuzzleType; hp: number };
 }
 
 export interface SimEvent {
@@ -79,6 +84,10 @@ interface SimBug {
   knockbackCooldown: number;
   isSlidingFromSoap: boolean;
   redirectedBySquare: boolean;
+  bossTier: BossTier | null;
+  puzzle: BossPuzzleType | null;
+  armorBroken: boolean;
+  stunTimer: number;
 }
 
 interface SimProjectile {
@@ -91,6 +100,18 @@ interface SimProjectile {
   life: number;
   flavor: 'water_drop' | 'foam_fan' | 'vortex_soap';
   fromVortex: boolean;
+  fromDiagonalFoam: boolean;
+}
+
+function bossMult(bug: SimBug, opts: { thermal: boolean; control: boolean }): number {
+  if (!bug.bossTier) return 1;
+  return computeBossDamageMultiplier({
+    tier: bug.bossTier,
+    phase: 1,
+    armorBroken: bug.armorBroken,
+    isThermalOrExplosive: opts.thermal,
+    isControlCombo: opts.control,
+  });
 }
 
 const PLATE_ROW = 6.85;
@@ -221,6 +242,7 @@ export function simulateStrategic(opts: {
           life: 2.3,
           flavor: 'water_drop',
           fromVortex: false,
+          fromDiagonalFoam: false,
         });
       } else if (piece.type === 'mop_vortex') {
         const dirs = inCombo ? 8 : 4;
@@ -236,6 +258,7 @@ export function simulateStrategic(opts: {
             life: 0.88,
             flavor: 'vortex_soap',
             fromVortex: true,
+            fromDiagonalFoam: false,
           });
         }
       }
@@ -250,12 +273,16 @@ export function simulateStrategic(opts: {
         rail: sp.rail,
         targetRail: sp.rail,
         y: SPAWN_ROW,
-        hp: STRATEGIC_BUG_BASE_HP[sp.type],
-        hasShield: SHIELDED_BUGS.has(sp.type),
+        hp: sp.boss ? sp.boss.hp : STRATEGIC_BUG_BASE_HP[sp.type],
+        hasShield: sp.boss ? true : SHIELDED_BUGS.has(sp.type),
         slowTimer: 0,
         knockbackCooldown: 0,
         isSlidingFromSoap: false,
         redirectedBySquare: false,
+        bossTier: sp.boss?.tier ?? null,
+        puzzle: sp.boss?.puzzle ?? null,
+        armorBroken: false,
+        stunTimer: 0,
       });
       spawnIdx += 1;
       if (firstSpawnT === null) firstSpawnT = t;
@@ -297,6 +324,7 @@ export function simulateStrategic(opts: {
               life: 1.4,
               flavor: 'foam_fan',
               fromVortex: false,
+              fromDiagonalFoam: Math.abs(ang) > 0.2,
             });
           }
           continue;
@@ -307,7 +335,13 @@ export function simulateStrategic(opts: {
         if (Math.abs(bug.rail - proj.x) < 0.48 && Math.abs(bug.y - proj.y) < 0.5) {
           if (proj.fromVortex && bug.knockbackCooldown <= 0) {
             const kb = applyPhysicalKnockback(
-              { yProgress: bug.y, targetRail: bug.targetRail, knockbackCooldown: 0, koTimer: 0 } as never,
+              {
+                yProgress: bug.y,
+                targetRail: bug.targetRail,
+                knockbackCooldown: 0,
+                koTimer: 0,
+                bossTier: bug.bossTier ?? undefined,
+              } as unknown as BugEnemy,
               { pushCells: 1.0 }
             );
             if (kb.applied) {
@@ -315,7 +349,12 @@ export function simulateStrategic(opts: {
               bug.knockbackCooldown = 1.15;
             }
           }
-          if (bug.hasShield && !proj.pierce) {
+          if (bug.bossTier) {
+            const control =
+              proj.fromDiagonalFoam || proj.fromVortex || bug.isSlidingFromSoap || bug.redirectedBySquare;
+            bug.hp -= proj.damage * bossMult(bug, { thermal: false, control });
+            if (proj.fromVortex) bug.slowTimer = Math.max(bug.slowTimer, 1.8);
+          } else if (bug.hasShield && !proj.pierce) {
             // ¡CLINK! sin daño.
           } else {
             if (bug.hasShield && proj.pierce) bug.hasShield = false;
@@ -337,8 +376,11 @@ export function simulateStrategic(opts: {
     for (const bug of bugs) {
       bug.slowTimer = Math.max(0, bug.slowTimer - dt);
       bug.knockbackCooldown = Math.max(0, bug.knockbackCooldown - dt);
+      bug.stunTimer = Math.max(0, bug.stunTimer - dt);
       const speed =
-        STRATEGIC_BUG_BASE_SPEED[bug.type] * speedMult * (bug.slowTimer > 0 ? 0.55 : 1.0);
+        bug.stunTimer > 0
+          ? 0.08
+          : STRATEGIC_BUG_BASE_SPEED[bug.type] * speedMult * (bug.slowTimer > 0 ? 0.55 : 1.0);
       bug.rail = damp(bug.rail, bug.targetRail, 9, dt);
       bug.y += speed * dt;
 
@@ -354,20 +396,31 @@ export function simulateStrategic(opts: {
       ) {
         bug.redirectedBySquare = true;
         bug.hasShield = false;
+        bug.armorBroken = true;
+        if (bug.puzzle === 'square_deflect') bug.stunTimer = 3.5;
       }
 
       const bridge = links.find(
         (l) => l.kind === 'bridge_uv' && l.fromRow === rowInt && (l.fromRail === railInt || l.toRail === railInt)
       );
       if (bridge && Math.abs(bug.y - rowInt) < 0.3) {
-        bug.hasShield = false;
-        bug.hp -= 48 * dt;
+        if (bug.hasShield || (bug.bossTier && !bug.armorBroken)) {
+          bug.hasShield = false;
+          bug.armorBroken = true;
+          if (bug.bossTier === 'mini' && bug.puzzle === 'uv_overheat') bug.stunTimer = 3.2;
+        }
+        bug.hp -= 48 * bossMult(bug, { thermal: true, control: false }) * dt;
       }
 
       const soap = pieceAt('soap_bar', railInt, rowInt);
       if (soap && !bug.isSlidingFromSoap && Math.abs(bug.y - rowInt) < 0.32) {
         bug.isSlidingFromSoap = true;
         bug.slowTimer = Math.max(bug.slowTimer, 2.6);
+        if (bug.bossTier === 'mini' && bug.puzzle === 'soap_stun') {
+          bug.stunTimer = 3.5;
+          bug.hasShield = false;
+          bug.armorBroken = true;
+        }
         const mop = pieces.find(
           (p) => p.type === 'mop_vortex' && p.rail !== null && Math.abs(p.rail - railInt) === 1
         );
@@ -378,10 +431,15 @@ export function simulateStrategic(opts: {
       if (mopHere && Math.abs(bug.y - rowInt) < 0.45) {
         bug.slowTimer = Math.max(bug.slowTimer, 2.2);
         if (!bug.isSlidingFromSoap && bug.knockbackCooldown <= 0) {
-          bug.y = Math.max(-0.2, bug.y - 1.0);
+          bug.y = Math.max(-0.2, bug.y - (bug.bossTier === 'mini' ? 0.45 : 1.0));
           bug.knockbackCooldown = 1.25;
         }
-        bug.hp -= (bug.isSlidingFromSoap ? 240 : 65) * dt;
+        const vortexDps = bug.bossTier
+          ? (bug.isSlidingFromSoap ? 88 : 46) * bossMult(bug, { thermal: false, control: true })
+          : bug.isSlidingFromSoap
+          ? 240
+          : 65;
+        bug.hp -= vortexDps * dt;
       }
 
       if (bug.hp <= 0) {

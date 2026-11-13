@@ -65,7 +65,7 @@ test('Auditoría: el Nivel 1 tiene solución', () => {
 });
 
 test('Auditoría: detecta un arma anunciada que no llega a la bandeja', () => {
-  const spec = getStrategicLevelSpec(5);
+  const spec = getStrategicLevelSpec(6);
   assert.equal(spec.phases[2].announcedUnlock, 'mop_vortex');
   assert.equal(spec.phases[2].unlockDelivered, false);
   const res = auditStrategicLevel(spec);
