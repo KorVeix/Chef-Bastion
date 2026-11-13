@@ -1426,73 +1426,20 @@ export default function App() {
               </div>
             </div>
 
-            {/* Bottom Safe Margin: Gameplay Merge Hint + Official CritFuse Mobile Games Studio Badge (Inline SVG) */}
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+            {/* Bottom Safe Margin: Gameplay Merge Hint + CritFuse studio logo (docs/branding/logo-critfuse-horizontal.png) */}
+            <div className="flex flex-col items-center gap-2 text-center">
               <div className="text-[11px] sm:text-xs font-bold text-amber-100/90 tracking-wide leading-snug">
                 Funde armas iguales en caliente (Nv.1 ➔ Plata ➔ Oro) · Une 2 Oro en Evolución Suprema
               </div>
-              <div
+              <img
                 data-testid="critfuse-studio-badge"
-                className="inline-flex items-center gap-2 self-start sm:self-auto rounded-xl bg-slate-950/92 border border-orange-500/65 px-2.5 py-1.5 shadow-md"
-              >
-                <svg
-                  viewBox="0 0 40 44"
-                  className="w-6 h-6 shrink-0"
-                  aria-hidden="true"
-                >
-                  <path
-                    d="M20 2 L6 8 V21 C6 31 12 38 20 42 Z"
-                    fill="#334155"
-                    stroke="#94a3b8"
-                    strokeWidth="2.2"
-                  />
-                  <path
-                    d="M20 2 L34 8 V21 C34 31 28 38 20 42 Z"
-                    fill="#9a3412"
-                    stroke="#f97316"
-                    strokeWidth="2.2"
-                  />
-                  <text
-                    x="13"
-                    y="27"
-                    textAnchor="middle"
-                    fill="#e2e8f0"
-                    fontFamily="Outfit, sans-serif"
-                    fontWeight="900"
-                    fontSize="15"
-                  >
-                    C
-                  </text>
-                  <text
-                    x="27"
-                    y="27"
-                    textAnchor="middle"
-                    fill="#fb923c"
-                    fontFamily="Outfit, sans-serif"
-                    fontWeight="900"
-                    fontSize="15"
-                  >
-                    F
-                  </text>
-                  <polygon
-                    points="22,9 15,23 20,23 18,35 26,20 21,20"
-                    fill="#fde047"
-                    stroke="#0f172a"
-                    strokeWidth="1"
-                  />
-                </svg>
-                <div className="flex flex-col leading-none">
-                  <span className="text-[11px] font-display font-black tracking-wide text-white">
-                    Crit<span className="text-orange-400">Fuse</span>{' '}
-                    <span className="text-[9.5px] font-sans font-extrabold text-slate-300 uppercase">
-                      Mobile Games
-                    </span>
-                  </span>
-                  <span className="text-[9.5px] font-mono font-bold text-amber-300/90 mt-0.5">
-                    critfuse.com
-                  </span>
-                </div>
-              </div>
+                src="/branding/logo-critfuse.webp"
+                alt="CritFuse Mobile Games"
+                width={1000}
+                height={281}
+                draggable={false}
+                className="h-14 sm:h-16 w-auto select-none pointer-events-none drop-shadow-[0_2px_6px_rgba(0,0,0,0.7)]"
+              />
             </div>
           </section>
         )}
