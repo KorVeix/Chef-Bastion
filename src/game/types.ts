@@ -117,6 +117,8 @@ export interface BugEnemy {
   wetTimer?: number;           // > 0 when soaked/soaped (conducts UV electric arcs)
   coldTimer?: number;          // > 0 when chilled/slowed (triggers Thermal Shock on fire/UV)
   knockbackCooldown?: number;  // Prevents infinite frame-by-frame knockback pinning
+  roachShiftTimer?: number;    // Cucaracha de guion: segundos hasta el próximo cambio de carril
+  roachShiftDir?: 1 | -1;      // Cucaracha de guion: sentido del próximo cambio (zigzag)
   chainArcCooldown?: number;   // Cooldown between conductive UV chain zaps
   thermalShockCooldown?: number; // Cooldown between Thermal Shock shrapnel bursts
   chefStunTimer?: number;      // 1.0s stun from Chef's active "Trapazo de cocina"

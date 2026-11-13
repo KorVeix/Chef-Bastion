@@ -102,8 +102,10 @@ import {
   WORLDS_CATALOG,
 } from '../game/rules';
 import {
+  ROACH_SHIFT_INTERVAL_SEC,
   getScriptPhase,
   getStrategicScript,
+  stepRoachZigzag,
   takeDueScriptSpawns,
   type StrategicScript,
 } from '../game/strategicScripts';
@@ -4045,6 +4047,9 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
             isLateralInvasion: false,
             lateralDir: 0,
             redirectedBySquare: false,
+            ...(sp.type === 'shift_roach'
+              ? { roachShiftTimer: ROACH_SHIFT_INTERVAL_SEC, roachShiftDir: sp.dir ?? (sp.rail <= 1 ? 1 : -1) }
+              : {}),
           });
         }
         phase = getScriptPhase(activeScript, scriptCursor);
@@ -4868,6 +4873,21 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
               bug.lateralDir = 0;
             }
           } else {
+            if (bug.roachShiftTimer !== undefined && !bug.bossTier) {
+              const z = stepRoachZigzag(
+                {
+                  railInt: Math.round(bug.targetRail),
+                  timer: bug.roachShiftTimer,
+                  dir: bug.roachShiftDir ?? 1,
+                  pinned: bug.isSlidingFromSoap,
+                  onBoard: bug.yProgress > 0,
+                },
+                waveSimDt
+              );
+              bug.roachShiftTimer = z.timer;
+              bug.roachShiftDir = z.dir;
+              if (z.shiftTo !== null) bug.targetRail = z.shiftTo;
+            }
             const slideDamp = activeBiome.friction < 0.5 ? 15 : 9;
             bug.rail = THREE.MathUtils.damp(bug.rail, bug.targetRail, slideDamp, waveSimDt);
             bug.yProgress += effectiveSpeed * waveSimDt;

@@ -736,7 +736,7 @@ export function getTacticalOnboardingCard(level: number): TacticalOnboardingCard
           highlightColor: 'green',
         },
       ],
-      flowArrowLabel: '🐀 pisa 🧼 en R3 ➔ patina hacia 🌪️ en R2 ➔ ¡Centrifugado 3★!',
+      flowArrowLabel: '🪳 pisa 🧼 en R3 ➔ deja de esquivar y patina hacia 🌪️ en R2 ➔ ¡Centrifugado 3★!',
       rewardTitle: '🎁 Recompensa 3★: Roomba Kamikaze con Cuchillos',
       rewardExplanation:
         'Las bajas 3★ cargan al máximo el Manómetro Ultimate y desbloquean la Roomba Kamikaze en el Álbum.',

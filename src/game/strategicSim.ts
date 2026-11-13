@@ -22,8 +22,10 @@ import {
   getBiomeForLevel,
   getLevelSpeedMultiplier,
 } from './rules';
+import { ROACH_SHIFT_INTERVAL_SEC, stepRoachZigzag } from './strategicScripts';
 import { STRATEGIC_BUG_BASE_HP, STRATEGIC_BUG_BASE_SPEED, SHIELDED_BUGS } from './levelAudit';
 
+// Cucaracha de guion: zigzag de carril (stepRoachZigzag), clavada al resbalar en el Jabón.
 export const SIM_SUPPORTED_BUGS: ReadonlySet<BugType> = new Set<BugType>([
   'speed_ant',
   'cap_beetle',
@@ -47,6 +49,8 @@ export interface SimSpawn {
   t: number;
   type: BugType;
   rail: number;
+  /** Cucaracha: sentido del primer cambio de carril (por defecto, hacia el centro). */
+  dir?: 1 | -1;
   /** Jefe del guion (siempre con modelo de cangrejo rey en el motor). */
   boss?: { tier: BossTier; puzzle: BossPuzzleType; hp: number };
 }
@@ -88,6 +92,8 @@ interface SimBug {
   puzzle: BossPuzzleType | null;
   armorBroken: boolean;
   stunTimer: number;
+  roachTimer: number | null;
+  roachDir: 1 | -1;
 }
 
 interface SimProjectile {
@@ -283,6 +289,8 @@ export function simulateStrategic(opts: {
         puzzle: sp.boss?.puzzle ?? null,
         armorBroken: false,
         stunTimer: 0,
+        roachTimer: sp.type === 'shift_roach' ? ROACH_SHIFT_INTERVAL_SEC : null,
+        roachDir: sp.dir ?? (sp.rail <= 1 ? 1 : -1),
       });
       spawnIdx += 1;
       if (firstSpawnT === null) firstSpawnT = t;
@@ -381,6 +389,21 @@ export function simulateStrategic(opts: {
         bug.stunTimer > 0
           ? 0.08
           : STRATEGIC_BUG_BASE_SPEED[bug.type] * speedMult * (bug.slowTimer > 0 ? 0.55 : 1.0);
+      if (bug.roachTimer !== null) {
+        const z = stepRoachZigzag(
+          {
+            railInt: Math.round(bug.targetRail),
+            timer: bug.roachTimer,
+            dir: bug.roachDir,
+            pinned: bug.isSlidingFromSoap,
+            onBoard: bug.y > 0,
+          },
+          dt
+        );
+        bug.roachTimer = z.timer;
+        bug.roachDir = z.dir;
+        if (z.shiftTo !== null) bug.targetRail = z.shiftTo;
+      }
       bug.rail = damp(bug.rail, bug.targetRail, 9, dt);
       bug.y += speed * dt;
 

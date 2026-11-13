@@ -38,6 +38,9 @@ const miniBoss = (t: number, rail: number, puzzle: BossPuzzleType, hp: number): 
   { t, type: 'king_crab', rail, boss: { tier: 'mini', puzzle, hp } },
 ];
 
+/** Cucaracha con el sentido de su primer cambio de carril (zigzag). */
+const roach = (t: number, rail: number, dir: 1 | -1): SimSpawn => ({ t, type: 'shift_roach', rail, dir });
+
 const foam = (rail: number, scourerRow = 3, sprayRow = 5) => [
   { type: 'scourer_nanas' as const, rail, row: scourerRow },
   { type: 'spray_flus' as const, rail, row: sprayRow },
@@ -213,7 +216,81 @@ export const STRATEGIC_SCRIPTS: readonly StrategicScript[] = [
       plan: [{ t: 0, placements: foam(1) }],
     },
   },
+  {
+    level: 6,
+    loadout: ['soap_bar', 'mop_vortex', 'spray_flus'],
+    teaches:
+      'Cucarachas que cambian de carril cada 2,4 s y esquivan el disparo recto. El Jabón las hace patinar (y dejan de esquivar) hacia la Fregona: centrifugado 3★.',
+    tutorial: 'slip_vortex',
+    spawns: [
+      roach(0.5, 1, 1),
+      roach(2, 2, -1),
+      roach(4, 0, 1),
+      roach(4, 3, -1),
+      roach(7, 1, 1),
+      roach(9.5, 2, -1),
+      roach(12, 0, 1),
+      roach(12, 2, 1),
+      roach(15, 3, -1),
+      roach(17.5, 1, -1),
+      roach(20, 0, 1),
+      roach(20, 3, -1),
+      roach(23, 2, -1),
+      roach(25.5, 1, 1),
+      roach(28, 0, 1),
+      roach(28, 2, -1),
+      roach(28, 3, -1),
+      roach(32, 1, 1),
+      roach(34.5, 3, -1),
+      roach(37, 0, 1),
+      roach(37, 1, -1),
+      roach(37, 2, 1),
+    ],
+    // Disposición del tutorial: Fregona [R2,F3], Jabón al lado [R3,F3], Flus-Flus [R2,F5].
+    solution: [
+      {
+        t: 0,
+        placements: [
+          { type: 'mop_vortex', rail: 1, row: 2 },
+          { type: 'soap_bar', rail: 2, row: 2 },
+          { type: 'spray_flus', rail: 1, row: 4 },
+        ],
+      },
+    ],
+    failsWithout: {
+      label: 'Sin Jabón (la cucaracha sigue esquivando)',
+      plan: [
+        {
+          t: 0,
+          placements: [
+            { type: 'mop_vortex', rail: 1, row: 2 },
+            { type: 'spray_flus', rail: 1, row: 4 },
+          ],
+        },
+      ],
+    },
+  },
 ];
+
+/** La cucaracha cambia de carril cada 2,4 s en zigzag; resbalar en el Jabón la deja clavada. */
+export const ROACH_SHIFT_INTERVAL_SEC = 2.4;
+
+export function stepRoachZigzag(
+  state: { railInt: number; timer: number; dir: 1 | -1; pinned: boolean; onBoard: boolean },
+  dt: number,
+  railCount = 4
+): { timer: number; dir: 1 | -1; shiftTo: number | null } {
+  if (state.pinned || !state.onBoard) return { timer: state.timer, dir: state.dir, shiftTo: null };
+  const timer = state.timer - dt;
+  if (timer > 0) return { timer, dir: state.dir, shiftTo: null };
+  let dir = state.dir;
+  let next = state.railInt + dir;
+  if (next < 0 || next >= railCount) {
+    dir = (dir === 1 ? -1 : 1) as 1 | -1;
+    next = state.railInt + dir;
+  }
+  return { timer: ROACH_SHIFT_INTERVAL_SEC, dir: (dir === 1 ? -1 : 1) as 1 | -1, shiftTo: next };
+}
 
 export function getStrategicScript(level: number): StrategicScript | null {
   return STRATEGIC_SCRIPTS.find((s) => s.level === level) ?? null;
