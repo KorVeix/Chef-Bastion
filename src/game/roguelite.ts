@@ -1156,7 +1156,7 @@ export function computeRushDirectorParams(
       ? 0.64 + elapsedSeconds * 0.004
       : 0.7 +
         Math.min(0.62, (elapsedSeconds - 15) * 0.0038) +
-        Math.max(0, elapsedSeconds - 72) * 0.0068 +
+        Math.max(0, elapsedSeconds - 72) * 0.0048 +
         Math.min(0.18, Math.max(0, safePower - 1) * 0.012);
   const speedMultiplier = Number(Math.min(RUSH_MAX_BUG_SPEED_MULT, rawSpeed).toFixed(3));
 
@@ -1166,7 +1166,7 @@ export function computeRushDirectorParams(
       ? 0.28 + elapsedSeconds * 0.002
       : 0.31 +
         (elapsedSeconds - 15) * 0.0018 +
-        Math.max(0, elapsedSeconds - 72) * 0.0085;
+        Math.max(0, elapsedSeconds - 72) * 0.0095;
   const effectiveFreq = timeFreq * adaptiveFreqMult;
   const spawnIntervalSec = Number(Math.max(0.28, 1 / effectiveFreq).toFixed(2));
 
