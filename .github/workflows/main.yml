@@ -31,6 +31,17 @@ jobs:
       - name: Build web
         run: bun run build
 
+  layouts:
+    name: Tableros quietos (búsqueda completa del Estratégico)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - name: Instalar dependencias (bun.lock)
+        run: bun install --frozen-lockfile
+      - name: Ningún tablero quieto gana en los niveles con recolocaciones
+        run: bun run test:tableros
+
   android:
     name: Android (APK debug y AAB release)
     needs: checks

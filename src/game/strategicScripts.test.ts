@@ -80,6 +80,9 @@ test('Guiones: las apariciones salen en su segundo y la fase avanza por tercios'
   assert.equal(getScriptPhase(script, script.spawns.length), 3);
 });
 
+const FULL_SEARCH = process.env.STRATEGIC_FULL === '1';
+const SAMPLE_LIMIT = 400;
+
 /** Momentos de recolocación: pasos de la solución separados más de 3 s (sin contar la colocación inicial). */
 function moveMoments(script: (typeof STRATEGIC_SCRIPTS)[number]): number[] {
   const sorted = [...script.solution].sort((a, b) => a.t - b.t);
@@ -103,9 +106,13 @@ for (const script of STRATEGIC_SCRIPTS.filter((s) => s.minMoves)) {
     }
   });
 
-  test(`Guion Nv.${script.level}: ningún tablero quieto con los combos montados gana`, () => {
-    const layouts = enumerateComboLayouts(script.loadout, { looseRows: script.staticSearchRows });
-    assert.ok(layouts.length > 0);
+  test(`Guion Nv.${script.level}: ningún tablero quieto con los combos montados gana${FULL_SEARCH ? '' : ' (muestra)'}`, () => {
+    const all = enumerateComboLayouts(script.loadout, { looseRows: script.staticSearchRows });
+    assert.ok(all.length > 0);
+    // `bun run test` recorre una muestra fija (como mucho SAMPLE_LIMIT tableros repartidos por toda la
+    // lista); la búsqueda completa va aparte (`bun run test:tableros`, trabajo propio en la CI).
+    const stride = FULL_SEARCH ? 1 : Math.max(1, Math.ceil(all.length / SAMPLE_LIMIT));
+    const layouts = all.filter((_, i) => i % stride === 0);
     const winners = layouts.filter(
       (placements) =>
         simulateStrategic({
