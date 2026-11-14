@@ -49,6 +49,8 @@ import {
   RUSH_SUPPLY_BASE_PER_SEC,
   RUSH_MAX_SPRAY_FLUS_ON_BOARD,
   RUSH_WAVE_WARNING_SECONDS,
+  capRushSpeedMultiplier,
+  drainPendingSpawnsWithinCap,
   RushWaveDirectorState,
   RushWavePlan,
   RushWaveTick,
@@ -1162,6 +1164,8 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
     let rushElapsedSec = 0;
     let rushSupply = RUSH_INITIAL_SUPPLY;
     let rushWaves: RushWaveDirectorState = createRushWaveDirector();
+    // Apariciones especiales en cola: salen cuando hay hueco bajo el tope de bichos a la vez.
+    let rushPendingSpawns: BugEnemy[] = [];
     let rushWaveWarning: RushWaveTick['warning'] = null;
     let rushCapFlashTimer = 0;
     let rushXp = 0;
@@ -1743,6 +1747,7 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
       rushElapsedSec = 0;
       rushSupply = RUSH_INITIAL_SUPPLY;
       rushWaves = createRushWaveDirector();
+      rushPendingSpawns = [];
       rushWaveWarning = null;
       rushCapFlashTimer = 0;
       rushXp = 0;
@@ -3304,7 +3309,7 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
             if (evt.id === 'rush_hour') {
               // Min 1:00 "Hora Punta": fast XP piñata swarm!
               for (let i = 0; i < 4; i++) {
-                bugs.push({
+                rushPendingSpawns.push({
                   id: `rush-pinata-${Date.now()}-${i}`,
                   type: 'speed_ant',
                   rail: i % GRID_RAILS,
@@ -3328,7 +3333,7 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
               // Min 2:00 "Fuga Lateral": 2 immediate lateral conduit invaders!
               [-1, 1].forEach((dirSide, lIdx) => {
                 const fromLeft = dirSide < 0;
-                bugs.push({
+                rushPendingSpawns.push({
                   id: `rush-lat-${Date.now()}-${lIdx}`,
                   type: 'shift_roach',
                   rail: fromLeft ? -0.75 : 3.75,
@@ -3353,7 +3358,7 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
               });
             } else if (evt.id === 'boss_invasion') {
               // Min 3:00 "Invasión de Jefe": Grand Boss WITHOUT stopping regular spawns!
-              bugs.push({
+              rushPendingSpawns.push({
                 id: `rush-grandboss-3m-${Date.now()}`,
                 type: 'king_crab',
                 rail: 1,
@@ -4016,6 +4021,15 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
         : waveQuotaCompleted || (stateRef.current.level >= 5 && !activeScript && levelTimer <= 0);
       if (waveSimDt > 0 && !gameEndedLock && isRushMode) {
         // Supervivencia: oleadas concentradas en 1-2 carriles y avisadas 3 s antes (no carriles al azar).
+        if (rushPendingSpawns.length > 0) {
+          const drained = drainPendingSpawnsWithinCap(
+            rushPendingSpawns,
+            bugs.length,
+            rushDirector.maxConcurrentBugs
+          );
+          bugs.push(...drained.spawnNow);
+          rushPendingSpawns = drained.remaining;
+        }
         const waveTick = tickRushWaveDirector(rushWaves, waveSimDt, rushElapsedSec, {
           canSpawn: bugs.length < rushDirector.maxConcurrentBugs,
           paceMult: rushDirector.spawnIntervalSec / 2.5,
@@ -4039,12 +4053,13 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
             continue;
           }
           const maxHp = STRATEGIC_BUG_BASE_HP[sp.type];
+          const lateralStart = sp.entry === 'left' ? -0.75 : sp.entry === 'right' ? 3.75 : null;
           bugs.push({
             id: `bug-s${stateRef.current.level}-${scriptCursor}-${Date.now()}-${Math.random()}`,
             type: sp.type,
-            rail: sp.rail,
-            targetRail: sp.rail,
-            yProgress: -0.35,
+            rail: lateralStart ?? sp.rail,
+            targetRail: lateralStart ?? sp.rail,
+            yProgress: sp.entry ? sp.row ?? 2 : -0.35,
             hp: maxHp,
             maxHp,
             hasShield: sp.type === 'cap_beetle' || sp.type === 'king_crab',
@@ -4057,9 +4072,11 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
             attackWindup: 0,
             koTimer: 0,
             koStar: 1,
-            isLateralInvasion: false,
-            lateralDir: 0,
+            isLateralInvasion: Boolean(sp.entry),
+            lateralDir: sp.entry === 'left' ? 1 : sp.entry === 'right' ? -1 : 0,
             redirectedBySquare: false,
+            ...(sp.entry ? { lateralSpeedMult: sp.lateralSpeed ?? 0.92 } : {}),
+            ...(sp.entry && sp.type === 'speed_ant' ? { variant: 'duct' as const } : {}),
             ...(sp.type === 'shift_roach'
               ? { roachShiftTimer: ROACH_SHIFT_INTERVAL_SEC, roachShiftDir: sp.dir ?? (sp.rail <= 1 ? 1 : -1) }
               : {}),
@@ -4839,9 +4856,15 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
 
           const speedMap = BUG_BASE_SPEED;
           const worldMult = WORLDS_CATALOG[stateRef.current.worldId].speedMult;
-          const levelMult = isRushMode
-            ? rushDirector.speedMultiplier * rushModifiers.chaosSpeedMult
-            : getLevelSpeedMultiplier(stateRef.current.level);
+          // Supervivencia: el techo de velocidad se aplica a la velocidad compuesta (director × caos × mundo × bioma).
+          const envSpeedMult = isRushMode
+            ? capRushSpeedMultiplier(
+                rushDirector.speedMultiplier,
+                rushModifiers.chaosSpeedMult,
+                worldMult,
+                biomeFrictionSpeedFactor
+              )
+            : getLevelSpeedMultiplier(stateRef.current.level) * worldMult * biomeFrictionSpeedFactor;
           // Level 1 Wave 1 ONLY (Strategic Mode): 35% slower (0.65x) so live dynamic onboarding feels calm!
           const lvl1Wave1Factor =
             !isRushMode && !activeScript && stateRef.current.level === 1 && phase === 1 ? 0.65 : 1.0;
@@ -4856,15 +4879,13 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
             : isStunnedBoss
             ? COMBAT.grandBoss.stunnedSpeed
             : speedMap[bug.type] *
-              worldMult *
-              levelMult *
-              biomeFrictionSpeedFactor *
+              envSpeedMult *
               lvl1Wave1Factor *
               bossFrenzyFactor *
               controlSlowFactor;
 
           if (bug.isLateralInvasion && bug.lateralDir) {
-            bug.rail += bug.lateralDir * effectiveSpeed * 0.92 * waveSimDt;
+            bug.rail += bug.lateralDir * effectiveSpeed * (bug.lateralSpeedMult ?? 0.92) * waveSimDt;
             bug.targetRail = bug.rail;
             bug.yProgress += effectiveSpeed * 0.22 * waveSimDt;
             if (bug.lateralDir === 1 && bug.rail >= 3.0) {
@@ -4911,13 +4932,13 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
               (bug.bossEvadeTimer ?? 2.6) -
               waveSimDt * (bug.slowTimer > 0 ? COMBAT.grandBoss.slowedEvadeRate : 1.0);
             if (bug.bossEvadeTimer <= 0) {
-              bug.bossEvadeTimer =
-                (bug.bossPhase ?? 1) === 3 ? COMBAT.grandBoss.evadeIntervalP3 : COMBAT.grandBoss.evadeIntervalP2;
-              const curR = THREE.MathUtils.clamp(Math.round(bug.rail), 0, GRID_RAILS - 1);
-              const evade = nextGrandBossEvadeRail(curR, bug.bossEvadeDir ?? 1);
-              bug.targetRail = evade.rail;
-              bug.bossEvadeDir = evade.dir;
-              projectiles.push({
+            bug.bossEvadeTimer =
+              (bug.bossPhase ?? 1) === 3 ? COMBAT.grandBoss.evadeIntervalP3 : COMBAT.grandBoss.evadeIntervalP2;
+            const curR = THREE.MathUtils.clamp(Math.round(bug.rail), 0, GRID_RAILS - 1);
+            const evade = nextGrandBossEvadeRail(curR, bug.bossEvadeDir ?? 1);
+            bug.targetRail = evade.rail;
+            bug.bossEvadeDir = evade.dir;
+            projectiles.push({
                 id: `boss-acid-${bug.id}-${Date.now()}`,
                 x: curR,
                 y: bug.yProgress + 0.35,
@@ -5626,7 +5647,7 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
 
         let mesh = bugMeshes.get(bug.id);
         if (!mesh) {
-          mesh = buildBugMesh(bug.type);
+          mesh = buildBugMesh(bug.type, bug.variant);
           const toonMats: { mat: THREE.MeshToonMaterial; origHex: number }[] = [];
           mesh.traverse((child) => {
             if ((child as THREE.Mesh).isMesh && !child.userData?.isInkOutline) {

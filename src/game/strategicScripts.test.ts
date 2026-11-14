@@ -10,6 +10,9 @@ import { SIM_SUPPORTED_BUGS, simulateStrategic, validateLayout } from './strateg
 import type { BugType } from './types';
 import { enumerateComboLayouts } from './strategicLayouts';
 
+/** Fases del reloj de la Fregona (el motor gira con el reloj real): la solución debe valer en todas. */
+const CLOCK_OFFSETS = [0, 0.2, 0.4, 0.6, 0.8, 1.0, 1.2, 1.4];
+
 const leaksLabel = (leaks: Array<{ t: number; type: BugType; rail: number }>) =>
   leaks.map((l) => `${l.type}@carril ${l.rail + 1} (${l.t.toFixed(1)} s)`).join(', ');
 
@@ -22,21 +25,35 @@ for (const script of STRATEGIC_SCRIPTS) {
       assert.ok(SIM_SUPPORTED_BUGS.has(sp.type), `${sp.type} no está modelado en el simulador`);
       assert.ok(sp.rail >= 0 && sp.rail <= 3);
     }
-    const res = simulateStrategic({ level: script.level, spawns: script.spawns, plan: script.solution });
-    assert.equal(res.leaks.length, 0, `fugas: ${leaksLabel(res.leaks)}`);
-    assert.equal(res.kills.length, script.spawns.length);
+    for (const clockOffset of CLOCK_OFFSETS) {
+      const res = simulateStrategic({ level: script.level, spawns: script.spawns, plan: script.solution, clockOffset });
+      assert.equal(res.leaks.length, 0, `fase ${clockOffset}: fugas ${leaksLabel(res.leaks)}`);
+      assert.equal(res.kills.length, script.spawns.length);
+    }
   });
 
   test(`Guion Nv.${script.level}: sin el combo que enseña («${script.failsWithout.label}») se pierde`, () => {
     for (const step of script.failsWithout.plan) {
       assert.equal(validateLayout(step, script.loadout), null);
     }
-    const res = simulateStrategic({
-      level: script.level,
-      spawns: script.spawns,
-      plan: script.failsWithout.plan,
-    });
-    assert.ok(res.leaks.length >= 1, 'el guion se puede pasar sin el combo que enseña');
+    // Perder de verdad: el motor absorbe 3 fugas con los Sellos y pierde en la 4.ª.
+    for (const clockOffset of CLOCK_OFFSETS) {
+      const res = simulateStrategic({
+        level: script.level,
+        spawns: script.spawns,
+        plan: script.failsWithout.plan,
+        clockOffset,
+      });
+      const min = script.failsWithout.minLeaks;
+      if (min !== undefined) {
+        assert.ok(res.leaks.length >= min, `fase ${clockOffset}: sin el combo solo pasan ${res.leaks.length} de ${min}`);
+      } else {
+        assert.ok(
+          res.defeated,
+          `fase ${clockOffset}: sin el combo solo pasan ${res.leaks.length} (hacen falta 4 para perder)`
+        );
+      }
+    }
   });
 
   test(`Guion Nv.${script.level}: regla de los 10 s (sin tiempos muertos)`, () => {
@@ -59,8 +76,10 @@ test('Guiones: niveles únicos y en orden', () => {
 });
 
 test('Guiones: ningún tipo de bicho sale en más de 3 niveles seguidos', () => {
-  const byLevel = new Map(STRATEGIC_SCRIPTS.map((s) => [s.level, new Set(s.spawns.map((sp) => sp.type))]));
-  const types = new Set(STRATEGIC_SCRIPTS.flatMap((s) => s.spawns.map((sp) => sp.type)));
+  // Una variante con otra forma de matarla (p. ej. la hormiga de conducto) cuenta como bicho propio.
+  const key = (sp: { type: BugType; entry?: string }) => (sp.entry ? `${sp.type}:conducto` : sp.type);
+  const byLevel = new Map(STRATEGIC_SCRIPTS.map((s) => [s.level, new Set(s.spawns.map(key))]));
+  const types = new Set(STRATEGIC_SCRIPTS.flatMap((s) => s.spawns.map(key)));
   for (const type of types) {
     let run = 0;
     for (let lvl = 1; lvl <= 60; lvl++) {

@@ -22,12 +22,16 @@ export interface StrategicScript {
   /** Qué enseña o exige el nivel (para la ficha previa). */
   teaches: string;
   /** Tutorial guiado a mostrar (claves de `getTutorialGuideForLevel`), si lo hay. */
-  tutorial: 'line_foam' | 'bridge_uv' | 'slip_vortex' | 'corner_square' | null;
+  tutorial: 'line_foam' | 'bridge_uv' | 'slip_vortex' | 'corner_square' | 'duct_square' | null;
   spawns: SimSpawn[];
   /** Solución de referencia: debe limpiar el guion sin perder ningún plato. */
   solution: SimLayoutStep[];
-  /** Plan sin el combo que enseña el nivel: debe dejar pasar al menos un bicho. */
-  failsWithout: { label: string; plan: SimLayoutStep[] };
+  /**
+   * Plan sin el combo que enseña el nivel: debe perder de verdad (4.ª fuga, tras los 3 Sellos).
+   * `minLeaks` solo en niveles de presentación con «2 bichos nuevos» (regla del autor): ahí basta con que
+   * se escapen todos los nuevos.
+   */
+  failsWithout: { label: string; plan: SimLayoutStep[]; minLeaks?: number };
   /**
    * Niveles de refuerzo/examen: cuántas recolocaciones en caliente exige la solución. Los tests
    * comprueban que ningún tablero quieto con los combos montados gana y que parar de mover antes
@@ -53,6 +57,17 @@ const grandBoss = (t: number, rail: number, hp: number): SimSpawn[] => [
 
 /** Cucaracha con el sentido de su primer cambio de carril (zigzag). */
 const roach = (t: number, rail: number, dir: 1 | -1): SimSpawn => ({ t, type: 'shift_roach', rail, dir });
+
+/** Hormiga de conducto: entra por un lateral en la fila `row` y cruza corriendo (×4) hasta el borde contrario. */
+const DUCT_ROW = 4;
+const duct = (t: number, side: 'left' | 'right', row = DUCT_ROW): SimSpawn => ({
+  t,
+  type: 'speed_ant',
+  rail: side === 'left' ? 0 : 3,
+  entry: side,
+  row,
+  lateralSpeed: 4,
+});
 
 const foam = (rail: number, scourerRow = 3, sprayRow = 5) => [
   { type: 'scourer_nanas' as const, rail, row: scourerRow },
@@ -280,6 +295,8 @@ export const STRATEGIC_SCRIPTS: readonly StrategicScript[] = [
     solution: placedLive([...foam(1), ...bridge(2, 2)]),
     failsWithout: {
       label: 'Aerosoles separados (sin puente)',
+      // Presentación de la rata blindada: «salen 2 nuevos» (regla del autor). Sin puente pasan las 2.
+      minLeaks: 2,
       plan: placedLive([
         ...foam(1),
         { type: 'aerosol_torch', rail: 3, row: 2 },
@@ -367,6 +384,15 @@ export const STRATEGIC_SCRIPTS: readonly StrategicScript[] = [
       roach(37, 0, 1),
       roach(37, 1, -1),
       roach(37, 2, 1),
+      // Presión extra en el lado del Jabón y la Fregona: sin Jabón se pierde (4.ª fuga).
+      roach(9.5, 3, -1),
+      roach(17.5, 2, -1),
+      roach(25.5, 3, -1),
+      roach(30, 2, 1),
+      roach(33, 3, -1),
+      roach(39, 2, -1),
+      roach(39, 3, -1),
+      roach(41, 1, 1),
     ],
     // Disposición del tutorial: Fregona [R2,F3], Jabón al lado [R3,F3], Flus-Flus [R2,F5].
     solution: [
@@ -518,6 +544,7 @@ export const STRATEGIC_SCRIPTS: readonly StrategicScript[] = [
     ],
     failsWithout: {
       label: 'Sin Gel WC',
+      minLeaks: 1,
       plan: [
         { t: 0, placements: ratsAndWasps('left', 3).filter((p) => p.type !== 'wc_shield') },
         ...relocate(
@@ -570,6 +597,193 @@ export const STRATEGIC_SCRIPTS: readonly StrategicScript[] = [
     },
     minMoves: 2,
   },
+  {
+    level: 11,
+    loadout: ['corner_square', 'aerosol_torch', 'aerosol_torch', 'spray_flus'],
+    teaches:
+      'Hormigas de conducto: entran por los laterales en la fila 5 y cruzan corriendo, sin darte tiempo a disparar. La Escuadra en esa fila las frena y las manda por su carril hacia un puente UV justo debajo.',
+    tutorial: 'duct_square',
+    spawns: [
+      duct(0.5, 'left'),
+      duct(2, 'right'),
+      duct(3.5, 'left'),
+      duct(5, 'right'),
+      duct(5.6, 'left'),
+      duct(6.2, 'right'),
+      duct(9, 'left'),
+      duct(10.5, 'right'),
+      duct(12, 'left'),
+      duct(12.6, 'right'),
+      duct(13.2, 'left'),
+      duct(16, 'right'),
+      duct(17.5, 'left'),
+      duct(19, 'right'),
+      duct(19.6, 'left'),
+      duct(20.2, 'right'),
+      duct(23, 'left'),
+      duct(24, 'right'),
+      duct(25, 'left'),
+      duct(26, 'right'),
+      duct(29, 'left'),
+      duct(30, 'right'),
+      duct(31, 'left'),
+      duct(31.6, 'right'),
+      duct(32.2, 'left'),
+    ],
+    solution: [
+      {
+        t: 0,
+        placements: [
+          { type: 'corner_square', rail: 1, row: 4 },
+          ...bridge(1, 5),
+          { type: 'spray_flus', rail: 1, row: 6 },
+        ],
+      },
+    ],
+    failsWithout: {
+      label: 'Sin Escuadra (salen por los dos bordes)',
+      plan: [{ t: 0, placements: [...bridge(1, 5), { type: 'spray_flus', rail: 1, row: 6 }] }],
+    },
+  },
+  {
+    level: 12,
+    loadout: ['corner_square', 'corner_square', 'aerosol_torch', 'aerosol_torch', 'spray_flus'],
+    teaches:
+      'Hormigas de conducto por dos filas a la vez (F4 y F5) y por los dos lados: una Escuadra en cada fila, en escalera, sobre el mismo puente UV.',
+    tutorial: null,
+    spawns: [
+      duct(0.5, 'left', 3),
+      duct(1.5, 'right', 4),
+      duct(3, 'right', 3),
+      duct(4, 'left', 4),
+      duct(5.5, 'left', 3),
+      duct(5.5, 'right', 4),
+      duct(6.5, 'right', 3),
+      duct(9, 'left', 4),
+      duct(10, 'right', 3),
+      duct(11, 'left', 3),
+      duct(11.5, 'right', 4),
+      duct(13, 'left', 4),
+      duct(14, 'right', 3),
+      duct(14.5, 'left', 3),
+      duct(17, 'right', 4),
+      duct(18, 'left', 3),
+      duct(19, 'left', 4),
+      duct(19.5, 'right', 3),
+      duct(21, 'right', 4),
+      duct(22, 'left', 3),
+      duct(22.5, 'left', 4),
+      duct(25, 'right', 3),
+      duct(25.5, 'left', 4),
+      duct(26.5, 'left', 3),
+      duct(27, 'right', 4),
+      duct(28.5, 'right', 3),
+      duct(29, 'left', 4),
+      duct(30, 'left', 3),
+      duct(30.5, 'right', 4),
+    ],
+    solution: [
+      {
+        t: 0,
+        placements: [
+          { type: 'corner_square', rail: 1, row: 3 },
+          { type: 'corner_square', rail: 2, row: 4 },
+          ...bridge(1, 5),
+          { type: 'spray_flus', rail: 1, row: 6 },
+        ],
+      },
+    ],
+    failsWithout: {
+      label: 'Una sola Escuadra (se escapa la otra fila)',
+      plan: [
+        {
+          t: 0,
+          placements: [
+            { type: 'corner_square', rail: 1, row: 4 },
+          ...bridge(1, 5),
+          { type: 'spray_flus', rail: 1, row: 6 },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    level: 13,
+    loadout: ['corner_square', 'corner_square', 'aerosol_torch', 'aerosol_torch', 'spray_flus'],
+    teaches:
+      'Las filas de los conductos cambian a mitad de nivel (F4/F5 → F3/F4): hay que subir una Escuadra a tiempo.',
+    tutorial: null,
+    spawns: [
+      // Tramo 1: filas F4 y F5.
+      duct(0.5, 'left', 3),
+      duct(1.2, 'right', 4),
+      duct(2.5, 'right', 3),
+      duct(3.2, 'left', 4),
+      duct(4.5, 'left', 3),
+      duct(4.5, 'right', 4),
+      duct(5.5, 'right', 3),
+      duct(6.2, 'left', 4),
+      duct(8, 'left', 4),
+      duct(8.6, 'right', 3),
+      duct(9.5, 'left', 3),
+      duct(10, 'right', 4),
+      duct(11.5, 'left', 4),
+      duct(12, 'right', 3),
+      duct(12.5, 'left', 3),
+      duct(13, 'right', 4),
+      // Tramo 2: filas F3 y F4 → la Escuadra de la F5 sube a la F3.
+      duct(18, 'left', 2),
+      duct(18.8, 'right', 3),
+      duct(20, 'right', 2),
+      duct(20.6, 'left', 3),
+      duct(22, 'left', 2),
+      duct(22, 'right', 3),
+      duct(23, 'right', 2),
+      duct(23.6, 'left', 3),
+      duct(25.5, 'left', 3),
+      duct(26, 'right', 2),
+      duct(27, 'left', 2),
+      duct(27.5, 'right', 3),
+      duct(29, 'left', 3),
+      duct(29.5, 'right', 2),
+      duct(30, 'left', 2),
+      duct(30.5, 'right', 3),
+    ],
+    solution: [
+      {
+        t: 0,
+        placements: [
+          { type: 'corner_square', rail: 1, row: 3 },
+          { type: 'corner_square', rail: 2, row: 4 },
+          ...bridge(1, 5),
+          { type: 'spray_flus', rail: 1, row: 6 },
+        ],
+      },
+      {
+        t: 15,
+        placements: [
+          { type: 'corner_square', rail: 1, row: 3 },
+          { type: 'corner_square', rail: 2, row: 2 },
+          ...bridge(1, 5),
+          { type: 'spray_flus', rail: 1, row: 6 },
+        ],
+      },
+    ],
+    failsWithout: {
+      label: 'Escuadras quietas',
+      plan: [
+        {
+          t: 0,
+          placements: [
+            { type: 'corner_square', rail: 1, row: 3 },
+            { type: 'corner_square', rail: 2, row: 4 },
+          ...bridge(1, 5),
+          { type: 'spray_flus', rail: 1, row: 6 },
+          ],
+        },
+      ],
+    },
+  },
 ];
 
 /** La cucaracha cambia de carril cada 2,4 s en zigzag; resbalar en el Jabón la deja clavada. */
@@ -590,6 +804,15 @@ export function stepRoachZigzag(
     next = state.railInt + dir;
   }
   return { timer: ROACH_SHIFT_INTERVAL_SEC, dir: (dir === 1 ? -1 : 1) as 1 | -1, shiftTo: next };
+}
+
+/**
+ * Evasión del Gran Jefe de guion (fase 2+): cambia de carril alternando el sentido, sin azar.
+ * En los bordes vuelve hacia dentro.
+ */
+export function nextBossEvadeRail(curRail: number, dir: 1 | -1, railCount = 4): { rail: number; dir: 1 | -1 } {
+  const rail = curRail <= 0 ? 1 : curRail >= railCount - 1 ? railCount - 2 : curRail + dir;
+  return { rail, dir: (dir === 1 ? -1 : 1) as 1 | -1 };
 }
 
 export function getStrategicScript(level: number): StrategicScript | null {

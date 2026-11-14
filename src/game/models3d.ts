@@ -1017,16 +1017,20 @@ export function buildKnifeRoombaMesh(): THREE.Group {
 // 4. PLAGAS 3D SUAVIZADAS CON CONTORNO DE TINTA LIMPIO (ESCALA 0.75)
 // ============================================================================
 
-// Plantilla por tipo de bicho: las geometrías y materiales base se crean una sola vez y cada
+// Plantilla por variante de bicho: las geometrías y materiales base se crean una sola vez y cada
 // bicho es un clon que los comparte. El Canvas clona los materiales toon por instancia (destello
 // blanco) y solo esos clones se liberan al retirar el bicho (`disposeBugInstance`).
-const bugTemplateCache = new Map<BugType, THREE.Group>();
+const bugTemplateCache = new Map<string, THREE.Group>();
 
-export function buildBugMesh(type: BugType): THREE.Group {
-  let template = bugTemplateCache.get(type);
+/**
+ * @param variant `'duct'`: hormiga de conducto (Estratégico con guion): mismo modelo con caparazón verde azulado.
+ */
+export function buildBugMesh(type: BugType, variant?: 'duct'): THREE.Group {
+  const key = `${type}:${variant ?? 'default'}`;
+  let template = bugTemplateCache.get(key);
   if (!template) {
-    template = buildBugMeshTemplate(type);
-    bugTemplateCache.set(type, template);
+    template = buildBugMeshTemplate(type, variant);
+    bugTemplateCache.set(key, template);
   }
   return template.clone(true);
 }
@@ -1057,7 +1061,7 @@ export function disposeObjectTree(root: THREE.Object3D): void {
   materials.forEach((m) => m.dispose());
 }
 
-function buildBugMeshTemplate(type: BugType): THREE.Group {
+function buildBugMeshTemplate(type: BugType, variant?: 'duct'): THREE.Group {
   const root = new THREE.Group();
   root.scale.setScalar(0.75);
   const isBoss = type === 'king_crab';
@@ -1071,8 +1075,13 @@ function buildBugMeshTemplate(type: BugType): THREE.Group {
   const pupilMat = new THREE.MeshBasicMaterial({ color: INK_COLOR_HEX });
 
   if (type === 'speed_ant' || type === 'shift_roach') {
-    const darkShellMat = createToonMaterial(type === 'shift_roach' ? 0x9a3412 : 0xb45309);
-    const wingCaseMat = createToonMaterial(type === 'shift_roach' ? 0xfbbf24 : 0xf59e0b);
+    const isDuct = variant === 'duct' && type === 'speed_ant';
+    const darkShellMat = createToonMaterial(
+      type === 'shift_roach' ? 0x9a3412 : isDuct ? 0x0f766e : 0xb45309
+    );
+    const wingCaseMat = createToonMaterial(
+      type === 'shift_roach' ? 0xfbbf24 : isDuct ? 0x2dd4bf : 0xf59e0b
+    );
     const blackLegMat = createToonMaterial(0x1c1917);
 
     const abdomen = new THREE.Mesh(new THREE.SphereGeometry(0.36, 32, 28), darkShellMat);
@@ -1912,4 +1921,3 @@ export function buildWardrobeSpecialShowcaseMesh(specialId: SpecialWeaponId): TH
   root.add(hydroGroup);
   return root;
 }
-

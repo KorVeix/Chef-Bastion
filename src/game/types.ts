@@ -121,6 +121,8 @@ export interface BugEnemy {
   roachShiftTimer?: number;    // Cucaracha de guion: segundos hasta el próximo cambio de carril
   roachShiftDir?: 1 | -1;      // Cucaracha de guion: sentido del próximo cambio (zigzag)
   isFlying?: boolean;          // Avispa de guion: vuela, Jabón y Fregona no la tocan
+  lateralSpeedMult?: number;   // Invasión lateral de guion: velocidad al cruzar (0,92 por defecto)
+  variant?: 'duct';           // Hormiga de conducto (guion): mismo bicho, otro color y entrada lateral rápida
   chainArcCooldown?: number;   // Cooldown between conductive UV chain zaps
   thermalShockCooldown?: number; // Cooldown between Thermal Shock shrapnel bursts
   chefStunTimer?: number;      // 1.0s stun from Chef's active "Trapazo de cocina"
@@ -330,4 +332,3 @@ export interface BoardPartnerHighlight {
   row: number;
   kind: 'merge' | 'evolve' | 'synergy';
 }
-
