@@ -4,7 +4,7 @@ Lee también `CLAUDE.md` (estado del proyecto y reglas del autor). Responde y es
 
 ## Alcance
 - Haz solo lo que pida la tarea o el comentario concreto. Nada de refactors, limpiezas ni «mejoras» fuera de ese alcance.
-- El diseño del juego no es tuyo: no cambies guiones de niveles (`src/game/strategicScripts.ts`), el guion por tramos de Supervivencia (`RUSH_SCRIPT_TRAMOS` en `src/game/roguelite.ts`) ni números de equilibrio (vida, velocidad, daño, cadencia, suministro, costes) salvo que la tarea lo pida expresamente.
+- El diseño del juego no es tuyo: no cambies guiones de niveles (`src/game/strategicScripts.ts`), el criterio de avisos de tanda (`src/game/strategicWarnings.ts`), el guion por tramos de Supervivencia (`RUSH_SCRIPT_TRAMOS` en `src/game/roguelite.ts`) ni números de equilibrio (vida, velocidad, daño, cadencia, suministro, costes) salvo que la tarea lo pida expresamente.
 
 ## Tests
 - Nunca bajes umbrales, relajes aserciones ni saltes, desactives o pongas en cuarentena un test para ponerlo en verde.

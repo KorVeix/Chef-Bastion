@@ -48,11 +48,9 @@ import {
   RUSH_INITIAL_SUPPLY,
   RUSH_SUPPLY_BASE_PER_SEC,
   RUSH_MAX_SPRAY_FLUS_ON_BOARD,
-  RUSH_WAVE_WARNING_SECONDS,
   capRushSpeedMultiplier,
   drainPendingSpawnsWithinCap,
   RushWaveDirectorState,
-  RushWavePlan,
   RushWaveTick,
   tickRushWaveDirector,
   tickRushWear,
@@ -115,6 +113,12 @@ import {
   takeDueScriptSpawns,
   type StrategicScript,
 } from '../game/strategicScripts';
+import {
+  activeScriptWarnings,
+  formatWarningCounts,
+  getScriptWarnings,
+  type ScriptWarning,
+} from '../game/strategicWarnings';
 import { STRATEGIC_BUG_BASE_HP } from '../game/levelAudit';
 import { BUG_BASE_HP, BUG_BASE_SPEED, COMBAT } from '../game/combatTuning';
 import {
@@ -175,6 +179,16 @@ export interface RushHudSnapshot {
   } | null;
 }
 
+/** Aviso de tanda anclado a su respiradero (o a su conducto lateral), visible hasta que sale. */
+export interface VentWarningScreen {
+  id: string;
+  xPct: number;
+  yPct: number;
+  label: string;
+  secondsLeft: number;
+  tone: 'amber' | 'pink' | 'red';
+}
+
 export interface HudSnapshot {
   phase: 1 | 2 | 3;
   inPlacementPhase: boolean;
@@ -210,6 +224,7 @@ export interface HudSnapshot {
     shortTag: string;
     pieceId: string;
   } | null;
+  ventWarnings: VentWarningScreen[];
 }
 
 interface ChefBastionCanvasProps {
@@ -1223,6 +1238,7 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
     let activeScript: StrategicScript | null = null;
     let scriptClock = 0;
     let scriptCursor = 0;
+    let scriptWarnings: ScriptWarning[] = [];
     let lastAnnouncedBiomeLevel = 0;
     let shieldWarnCooldown = 0;
     let lastKillComicPopAt = 0; // 6-second minimum cooldown between kill comic banners!
@@ -1311,35 +1327,60 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
       piece.depleteTimer = updated.depleteTimer;
     }
 
-    const RUSH_BUG_ICONS: Record<BugType, string> = {
-      speed_ant: '🐜',
-      cap_beetle: '🛡️🐀',
-      acid_wasp: '🦟',
-      shift_roach: '🪳',
-      king_crab: '👑🦀',
-    };
+    /** Respiradero (arriba del carril) o boca del conducto lateral en la fila `row`. */
+    function ventWarningAnchor(rail: number, side?: 'left' | 'right', row?: number) {
+      return side
+        ? projectWorldToScreenPct(gridToWorldX(side === 'left' ? -0.75 : 3.75), 0.9, gridToWorldZ(row ?? 2))
+        : projectWorldToScreenPct(gridToWorldX(rail), 0.9, -5.5);
+    }
 
-    // Pops one bubble per announced rail over its vent grate ("🐜×4 · 3s") so the player can prepare the answer.
-    function announceRushWave(plan: RushWavePlan) {
-      soundEngine.triggerHaptic('light');
-      for (const rail of plan.hotRails) {
-        const onRail = plan.spawns.filter((sp) => sp.rail === rail);
-        if (onRail.length === 0) continue;
-        const counts = new Map<BugType, number>();
-        for (const sp of onRail) counts.set(sp.type, (counts.get(sp.type) ?? 0) + 1);
-        const label = [...counts.entries()].map(([type, n]) => `${RUSH_BUG_ICONS[type]}×${n}`).join(' ');
-        const pos = projectWorldToScreenPct(gridToWorldX(rail), 0.9, -5.5);
-        stateRef.current.onFloatingCombo?.({
-          id: `rush-wave-${rushWaves.wavesStarted}-${rail}`,
-          multiplier: onRail.length,
-          label,
-          detail: `${Math.round(RUSH_WAVE_WARNING_SECONDS)}s`,
-          color: counts.has('cap_beetle') ? 'pink' : 'orange',
-          xPct: pos.xPct,
-          yPct: pos.yPct,
-          createdAt: Date.now(),
+    const VENT_WARNING_URGENT_SEC = 1.2;
+
+    /** Etiquetas de aviso de tanda para la HUD: oleadas de Supervivencia y tandas avisadas del guion. */
+    function buildVentWarningScreens(isRushMode: boolean): VentWarningScreen[] {
+      const out: VentWarningScreen[] = [];
+      if (isRushMode) {
+        const plan = rushWaves.stage === 'warning' ? rushWaves.plan : null;
+        if (!plan || !rushWaveWarning) return out;
+        const secondsLeft = rushWaveWarning.secondsLeft;
+        for (const rail of plan.hotRails) {
+          const counts: Partial<Record<BugType, number>> = {};
+          for (const sp of plan.spawns) if (sp.rail === rail) counts[sp.type] = (counts[sp.type] ?? 0) + 1;
+          if (Object.keys(counts).length === 0) continue;
+          const pos = ventWarningAnchor(rail);
+          out.push({
+            id: `rush-wave-${rushWaves.wavesStarted}-${rail}`,
+            xPct: pos.xPct,
+            yPct: pos.yPct,
+            label: formatWarningCounts(counts),
+            secondsLeft,
+            tone: secondsLeft < VENT_WARNING_URGENT_SEC ? 'red' : counts.cap_beetle ? 'pink' : 'amber',
+          });
+        }
+        return out;
+      }
+      for (const { warning, secondsLeft } of activeScriptWarnings(scriptWarnings, scriptClock)) {
+        warning.entries.forEach((entry, i) => {
+          const pos = ventWarningAnchor(entry.rail, entry.side, entry.row);
+          out.push({
+            id: `${warning.id}-${i}`,
+            xPct: pos.xPct,
+            yPct: pos.yPct,
+            label: formatWarningCounts(entry.counts, entry.boss),
+            secondsLeft,
+            tone: secondsLeft < VENT_WARNING_URGENT_SEC ? 'red' : warning.kind === 'front' ? 'amber' : 'pink',
+          });
         });
       }
+      return out;
+    }
+
+    /** Carriles cuyo respiradero late por una tanda avisada del guion (las laterales no tienen respiradero). */
+    function scriptWarningRails(): { rails: number[]; secondsLeft: number } | null {
+      const live = activeScriptWarnings(scriptWarnings, scriptClock);
+      if (live.length === 0) return null;
+      const rails = live.flatMap(({ warning }) => warning.entries.filter((e) => !e.side).map((e) => e.rail));
+      return rails.length > 0 ? { rails, secondsLeft: Math.min(...live.map((l) => l.secondsLeft)) } : null;
     }
 
     function spawnRushBug(
@@ -1817,6 +1858,7 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
       activeScript = isRush ? null : getStrategicScript(currentLvl);
       scriptClock = 0;
       scriptCursor = 0;
+      scriptWarnings = activeScript ? getScriptWarnings(activeScript) : [];
       // Rush mode starts in 0.0s with ZERO pauses; Strategic Levels 1-3 also start dynamically!
       inPlacementPhase = isRush ? false : !dynamicOnboarding;
       startWaveRef.current = false;
@@ -4039,7 +4081,8 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
         });
         rushWaves = waveTick.state;
         rushWaveWarning = waveTick.warning;
-        if (waveTick.announced) announceRushWave(waveTick.announced);
+        // La etiqueta «🐜×4 · 3s» la pinta la HUD sobre el respiradero (`buildVentWarningScreens`) hasta que empieza.
+        if (waveTick.announced) soundEngine.triggerHaptic('light');
         for (const spawn of waveTick.spawns) {
           spawnRushBug(spawn.rail, spawn.type, rushDirector);
         }
@@ -5760,11 +5803,13 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
       }
 
       // Update Warning Beacons at top of rails (in Strategic Mode Lv.4+, mark all forecast conduits!)
+      const scriptVentWarning = !isRushMode && activeScript ? scriptWarningRails() : null;
       warningBeacons.forEach((b, rIdx) => {
         const mat = b.material as THREE.MeshBasicMaterial;
-        if (isRushMode && gState === 'playing' && rushWaveWarning?.rails.includes(rIdx)) {
-          // Wave announced on this rail: fast amber-to-red pulse until it starts.
-          const urgent = rushWaveWarning.secondsLeft < 1.2;
+        const ventWarning = isRushMode ? rushWaveWarning : scriptVentWarning;
+        if (gState === 'playing' && ventWarning?.rails.includes(rIdx)) {
+          // Oleada (Supervivencia) o tanda del guion (Estratégico) avisada en este carril: pulso ámbar→rojo hasta que sale.
+          const urgent = ventWarning.secondsLeft < VENT_WARNING_URGENT_SEC;
           mat.color.setHex(urgent ? 0xef4444 : 0xf59e0b);
           mat.opacity = 0.55 + Math.sin(elapsed * (urgent ? 22 : 12)) * 0.35;
         } else if (inPlacementPhase && stateRef.current.level >= 4 && levelForecast.activeRails.includes(rIdx)) {
@@ -6065,6 +6110,7 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
           streakCount: activeStreakTimer > 0 ? activeStreakCount : 0,
           rushHud,
           tutorialTargetScreen,
+          ventWarnings: gState === 'playing' ? buildVentWarningScreens(isRushMode) : [],
         });
       }
 

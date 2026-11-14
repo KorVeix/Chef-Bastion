@@ -9,6 +9,7 @@ import {
   ChefWardrobeModal,
   ComicPopBanner,
   FloatingComboLayer,
+  VentWarningLayer,
   KitchenUpgradesModal,
   LiveComandasOverlay,
   QuickGuideModal,
@@ -240,6 +241,7 @@ export default function App() {
       forecast: getLevelForecast(initLvl),
       bossHud: null,
       tutorialTargetScreen: null,
+      ventWarnings: [],
       intactPlates: [true, true, true, true],
       vipPlateRail: null,
       chefWhipCooldown: 0,
@@ -1271,6 +1273,7 @@ export default function App() {
       />
 
       {/* Floating Combo Notifications (pooled <= 6, zero Y overlap) */}
+      <VentWarningLayer warnings={gameState === 'playing' ? hud.ventWarnings : []} />
       <FloatingComboLayer combos={floatingCombos} />
 
       {/* Compact Single-Line Notice Banner (suppressed when Inspector or Comandas are active) */}
