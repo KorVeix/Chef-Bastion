@@ -433,8 +433,8 @@ function makeTacticalBot(): Bot {
         add('aerosol_torch', partner, 3);
       }
       if (d.other) {
-        add('scourer_nanas', rail, 4);
         add('spray_flus', rail, 5);
+        add('scourer_nanas', rail, 4);
       }
     }
     return wanted;
