@@ -1559,7 +1559,7 @@ export default function App() {
                       title="Robot Aspirador Kamikaze con Cuchillos patrullando frente a los platos"
                       className="text-[9px] font-black text-rose-300 ml-0.5"
                     >
-                      · 🔪 Roomba
+                      · 🔪 Robot
                     </span>
                   )}
                   {hud.hazmatShieldReady && (

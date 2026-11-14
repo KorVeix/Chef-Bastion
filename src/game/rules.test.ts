@@ -1069,3 +1069,19 @@ test('Ultimates renombradas (Kärcher, Roomba): las partidas con el id antiguo c
     assert.ok(!/k[aä]rcher|roomba/i.test(spec.name + spec.desc), `marca registrada en «${spec.name}»`);
   }
 });
+
+test('Marcas registradas: ningún texto visible dice Kärcher ni Roomba', async () => {
+  const { readFileSync } = await import('node:fs');
+  const { fileURLToPath } = await import('node:url');
+  const files = ['../App.tsx', '../components/ChefBastionCanvas.tsx', './rules.ts', './roguelite.ts'];
+  for (const rel of files) {
+    const src = readFileSync(fileURLToPath(new URL(rel, import.meta.url)), 'utf8');
+    src.split('\n').forEach((line, i) => {
+      if (/^\s*(\/\/|\*)/.test(line)) return;
+      assert.ok(
+        !/[\s'"`>¡·]\s*(k[aä]rcher|roomba)\b/i.test(line),
+        `${rel}:${i + 1} muestra una marca registrada: ${line.trim()}`
+      );
+    });
+  }
+});

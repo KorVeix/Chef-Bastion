@@ -2658,7 +2658,7 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
               ? '¡ROBOT KAMIKAZE!'
               : specId === 'baking_volcano'
               ? '¡VOLCÁN QUÍMICO!'
-              : '¡KÄRCHER A PRESIÓN!',
+              : '¡HIDROLIMPIADORA A PRESIÓN!',
           subtitle:
             specId === 'baking_volcano'
               ? '¡Fuego Químico Funde-Corazas en los 4 Raíles!'
@@ -3182,7 +3182,7 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
               (p.row === activePreviewTarget.row - 1 || p.row === activePreviewTarget.row - 2)
           );
           if (hasScourerAhead) {
-            const fanAngles = [-0.55, -0.26, 0, 0.26, 0.55];
+            const fanAngles = COMBAT.foam.angles;
             fanAngles.forEach((ang, idx) => {
               const cone = previewCones[idx];
               cone.visible = true;
@@ -3198,7 +3198,7 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
             cone.rotation.set(-Math.PI / 2, 0, 0);
           }
         } else if (selPiece.type === 'scourer_nanas') {
-          const fanAngles = [-0.55, -0.26, 0, 0.26, 0.55];
+          const fanAngles = COMBAT.foam.angles;
           fanAngles.forEach((ang, idx) => {
             const cone = previewCones[idx];
             cone.visible = true;
@@ -4197,9 +4197,7 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
         if (nextPhase === 2) {
           // Phase 2: Sabotage & Evasion (shift rail + start acid sabotage loop)
           const curR = THREE.MathUtils.clamp(Math.round(bug.rail), 0, GRID_RAILS - 1);
-          const firstEvade = nextGrandBossEvadeRail(curR, curR < GRID_RAILS - 1 ? 1 : -1);
-          bug.targetRail = firstEvade.rail;
-          bug.bossEvadeDir = firstEvade.dir;
+          bug.targetRail = curR < GRID_RAILS - 1 ? curR + 1 : curR - 1;
           bug.bossEvadeTimer = COMBAT.grandBoss.firstEvadeSec;
           stateRef.current.onComicPop({
             id: `boss-p2-${bug.id}-${Date.now()}`,
@@ -4420,7 +4418,7 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
                 0x34d399,
                 2.0
               );
-              const angles = [-0.55, -0.26, 0, 0.26, 0.55];
+              const angles = COMBAT.foam.angles;
               const dmgBonus =
                 (stateRef.current.hatId === 'tp_gasmask' ? 1.25 : 1.0) *
                 (scourer.level >= 3 ? 1.65 : scourer.level === 2 ? 1.3 : 1.0) *
@@ -4437,12 +4435,12 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
                   damage: Math.round(COMBAT.foam.damage * dmgBonus * frontalMult),
                   isEnemy: false,
                   flavor: 'foam_fan',
-                  pierceShield: Math.abs(ang) > 0.2,
+                  pierceShield: Math.abs(ang) > COMBAT.foam.pierceAngle,
                   isExplosiveOrThermal: proj.flavor === 'bleach_glob',
-                  fromDiagonalFoam: Math.abs(ang) > 0.2,
+                  fromDiagonalFoam: Math.abs(ang) > COMBAT.foam.pierceAngle,
                   fromVortex: false,
                   bouncesLeft: isRushMode && rushModifiers.wallRicochet ? 1 : 0,
-                  life: 1.4,
+                  life: COMBAT.foam.life,
                 });
               });
               proj.life = 0;
@@ -4932,13 +4930,13 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
               (bug.bossEvadeTimer ?? 2.6) -
               waveSimDt * (bug.slowTimer > 0 ? COMBAT.grandBoss.slowedEvadeRate : 1.0);
             if (bug.bossEvadeTimer <= 0) {
-            bug.bossEvadeTimer =
-              (bug.bossPhase ?? 1) === 3 ? COMBAT.grandBoss.evadeIntervalP3 : COMBAT.grandBoss.evadeIntervalP2;
-            const curR = THREE.MathUtils.clamp(Math.round(bug.rail), 0, GRID_RAILS - 1);
-            const evade = nextGrandBossEvadeRail(curR, bug.bossEvadeDir ?? 1);
-            bug.targetRail = evade.rail;
-            bug.bossEvadeDir = evade.dir;
-            projectiles.push({
+              bug.bossEvadeTimer =
+                (bug.bossPhase ?? 1) === 3 ? COMBAT.grandBoss.evadeIntervalP3 : COMBAT.grandBoss.evadeIntervalP2;
+              const curR = THREE.MathUtils.clamp(Math.round(bug.rail), 0, GRID_RAILS - 1);
+              const evade = nextGrandBossEvadeRail(curR, bug.bossEvadeDir ?? 1);
+              bug.targetRail = evade.rail;
+              bug.bossEvadeDir = evade.dir;
+              projectiles.push({
                 id: `boss-acid-${bug.id}-${Date.now()}`,
                 x: curR,
                 y: bug.yProgress + 0.35,
@@ -5041,7 +5039,7 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
               l.fromRow === currentRowInt &&
               (l.fromRail === currentRailInt || l.toRail === currentRailInt)
           );
-          if (bridgeLink && Math.abs(bug.yProgress - currentRowInt) < 0.3) {
+          if (bridgeLink && Math.abs(bug.yProgress - currentRowInt) < COMBAT.bridgeUv.halfWindowRows) {
             triggerThermalShockIfEligible(bug);
 
             // Chain Reaction (~8.3-10Hz throttled): Wet/Soaped bug touching UV Beam propagates electric arc to bugs on contiguous wet cells!

@@ -1847,7 +1847,7 @@ export function buildOvercookedKitchenProps(railToWorldX: (r: number) => number)
 
 /**
  * Builds a 3D showcase prop for the Wardrobe "⚔️ Armas Élite" tab so players can inspect
- * their equipped or previewed Ultimate weapon (Hidrolimpiadora, Volcán Químico, or Roomba Kamikaze) in 3D.
+ * their equipped or previewed Ultimate weapon (Hidrolimpiadora, Volcán Químico, or Robot Aspirador Kamikaze) in 3D.
  */
 export function buildWardrobeSpecialShowcaseMesh(specialId: SpecialWeaponId): THREE.Group {
   const root = new THREE.Group();

@@ -131,59 +131,59 @@ const waspGuard = (gelRail: number): SimLayoutStep['placements'] => [
   { type: 'wc_shield', rail: gelRail, row: 2 },
 ];
 
-/** 37 cucarachas por los 4 carriles (antiguo Nv.7): base del Nv.8 en espejo. */
+/** Cucarachas por los 4 carriles: base del Nv.8 en espejo. */
 const ROACH_SWARM: SimSpawn[] = [
-      roach(0.5, 2, 1),
-      roach(2, 3, -1),
-      roach(3.5, 1, 1),
-      roach(5, 2, 1),
-      roach(5, 3, -1),
-      roach(5, 0, 1),
-      roach(8, 2, -1),
-      roach(10, 3, -1),
-      roach(10, 1, 1),
-      roach(12, 0, 1),
-      roach(13, 2, 1),
-      roach(15, 3, -1),
-      roach(15, 2, -1),
-      roach(15, 0, 1),
-      roach(18, 1, 1),
-      roach(20, 3, -1),
-      roach(22, 0, 1),
-      roach(24, 1, -1),
-      roach(25, 3, -1),
-      roach(26, 0, 1),
-      roach(26, 2, -1),
-      roach(29, 1, -1),
-      roach(30, 3, -1),
-      roach(31, 0, 1),
-      roach(31, 1, 1),
-      roach(34, 0, 1),
-      roach(35, 3, -1),
-      roach(36, 2, -1),
-      roach(36, 1, -1),
-      roach(40, 0, 1),
-      roach(40, 3, -1),
-      roach(40, 1, -1),
-      roach(40, 2, 1),
-      roach(44, 0, 1),
-      roach(44, 3, -1),
-      roach(44, 1, 1),
-      roach(44, 2, -1),
+  roach(0.5, 2, 1),
+  roach(2, 3, -1),
+  roach(3.5, 1, 1),
+  roach(5, 2, 1),
+  roach(5, 3, -1),
+  roach(5, 0, 1),
+  roach(8, 2, -1),
+  roach(10, 3, -1),
+  roach(10, 1, 1),
+  roach(12, 0, 1),
+  roach(13, 2, 1),
+  roach(15, 3, -1),
+  roach(15, 2, -1),
+  roach(15, 0, 1),
+  roach(18, 1, 1),
+  roach(20, 3, -1),
+  roach(22, 0, 1),
+  roach(24, 1, -1),
+  roach(25, 3, -1),
+  roach(26, 0, 1),
+  roach(26, 2, -1),
+  roach(29, 1, -1),
+  roach(30, 3, -1),
+  roach(31, 0, 1),
+  roach(31, 1, 1),
+  roach(34, 0, 1),
+  roach(35, 3, -1),
+  roach(36, 2, -1),
+  roach(36, 1, -1),
+  roach(40, 0, 1),
+  roach(40, 3, -1),
+  roach(40, 1, -1),
+  roach(40, 2, 1),
+  roach(44, 0, 1),
+  roach(44, 3, -1),
+  roach(44, 1, 1),
+  roach(44, 2, -1),
 ];
 
 /** Espejo izquierda↔derecha de un guion (carril r → 3 − r; la cucaracha invierte su zigzag). */
 const mirrorSpawns = (spawns: readonly SimSpawn[]): SimSpawn[] =>
-  spawns.map((sp) => ({ ...sp, rail: 3 - sp.rail, ...(sp.dir ? { dir: (sp.dir === 1 ? -1 : 1) as 1 | -1 } : {}) }));
+  spawns.map((sp) => ({
+    ...sp,
+    rail: 3 - sp.rail,
+    ...(sp.dir ? { dir: (sp.dir === 1 ? -1 : 1) as 1 | -1 } : {}),
+  }));
 
 /** Espejo izquierda↔derecha de un tablero. */
 const mirrorLayout = (placements: SimLayoutStep['placements']): SimLayoutStep['placements'] =>
   placements.map((p) => ({ ...p, rail: 3 - p.rail }));
 
-/**
- * Nv.9: abanico fijo en el carril 2 (filas 5 y 7), puente UV en la fila 4 del lado que aprietan
- * las ratas y Gel WC (fila 3) en el carril de las avispas.
- */
 const foamDeep = (rail: number): SimLayoutStep['placements'] => [
   { type: 'scourer_nanas', rail, row: 4 },
   { type: 'spray_flus', rail, row: 6 },

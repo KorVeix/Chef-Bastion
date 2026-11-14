@@ -99,6 +99,9 @@ test('Guiones: las apariciones salen en su segundo y la fase avanza por tercios'
   assert.equal(getScriptPhase(script, script.spawns.length), 3);
 });
 
+const FULL_SEARCH = process.env.STRATEGIC_FULL === '1';
+const SAMPLE_LIMIT = 400;
+
 /** Momentos de recolocación: pasos de la solución separados más de 3 s (sin contar la colocación inicial). */
 function moveMoments(script: (typeof STRATEGIC_SCRIPTS)[number]): number[] {
   const sorted = [...script.solution].sort((a, b) => a.t - b.t);
@@ -122,9 +125,13 @@ for (const script of STRATEGIC_SCRIPTS.filter((s) => s.minMoves)) {
     }
   });
 
-  test(`Guion Nv.${script.level}: ningún tablero quieto con los combos montados gana`, () => {
-    const layouts = enumerateComboLayouts(script.loadout, { looseRows: script.staticSearchRows });
-    assert.ok(layouts.length > 0);
+  test(`Guion Nv.${script.level}: ningún tablero quieto con los combos montados gana${FULL_SEARCH ? '' : ' (muestra)'}`, () => {
+    const all = enumerateComboLayouts(script.loadout, { looseRows: script.staticSearchRows });
+    assert.ok(all.length > 0);
+    // `bun run test` recorre una muestra fija (como mucho SAMPLE_LIMIT tableros repartidos por toda la
+    // lista); la búsqueda completa va aparte (`bun run test:tableros`, trabajo propio en la CI).
+    const stride = FULL_SEARCH ? 1 : Math.max(1, Math.ceil(all.length / SAMPLE_LIMIT));
+    const layouts = all.filter((_, i) => i % stride === 0);
     const winners = layouts.filter(
       (placements) =>
         simulateStrategic({
@@ -141,20 +148,6 @@ for (const script of STRATEGIC_SCRIPTS.filter((s) => s.minMoves)) {
     assert.equal(winners.length, 0, `${winners.length}/${layouts.length} tableros quietos ganan: ${show}`);
   });
 }
-
-test('Gran Jefe: la esquiva barre los carriles sin azar y rebota en los bordes', async () => {
-  const { nextGrandBossEvadeRail } = await import('./rules');
-  const path: number[] = [];
-  let rail = 1;
-  let dir: 1 | -1 = 1;
-  for (let i = 0; i < 6; i++) {
-    const next = nextGrandBossEvadeRail(rail, dir);
-    rail = next.rail;
-    dir = next.dir;
-    path.push(rail);
-  }
-  assert.deepEqual(path, [2, 3, 2, 1, 0, 1]);
-});
 
 test('Gran Jefe en el simulador: pasa por las 3 fases y el mismo guion da siempre el mismo resultado', () => {
   const spawns = [{ t: 0.5, type: 'king_crab' as const, rail: 1, boss: { tier: 'grand' as const, puzzle: 'uv_overheat' as const, hp: 460 } }];
