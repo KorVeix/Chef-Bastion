@@ -408,6 +408,41 @@ export const STRATEGIC_SCRIPTS: readonly StrategicScript[] = [
       ],
     },
   },
+  {
+    level: 9,
+    loadout: ['scourer_nanas', 'spray_flus', 'wc_shield'],
+    teaches:
+      'Más avispas y cargando el carril 4, fuera del abanico: el Gel WC bajo en ese carril les devuelve el ácido mientras el abanico limpia los otros 3.',
+    tutorial: null,
+    spawns: [
+      ...at(0.5, 'acid_wasp', 1),
+      ...at(2, 'acid_wasp', 3),
+      ...at(3.5, 'acid_wasp', 0),
+      ...at(5, 'acid_wasp', 2, 3),
+      ...at(7, 'acid_wasp', 0, 1, 3),
+      ...at(10, 'acid_wasp', 3),
+      ...at(11.5, 'acid_wasp', 1, 2),
+      ...at(13, 'acid_wasp', 3),
+      ...at(15, 'acid_wasp', 0, 2, 3),
+      ...at(18, 'acid_wasp', 3),
+      ...at(19.5, 'acid_wasp', 1),
+      ...at(21, 'acid_wasp', 0, 3),
+      ...at(23, 'acid_wasp', 2, 3),
+      ...at(25, 'acid_wasp', 3),
+      ...at(26.5, 'acid_wasp', 0, 1, 2),
+      ...at(28, 'acid_wasp', 3),
+      ...at(30, 'acid_wasp', 1, 3),
+      ...at(32, 'acid_wasp', 0, 2, 3),
+      ...at(35, 'acid_wasp', 3),
+      ...at(36.5, 'acid_wasp', 0, 1, 2, 3),
+    ],
+    // Gel bajo (F5): arriba se le escapan las avispas que ya lo han rebasado.
+    solution: [{ t: 0, placements: [...foam(1), { type: 'wc_shield', rail: 3, row: 4 }] }],
+    failsWithout: {
+      label: 'Sin Gel WC',
+      plan: [{ t: 0, placements: foam(1) }],
+    },
+  },
 ];
 
 /** La cucaracha cambia de carril cada 2,4 s en zigzag; resbalar en el Jabón la deja clavada. */
