@@ -185,17 +185,21 @@ test('createInitialBoardPieces starts 100% empty on the countertop (all pieces i
   assert.equal(afterSwap.find((p) => p.id === second.id)?.row, 2);
 });
 
-test('progressive onboarding loadouts give 2 pieces on L1, 3 on L2, 3 on L3, 4 on L4, 3 on L31 (with corner_square), and -45% speed (0.55x) on L1-4', () => {
+test('progressive onboarding loadouts follow the level scripts (L1-2 fan, L3-4 fan + UV bridge), 3 on L31 (with corner_square), and -45% speed (0.55x) on L1-4', () => {
   assert.equal(createInitialBoardPieces(1).length, 2);
-  assert.equal(createInitialBoardPieces(2).length, 3);
-  assert.equal(createInitialBoardPieces(3).length, 3);
+  assert.deepEqual(
+    createInitialBoardPieces(2).map((p) => p.type).sort(),
+    ['scourer_nanas', 'spray_flus']
+  );
+  assert.equal(createInitialBoardPieces(3).length, 4);
+  assert.equal(createInitialBoardPieces(3).filter((p) => p.type === 'aerosol_torch').length, 2);
   assert.equal(createInitialBoardPieces(4).length, 4);
   const lvl31 = createInitialBoardPieces(31);
   assert.equal(lvl31.length, 3);
   assert.ok(lvl31.some((p) => p.type === 'corner_square'));
   assert.equal(getMaxPiecesForLevel(1), 2);
-  assert.equal(getMaxPiecesForLevel(2), 3);
-  assert.equal(getMaxPiecesForLevel(3), 3);
+  assert.equal(getMaxPiecesForLevel(2), 2);
+  assert.equal(getMaxPiecesForLevel(3), 4);
   assert.equal(getMaxPiecesForLevel(4), 4);
   assert.equal(getMaxPiecesForLevel(31), 3);
   assert.equal(getLevelSpeedMultiplier(1), 0.55);
@@ -244,8 +248,8 @@ test('BiomeProgressionManager follows floor((currentLevel - 1) / 19) across 5 bi
 });
 
 test('computeSmartComboHints suggests neighbor cells when 1 Aerosol UV or 1 Estropajo is placed solo', () => {
-  const lvl2Pieces = createInitialBoardPieces(2);
-  const afterOneAerosol = moveOrSwapUtensil(lvl2Pieces, 'u-aerosol-1', 1, 2);
+  const lvl3Pieces = createInitialBoardPieces(3);
+  const afterOneAerosol = moveOrSwapUtensil(lvl3Pieces, 'u-aerosol-1', 1, 2);
   const hints = computeSmartComboHints(afterOneAerosol);
   assert.ok(hints.length >= 2);
   assert.ok(hints.some((h) => h.rail === 0 && h.row === 2 && h.pieceType === 'aerosol_torch'));
@@ -261,10 +265,10 @@ test('computeSmartComboHints suggests neighbor cells when 1 Aerosol UV or 1 Estr
   assert.equal(computeSmartComboHints(afterOneAerosol, 8).length, 0);
 });
 
-test('getTacticalOnboardingCard and getTutorialGuideForLevel support Levels 1, 2, 3, and 31', () => {
+test('getTacticalOnboardingCard and getTutorialGuideForLevel follow the mechanic each level teaches (1 fan, 3 UV bridge, 31 square)', () => {
   assert.ok(getTacticalOnboardingCard(1) !== null);
-  assert.ok(getTacticalOnboardingCard(2) !== null);
-  assert.ok(getTacticalOnboardingCard(3) !== null);
+  assert.equal(getTacticalOnboardingCard(2), null);
+  assert.ok(getTacticalOnboardingCard(3)?.badge.includes('PUENTE'));
   assert.ok(getTacticalOnboardingCard(31) !== null);
   assert.equal(getTacticalOnboardingCard(5), null);
 
@@ -356,11 +360,14 @@ test('isDynamicOnboardingLevel is active ONLY on Levels 1-3 and tutorial targets
   assert.equal(g1Done?.nextTarget, null);
   assert.equal(g1Done?.allTargetsPlaced, true);
 
-  const l2Init = createInitialBoardPieces(2);
-  const g2Step1 = getTutorialGuideForLevel(2, l2Init);
-  assert.equal(g2Step1?.nextTarget?.shortTag, '⚡ 1º LÁSER UV');
-  const g2Step2 = getTutorialGuideForLevel(2, moveOrSwapUtensil(l2Init, 'u-aerosol-1', 1, 2));
-  assert.equal(g2Step2?.nextTarget?.shortTag, '⚡ PUENTE UV');
+  assert.equal(getTutorialGuideForLevel(2, createInitialBoardPieces(2)), null);
+  const l3Init = createInitialBoardPieces(3);
+  assert.equal(getTutorialGuideForLevel(3, l3Init)?.nextTarget?.shortTag, '🧽 ESTROPAJO');
+  const l3Fan = moveOrSwapUtensil(moveOrSwapUtensil(l3Init, 'u-scourer-1', 1, 3), 'u-spray-1', 1, 5);
+  assert.equal(getTutorialGuideForLevel(3, l3Fan)?.nextTarget?.shortTag, '⚡ 1º LÁSER UV');
+  const g3Step2 = getTutorialGuideForLevel(3, moveOrSwapUtensil(l3Fan, 'u-aerosol-1', 2, 2));
+  assert.equal(g3Step2?.nextTarget?.shortTag, '⚡ PUENTE UV');
+  assert.equal(g3Step2?.nextTarget?.rail, 3);
 });
 
 test('UTENSIL_MICRO_TIPS summarizes every utensil in maximum 4 words for 350ms long-press', () => {
@@ -439,8 +446,8 @@ test('World unlock parity: DEV_UNLOCK_ALL_WORLDS is false and worlds 2-4 stay lo
 });
 
 test('computeWeaponRangeCells, computeDragComboPreviewLinks, and getLevelForecast compute accurate tactical previews', () => {
-  const lvl2 = createInitialBoardPieces(2);
-  const placedFirst = moveOrSwapUtensil(lvl2, 'u-aerosol-1', 1, 2);
+  const lvl3 = createInitialBoardPieces(3);
+  const placedFirst = moveOrSwapUtensil(lvl3, 'u-aerosol-1', 1, 2);
 
   // Dragging 2nd Aerosol UV over adjacent cell (rail 2, row 2) previews bridge_uv BEFORE release!
   const previewLinks = computeDragComboPreviewLinks(placedFirst, 'u-aerosol-2', 2, 2);
@@ -651,9 +658,9 @@ test('Pentatonic Audio SFX: chaining kills < 1.2s apart ascends pentatonic scale
 
 test('Tanda 4 UI/UX & Economy: tray weapon stacking (x2/x3), coin-reward shop guard, Roomba world-unlock decoupling, classic_toque +10% 4-plate perk, and singular/plural defeat copy', () => {
   // 1. Stacked tray groups identical unplaced weapons and decrements count on placement
-  const lvl2Pieces = createInitialBoardPieces(2); // 2x aerosol_torch + 1x spray_flus
+  const lvl2Pieces = createInitialBoardPieces(3); // 2x aerosol_torch + Estropajo + Flus-Flus
   const initialGroups = groupTrayPiecesForDisplay(lvl2Pieces);
-  assert.equal(initialGroups.length, 2);
+  assert.equal(initialGroups.length, 3);
   const aerosolGroup = initialGroups.find((g) => g.representative.type === 'aerosol_torch');
   assert.ok(aerosolGroup);
   assert.equal(aerosolGroup.count, 2);

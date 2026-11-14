@@ -45,6 +45,7 @@ import {
   RUSH_ADRENALINE_MILESTONES,
   RUSH_INITIAL_SUPPLY,
   RUSH_SUPPLY_BASE_PER_SEC,
+  RUSH_MAX_SPRAY_FLUS_ON_BOARD,
   RUSH_WAVE_WARNING_SECONDS,
   RushWaveDirectorState,
   RushWavePlan,
@@ -101,9 +102,21 @@ import {
   WORLDS_CATALOG,
 } from '../game/rules';
 import {
+  ROACH_SHIFT_INTERVAL_SEC,
+  getScriptPhase,
+  getStrategicScript,
+  nextBossEvadeRail,
+  stepRoachZigzag,
+  takeDueScriptSpawns,
+  type StrategicScript,
+} from '../game/strategicScripts';
+import { STRATEGIC_BUG_BASE_HP } from '../game/levelAudit';
+import {
   ActiveBossHudInfo,
   ArmorId,
   BiomeConfig,
+  BossPuzzleType,
+  BossTier,
   BugEnemy,
   BugType,
   ComicPopEvent,
@@ -1196,6 +1209,10 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
     let spawnTimer = 2.0;
     let prepTimer = 0; // 3-second breather timer between Phase 1 -> 2 -> 3
     let levelTimer = LEVEL_DURATION_SECONDS; // 120s (2-minute) intense wave timer for Level 5+
+    // Estratégico con guion fijo (strategicScripts.ts): apariciones por segundo, sin azar.
+    let activeScript: StrategicScript | null = null;
+    let scriptClock = 0;
+    let scriptCursor = 0;
     let lastAnnouncedBiomeLevel = 0;
     let shieldWarnCooldown = 0;
     let lastKillComicPopAt = 0; // 6-second minimum cooldown between kill comic banners!
@@ -1446,13 +1463,17 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
       });
     }
 
-    function spawnBossForMilestone(lvl: number) {
-      const tier = getBossTierForLevel(lvl);
+    function spawnBossForMilestone(
+      lvl: number,
+      scripted?: { tier: BossTier; puzzle: BossPuzzleType; hp: number; rail: number }
+    ) {
+      const tier = scripted?.tier ?? getBossTierForLevel(lvl);
       if (!tier || bossSpawnedForLevel) return;
       bossSpawnedForLevel = true;
-      const puzzle = getBossPuzzleTypeForLevel(lvl) ?? 'uv_overheat';
-      const maxHp = tier === 'grand' ? Math.round(340 + lvl * 12) : Math.round(210 + lvl * 8);
-      const spawnRail = puzzle === 'soap_stun' ? 2 : 1;
+      const puzzle = scripted?.puzzle ?? getBossPuzzleTypeForLevel(lvl) ?? 'uv_overheat';
+      const maxHp =
+        scripted?.hp ?? (tier === 'grand' ? Math.round(340 + lvl * 12) : Math.round(210 + lvl * 8));
+      const spawnRail = scripted?.rail ?? (puzzle === 'soap_stun' ? 2 : 1);
       bugs.push({
         id: `boss-${tier}-${lvl}-${Date.now()}`,
         type: 'king_crab',
@@ -1778,6 +1799,9 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
       soundEngine.musicEngine.resetSession();
 
       phase = 1;
+      activeScript = isRush ? null : getStrategicScript(currentLvl);
+      scriptClock = 0;
+      scriptCursor = 0;
       // Rush mode starts in 0.0s with ZERO pauses; Strategic Levels 1-3 also start dynamically!
       inPlacementPhase = isRush ? false : !dynamicOnboarding;
       startWaveRef.current = false;
@@ -1868,7 +1892,7 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
         });
         selectedPieceIdRef.current = null;
       } else {
-        spawnWavePreviewBugs(currentLvl, 1);
+        if (!activeScript) spawnWavePreviewBugs(currentLvl, 1);
         selectNextTrayPieceIfAny();
       }
     }
@@ -2076,6 +2100,26 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
         if (res.outcome === 'cap_reached') {
           soundEngine.playShieldClink();
           rushCapFlashTimer = 0.9;
+          selectedPieceIdRef.current = null;
+          setInspectionTarget(null);
+          hudEmitTimer = 1.0;
+          return;
+        }
+
+        if (res.outcome === 'type_cap_reached') {
+          // Max 2 Flus-Flus on the counter: fuse the card into one of them or move one to the hot rail.
+          soundEngine.playShieldClink();
+          const capPos = projectWorldToScreenPct(gridToWorldX(cell.rail), 0.75, gridToWorldZ(cell.row));
+          stateRef.current.onFloatingCombo?.({
+            id: `flus-cap-${Date.now()}`,
+            multiplier: 1,
+            label: `MÁX ${RUSH_MAX_SPRAY_FLUS_ON_BOARD} FLUS-FLUS`,
+            detail: 'fusiona o muévelo',
+            color: 'orange',
+            xPct: capPos.xPct,
+            yPct: capPos.yPct,
+            createdAt: Date.now(),
+          });
           selectedPieceIdRef.current = null;
           setInspectionTarget(null);
           hudEmitTimer = 1.0;
@@ -3945,6 +3989,7 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
       // Ensure Milestone Mini-Boss (X5) or Grand Boss (X0) spawns reliably when Phase 3 begins in Strategic Mode!
       if (
         !isRushMode &&
+        !activeScript &&
         waveSimDt > 0 &&
         phase === 3 &&
         !bossSpawnedForLevel &&
@@ -3956,7 +4001,7 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
       // Spawn new bugs according to Rush Chaos Director OR Strategic Level & Phase
       const ventsClosed = isRushMode
         ? false
-        : waveQuotaCompleted || (stateRef.current.level >= 5 && levelTimer <= 0);
+        : waveQuotaCompleted || (stateRef.current.level >= 5 && !activeScript && levelTimer <= 0);
       if (waveSimDt > 0 && !gameEndedLock && isRushMode) {
         // Supervivencia: oleadas concentradas en 1-2 carriles y avisadas 3 s antes (no carriles al azar).
         const waveTick = tickRushWaveDirector(rushWaves, waveSimDt, rushElapsedSec, {
@@ -3971,7 +4016,52 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
         }
       }
 
-      if (waveSimDt > 0 && !gameEndedLock && !ventsClosed && !isRushMode) {
+      if (waveSimDt > 0 && !gameEndedLock && !isRushMode && activeScript) {
+        // Guion fijo: cada bicho sale en su segundo y carril; la fase del HUD avanza por tercios del guion.
+        scriptClock += waveSimDt;
+        const due = takeDueScriptSpawns(activeScript, scriptCursor, scriptClock);
+        scriptCursor = due.cursor;
+        for (const sp of due.spawns) {
+          if (sp.boss) {
+            spawnBossForMilestone(stateRef.current.level, { ...sp.boss, rail: sp.rail });
+            continue;
+          }
+          const maxHp = STRATEGIC_BUG_BASE_HP[sp.type];
+          const lateralStart = sp.entry === 'left' ? -0.75 : sp.entry === 'right' ? 3.75 : null;
+          bugs.push({
+            id: `bug-s${stateRef.current.level}-${scriptCursor}-${Date.now()}-${Math.random()}`,
+            type: sp.type,
+            rail: lateralStart ?? sp.rail,
+            targetRail: lateralStart ?? sp.rail,
+            yProgress: sp.entry ? sp.row ?? 2 : -0.35,
+            hp: maxHp,
+            maxHp,
+            hasShield: sp.type === 'cap_beetle' || sp.type === 'king_crab',
+            isSlidingFromSoap: false,
+            hitByDiagonalFoam: false,
+            hitByBridgeBurn: false,
+            hitByVortexSpin: false,
+            slowTimer: 0,
+            flashTimer: 0,
+            attackWindup: 0,
+            koTimer: 0,
+            koStar: 1,
+            isLateralInvasion: Boolean(sp.entry),
+            lateralDir: sp.entry === 'left' ? 1 : sp.entry === 'right' ? -1 : 0,
+            redirectedBySquare: false,
+            ...(sp.entry ? { lateralSpeedMult: sp.lateralSpeed ?? 0.92 } : {}),
+            ...(sp.entry && sp.type === 'speed_ant' ? { variant: 'duct' as const } : {}),
+            ...(sp.type === 'shift_roach'
+              ? { roachShiftTimer: ROACH_SHIFT_INTERVAL_SEC, roachShiftDir: sp.dir ?? (sp.rail <= 1 ? 1 : -1) }
+              : {}),
+            ...(sp.type === 'acid_wasp' ? { isFlying: true } : {}),
+          });
+        }
+        phase = getScriptPhase(activeScript, scriptCursor);
+        if (scriptCursor >= activeScript.spawns.length) waveQuotaCompleted = true;
+      }
+
+      if (waveSimDt > 0 && !gameEndedLock && !ventsClosed && !isRushMode && !activeScript) {
         spawnTimer -= waveSimDt;
         const maxBugsOnScreen = stateRef.current.level <= 3 ? 3 : 5;
         if (spawnTimer <= 0 && bugs.length < maxBugsOnScreen) {
@@ -4400,6 +4490,8 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
             const hitWidth = proj.aoeRadius ?? 0.48;
             for (const bug of bugs) {
               if (bug.koTimer > 0 || bug.yProgress < -0.15) continue;
+              // Avispa de guion: vuela, el remolino de la Fregona (suelo) no la alcanza.
+              if (bug.isFlying && proj.fromVortex) continue;
               if (
                 Math.abs(bug.rail - proj.x) < hitWidth &&
                 Math.abs(bug.yProgress - proj.y) < 0.5
@@ -4753,7 +4845,7 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
             : getLevelSpeedMultiplier(stateRef.current.level);
           // Level 1 Wave 1 ONLY (Strategic Mode): 35% slower (0.65x) so live dynamic onboarding feels calm!
           const lvl1Wave1Factor =
-            !isRushMode && stateRef.current.level === 1 && phase === 1 ? 0.65 : 1.0;
+            !isRushMode && !activeScript && stateRef.current.level === 1 && phase === 1 ? 0.65 : 1.0;
           // Grand Boss Phase 3 Frenzy: +30% speed!
           const bossFrenzyFactor =
             bug.bossTier === 'grand' && (bug.bossPhase ?? 1) === 3 ? 1.3 : 1.0;
@@ -4773,7 +4865,7 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
               controlSlowFactor;
 
           if (bug.isLateralInvasion && bug.lateralDir) {
-            bug.rail += bug.lateralDir * effectiveSpeed * 0.92 * waveSimDt;
+            bug.rail += bug.lateralDir * effectiveSpeed * (bug.lateralSpeedMult ?? 0.92) * waveSimDt;
             bug.targetRail = bug.rail;
             bug.yProgress += effectiveSpeed * 0.22 * waveSimDt;
             if (bug.lateralDir === 1 && bug.rail >= 3.0) {
@@ -4788,6 +4880,21 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
               bug.lateralDir = 0;
             }
           } else {
+            if (bug.roachShiftTimer !== undefined && !bug.bossTier) {
+              const z = stepRoachZigzag(
+                {
+                  railInt: Math.round(bug.targetRail),
+                  timer: bug.roachShiftTimer,
+                  dir: bug.roachShiftDir ?? 1,
+                  pinned: bug.isSlidingFromSoap,
+                  onBoard: bug.yProgress > 0,
+                },
+                waveSimDt
+              );
+              bug.roachShiftTimer = z.timer;
+              bug.roachShiftDir = z.dir;
+              if (z.shiftTo !== null) bug.targetRail = z.shiftTo;
+            }
             const slideDamp = activeBiome.friction < 0.5 ? 15 : 9;
             bug.rail = THREE.MathUtils.damp(bug.rail, bug.targetRail, slideDamp, waveSimDt);
             bug.yProgress += effectiveSpeed * waveSimDt;
@@ -4805,14 +4912,22 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
             if (bug.bossEvadeTimer <= 0) {
               bug.bossEvadeTimer = (bug.bossPhase ?? 1) === 3 ? 2.4 : 3.0;
               const curR = THREE.MathUtils.clamp(Math.round(bug.rail), 0, GRID_RAILS - 1);
-              const nextR =
-                curR === 0
-                  ? 1
-                  : curR === GRID_RAILS - 1
-                  ? GRID_RAILS - 2
-                  : Math.random() < 0.5
-                  ? curR - 1
-                  : curR + 1;
+              let nextR: number;
+              if (activeScript) {
+                // Jefe de guion: evasión alterna y predecible (sin azar).
+                const ev = nextBossEvadeRail(curR, bug.bossEvadeDir ?? -1);
+                nextR = ev.rail;
+                bug.bossEvadeDir = ev.dir;
+              } else {
+                nextR =
+                  curR === 0
+                    ? 1
+                    : curR === GRID_RAILS - 1
+                    ? GRID_RAILS - 2
+                    : Math.random() < 0.5
+                    ? curR - 1
+                    : curR + 1;
+              }
               bug.targetRail = nextR;
               projectiles.push({
                 id: `boss-acid-${bug.id}-${Date.now()}`,
@@ -5027,7 +5142,7 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
               p.row === currentRowInt &&
               Math.abs(bug.yProgress - currentRowInt) < 0.32
           );
-          if (soapHere && !bug.isSlidingFromSoap) {
+          if (soapHere && !bug.isFlying && !bug.isSlidingFromSoap) {
             bug.isSlidingFromSoap = true;
             bug.wetTimer = Math.max(bug.wetTimer ?? 0, 3.6);
             bug.slowTimer = Math.max(bug.slowTimer, 2.6 * liveMenuBuffs.controlDurationMult);
@@ -5084,7 +5199,7 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
               p.row === currentRowInt &&
               Math.abs(bug.yProgress - currentRowInt) < 0.45
           );
-          if (vortexHere) {
+          if (vortexHere && !bug.isFlying) {
             bug.hitByVortexSpin = true;
             bug.wetTimer = Math.max(bug.wetTimer ?? 0, 3.0);
             bug.slowTimer = Math.max(bug.slowTimer, 2.2 * liveMenuBuffs.controlDurationMult);
@@ -5316,7 +5431,7 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
               }
             }
 
-            if (!isRushMode) {
+            if (!isRushMode && !activeScript) {
               const trans = checkPhaseTransition(phase, phaseKills, stateRef.current.level);
               if (trans.shouldAdvance) {
                 if (trans.nextPhase === 'victory') {
@@ -5454,7 +5569,9 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
               intactPlates[currentRailInt] = false;
               gameEndedLock = true;
               const trans = checkPhaseTransition(phase, phaseKills, stateRef.current.level);
-              const remaining = Math.max(1, trans.targetKillsForCurrentPhase - phaseKills);
+              const remaining = activeScript
+                ? Math.max(1, activeScript.spawns.length - totalBugsCleaned)
+                : Math.max(1, trans.targetKillsForCurrentPhase - phaseKills);
               setTimeout(() => {
                 stateRef.current.onGameEnd(false, {
                   score,
@@ -5483,10 +5600,10 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
       // Trigger Level Victory in Strategic Mode ONLY when vents are closed AND 0 live enemies remain!
       const liveBugsCount = bugs.filter((b) => b.koTimer <= 0).length;
       const bossPending =
-        getBossTierForLevel(stateRef.current.level) !== null && !bossSpawnedForLevel;
+        !activeScript && getBossTierForLevel(stateRef.current.level) !== null && !bossSpawnedForLevel;
       const readyForVictory =
         !isRushMode &&
-        (waveQuotaCompleted || (stateRef.current.level >= 5 && levelTimer <= 0)) &&
+        (waveQuotaCompleted || (stateRef.current.level >= 5 && !activeScript && levelTimer <= 0)) &&
         !bossPending;
       if (waveSimDt > 0 && !gameEndedLock && readyForVictory && liveBugsCount === 0) {
         gameEndedLock = true;
@@ -5516,7 +5633,7 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
 
         let mesh = bugMeshes.get(bug.id);
         if (!mesh) {
-          mesh = buildBugMesh(bug.type);
+          mesh = buildBugMesh(bug.type, bug.variant);
           const toonMats: { mat: THREE.MeshToonMaterial; origHex: number }[] = [];
           mesh.traverse((child) => {
             if ((child as THREE.Mesh).isMesh && !child.userData?.isInkOutline) {
@@ -5888,8 +6005,8 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
         stateRef.current.onHudUpdate({
           phase,
           inPlacementPhase,
-          phaseKills,
-          phaseTargetKills: trans.targetKillsForCurrentPhase,
+          phaseKills: activeScript ? totalBugsCleaned : phaseKills,
+          phaseTargetKills: activeScript ? activeScript.spawns.length : trans.targetKillsForCurrentPhase,
           sanitationSeals,
           score,
           pressurePct: Math.round(pressurePct),

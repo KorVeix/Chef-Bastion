@@ -35,6 +35,26 @@ import {
   matchSupremeEvolution,
   SUPREME_EVOLUTIONS_CATALOG,
 } from './roguelite';
+import { getStrategicScript, type StrategicScript } from './strategicScripts';
+
+const SCRIPT_TUTORIAL_KEY: Record<NonNullable<StrategicScript['tutorial']>, 1 | 2 | 3 | 11 | 31> = {
+  line_foam: 1,
+  bridge_uv: 2,
+  slip_vortex: 3,
+  duct_square: 11,
+  corner_square: 31,
+};
+
+/**
+ * Qué tutorial (por mecánica) corresponde a un nivel. Los niveles con guion eligen su tutorial
+ * (`StrategicScript.tutorial`); el resto conserva el tutorial por número de nivel.
+ * Claves: 1 abanico, 2 puente UV, 3 Jabón + Fregona, 11 Escuadra + puente (conducto), 31 Escuadra (antiguo).
+ */
+function getTutorialKeyForLevel(level: number): 1 | 2 | 3 | 11 | 31 | null {
+  const script = getStrategicScript(level);
+  if (script) return script.tutorial ? SCRIPT_TUTORIAL_KEY[script.tutorial] : null;
+  return level === 1 || level === 2 || level === 3 || level === 31 ? level : null;
+}
 
 export const GRID_RAILS = 4;
 export const GRID_ROWS = 7; // Row 0 = top (near conduits), Row 6 = bottom playable row (plates sit 1 step below at z = +4.2)
@@ -611,7 +631,9 @@ export function isDynamicOnboardingLevel(level: number): boolean {
  * Returns the Tactical Onboarding Card visual diagram for Levels 1, 2, 3, and 31.
  */
 export function getTacticalOnboardingCard(level: number): TacticalOnboardingCardData | null {
-  if (level === 1) {
+  const key = getTutorialKeyForLevel(level);
+  if (key === null) return null;
+  if (key === 1) {
     return {
       level: 1,
       badge: 'TUTORIAL NIVEL 1 · COMBO EN LÍNEA',
@@ -641,47 +663,54 @@ export function getTacticalOnboardingCard(level: number): TacticalOnboardingCard
     };
   }
 
-  if (level === 2) {
+  if (key === 2) {
     return {
-      level: 2,
-      badge: 'TUTORIAL NIVEL 2 · PUENTE LÁSER UV',
+      level,
+      badge: `TUTORIAL NIVEL ${level} · PUENTE LÁSER UV`,
       title: 'Haz Láser UV Funde-Chapas',
       subtitle:
-        'Las Ratas Blindadas tienen escudo frontal inmune al disparo básico. Coloca 2 Aerosoles UV en la misma fila en raíles vecinos para tender un Puente Láser UV violeta.',
+        'Las Ratas Blindadas entran por el carril 4, fuera del abanico, y su escudo para el disparo básico. Pon 2 Aerosoles UV en la misma fila en carriles vecinos para tender un Puente Láser UV.',
       cells: [
         {
           rail: 2,
-          row: 3,
-          icon: '⚡',
-          label: '1º Aerosol UV [R2, F3]',
-          highlightColor: 'cyan',
+          row: 4,
+          icon: '🧽',
+          label: '1º Estropajo [R2, F4]',
+          highlightColor: 'green',
+        },
+        {
+          rail: 2,
+          row: 6,
+          icon: '🔫',
+          label: '2º Flus-Flus [R2, F6]',
+          highlightColor: 'green',
         },
         {
           rail: 3,
           row: 3,
           icon: '⚡',
-          label: '2º Aerosol UV [R3, F3]',
+          label: '3º Aerosol UV [R3, F3]',
           highlightColor: 'cyan',
         },
         {
-          rail: 2,
-          row: 5,
-          icon: '🔫',
-          label: '3º Flus-Flus [R2, F5]',
-          highlightColor: 'green',
+          rail: 4,
+          row: 3,
+          icon: '⚡',
+          label: '4º Aerosol UV [R4, F3]',
+          highlightColor: 'cyan',
         },
       ],
-      flowArrowLabel: '⚡ + ⚡ en paralelo ➔ ¡Haz UV funde el escudo! ➔ 🔫 remata',
+      flowArrowLabel: '🧽 + 🔫 limpian las hormigas · ⚡ + ⚡ en paralelo ➔ ¡Haz UV funde el escudo!',
       rewardTitle: '🎁 Recompensa 1★: +150 Monedas Sanitarias',
       rewardExplanation:
         'Fundir el escudo metálico activa "¡Combo x2! Escudo Fundido" y deja a la plaga vulnerable a cualquier disparo.',
     };
   }
 
-  if (level === 3) {
+  if (key === 3) {
     return {
-      level: 3,
-      badge: 'TUTORIAL NIVEL 3 · COMBO MAESTRO 3★',
+      level,
+      badge: `TUTORIAL NIVEL ${level} · COMBO MAESTRO 3★`,
       title: 'Jabón Resbalón + Fregona 360°',
       subtitle:
         'Haz patinar a la plaga con la Pastilla de Jabón a 45° hacia el raíl vecino donde la espera la Fregona Turbo-Spin.',
@@ -708,17 +737,37 @@ export function getTacticalOnboardingCard(level: number): TacticalOnboardingCard
           highlightColor: 'green',
         },
       ],
-      flowArrowLabel: '🐀 pisa 🧼 en R3 ➔ patina hacia 🌪️ en R2 ➔ ¡Centrifugado 3★!',
+      flowArrowLabel: '🪳 pisa 🧼 en R3 ➔ deja de esquivar y patina hacia 🌪️ en R2 ➔ ¡Centrifugado 3★!',
       rewardTitle: '🎁 Recompensa 3★: Roomba Kamikaze con Cuchillos',
       rewardExplanation:
         'Las bajas 3★ cargan al máximo el Manómetro Ultimate y desbloquean la Roomba Kamikaze en el Álbum.',
     };
   }
 
-  if (level === 31) {
+  if (key === 11) {
     return {
-      level: 31,
-      badge: 'NUEVA HERRAMIENTA NIVEL 31 · INVASIÓN LATERAL',
+      level,
+      badge: `NUEVA HERRAMIENTA NIVEL ${level} · HORMIGAS DE CONDUCTO`,
+      title: 'Escuadra Deflectora 90° + Puente UV',
+      subtitle:
+        'Las hormigas de conducto entran por los dos laterales en la fila 5 y cruzan corriendo. La Escuadra en esa fila las frena y las manda por su carril; el puente UV justo debajo las funde.',
+      cells: [
+        { rail: 2, row: 5, icon: '📐', label: '1º Escuadra [R2, F5]', highlightColor: 'yellow' },
+        { rail: 2, row: 6, icon: '⚡', label: '2º Aerosol UV [R2, F6]', highlightColor: 'cyan' },
+        { rail: 3, row: 6, icon: '⚡', label: '3º Aerosol UV [R3, F6]', highlightColor: 'cyan' },
+        { rail: 2, row: 7, icon: '🔫', label: '4º Flus-Flus [R2, F7]', highlightColor: 'green' },
+      ],
+      flowArrowLabel: '➡️ Hormiga cruza corriendo ➔ choca con 📐 ➔ baja por tu carril ➔ ⚡⚡ la funde',
+      rewardTitle: '📐 Mecánica Táctica: 0 Daño Propio · Redirección Total',
+      rewardExplanation:
+        'La Escuadra no hace daño: decide por dónde baja el bicho. Ponla en la fila por la que entran y tu trampa debajo.',
+    };
+  }
+
+  if (key === 31) {
+    return {
+      level,
+      badge: `NUEVA HERRAMIENTA NIVEL ${level} · INVASIÓN LATERAL`,
       title: 'Escuadra Deflectora 90°',
       subtitle:
         '¡Se han abierto conductos laterales! Los bichos laterales cruzan horizontalmente esquivando tus armas. Intercepta su paso con la Escuadra a 90° para obligarlos a bajar rectos por el carril.',
@@ -901,6 +950,8 @@ export function getLevelSpeedMultiplier(level: number): number {
  * - Level 5+: 5–6 pieces max
  */
 export function getMaxPiecesForLevel(level: number): number {
+  const script = getStrategicScript(level);
+  if (script) return script.loadout.length;
   if (level === 1) return 2;
   if (level === 2) return 3;
   if (level === 3) return 3;
@@ -922,8 +973,10 @@ export function getTutorialGuideForLevel(
     const found = pieces.find((p) => p.id === pieceId) ?? pieces.find((p) => p.type === pieceType);
     return !found || found.rail === null || found.row === null;
   };
+  const key = getTutorialKeyForLevel(level);
+  if (key === null) return null;
 
-  if (level === 1) {
+  if (key === 1) {
     const placedScourer = pieces.find(
       (p) => (p.id === 'u-scourer-1' || p.type === 'scourer_nanas') && p.rail !== null && p.row !== null
     );
@@ -963,19 +1016,36 @@ export function getTutorialGuideForLevel(
     };
   }
 
-  if (level === 2) {
+  if (key === 2) {
+    // Puente UV en los carriles 3-4 (fuera del abanico) + abanico en el carril 2.
     const firstUv = pieces.find((p) => p.id === 'u-aerosol-1' && p.rail !== null && p.row !== null);
     const bridgeRail =
-      firstUv && firstUv.rail !== null ? (firstUv.rail < GRID_RAILS - 1 ? firstUv.rail + 1 : firstUv.rail - 1) : 2;
+      firstUv && firstUv.rail !== null ? (firstUv.rail < GRID_RAILS - 1 ? firstUv.rail + 1 : firstUv.rail - 1) : 3;
     const bridgeRow = firstUv?.row ?? 2;
 
     const targets: TutorialTargetCell[] = [
       {
+        pieceId: 'u-scourer-1',
+        pieceType: 'scourer_nanas',
+        rail: 1,
+        row: 3,
+        label: '🧽 Estropajo en [Raíl 2, Fila 4]',
+        shortTag: '🧽 ESTROPAJO',
+      },
+      {
+        pieceId: 'u-spray-1',
+        pieceType: 'spray_flus',
+        rail: 1,
+        row: 5,
+        label: '🔫 Flus-Flus detrás en [Raíl 2, Fila 6]',
+        shortTag: '🫧 ABANICO ×5',
+      },
+      {
         pieceId: 'u-aerosol-1',
         pieceType: 'aerosol_torch',
-        rail: 1,
+        rail: 2,
         row: 2,
-        label: '⚡ Aerosol UV 1 en [Raíl 2, Fila 3]',
+        label: '⚡ Aerosol UV 1 en [Raíl 3, Fila 3]',
         shortTag: '⚡ 1º LÁSER UV',
       },
       {
@@ -983,23 +1053,15 @@ export function getTutorialGuideForLevel(
         pieceType: 'aerosol_torch',
         rail: bridgeRail,
         row: bridgeRow,
-        label: '⚡ Aerosol UV 2 al lado en [Raíl 3, Fila 3]',
+        label: '⚡ Aerosol UV 2 al lado, misma fila',
         shortTag: '⚡ PUENTE UV',
-      },
-      {
-        pieceId: 'u-spray-1',
-        pieceType: 'spray_flus',
-        rail: firstUv?.rail ?? 1,
-        row: Math.min(GRID_ROWS - 1, bridgeRow + 2),
-        label: '🔫 Flus-Flus detrás en [Raíl 2, Fila 5]',
-        shortTag: '🔫 REMATAR',
       },
     ];
     const nextTarget = targets.find((t) => isInTray(t.pieceId, t.pieceType)) ?? null;
 
     return {
-      level: 2,
-      mechanicTitle: 'TUTORIAL NIVEL 2 · PUENTE LÁSER UV (FUNDE-CHAPAS)',
+      level,
+      mechanicTitle: `TUTORIAL NIVEL ${level} · PUENTE LÁSER UV (FUNDE-CHAPAS)`,
       targets,
       nextTarget,
       allTargetsPlaced: nextTarget === null,
@@ -1007,7 +1069,7 @@ export function getTutorialGuideForLevel(
     };
   }
 
-  if (level === 3) {
+  if (key === 3) {
     const placedSoap = pieces.find((p) => p.id === 'u-soap-1' && p.rail !== null && p.row !== null);
     const mopRail =
       placedSoap && placedSoap.rail !== null ? (placedSoap.rail > 0 ? placedSoap.rail - 1 : placedSoap.rail + 1) : 1;
@@ -1042,8 +1104,8 @@ export function getTutorialGuideForLevel(
     const nextTarget = targets.find((t) => isInTray(t.pieceId, t.pieceType)) ?? null;
 
     return {
-      level: 3,
-      mechanicTitle: 'TUTORIAL NIVEL 3 · DESVÍO 3★ (JABÓN + FREGONA 360°)',
+      level,
+      mechanicTitle: `TUTORIAL NIVEL ${level} · DESVÍO 3★ (JABÓN + FREGONA 360°)`,
       targets,
       nextTarget,
       allTargetsPlaced: nextTarget === null,
@@ -1051,7 +1113,53 @@ export function getTutorialGuideForLevel(
     };
   }
 
-  if (level === 31) {
+  if (key === 11) {
+    const targets: TutorialTargetCell[] = [
+      {
+        pieceId: 'u-square-1',
+        pieceType: 'corner_square',
+        rail: 1,
+        row: 4,
+        label: '📐 Escuadra en la fila del conducto [Raíl 2, Fila 5]',
+        shortTag: '📐 GIRO 90°',
+      },
+      {
+        pieceId: 'u-aerosol-1',
+        pieceType: 'aerosol_torch',
+        rail: 1,
+        row: 5,
+        label: '⚡ Aerosol UV debajo [Raíl 2, Fila 6]',
+        shortTag: '⚡ 1º LÁSER UV',
+      },
+      {
+        pieceId: 'u-aerosol-2',
+        pieceType: 'aerosol_torch',
+        rail: 2,
+        row: 5,
+        label: '⚡ Aerosol UV al lado [Raíl 3, Fila 6]',
+        shortTag: '⚡ PUENTE UV',
+      },
+      {
+        pieceId: 'u-spray-1',
+        pieceType: 'spray_flus',
+        rail: 1,
+        row: 6,
+        label: '🔫 Flus-Flus [Raíl 2, Fila 7]',
+        shortTag: '🔫 APOYO',
+      },
+    ];
+    const nextTarget = targets.find((t) => isInTray(t.pieceId, t.pieceType)) ?? null;
+    return {
+      level,
+      mechanicTitle: `TUTORIAL NIVEL ${level} · ESCUADRA 90° + PUENTE UV (HORMIGAS DE CONDUCTO)`,
+      targets,
+      nextTarget,
+      allTargetsPlaced: nextTarget === null,
+      stepInstruction: nextTarget?.shortTag ?? '✅ ESCUADRA + PUENTE',
+    };
+  }
+
+  if (key === 31) {
     const targets: TutorialTargetCell[] = [
       {
         pieceId: 'u-square-1',
@@ -1081,8 +1189,8 @@ export function getTutorialGuideForLevel(
     const nextTarget = targets.find((t) => isInTray(t.pieceId, t.pieceType)) ?? null;
 
     return {
-      level: 31,
-      mechanicTitle: 'TUTORIAL NIVEL 31 · ESCUADRA DEFLECTORA 90° (INVASIÓN LATERAL)',
+      level,
+      mechanicTitle: `TUTORIAL NIVEL ${level} · ESCUADRA DEFLECTORA 90° (INVASIÓN LATERAL)`,
       targets,
       nextTarget,
       allTargetsPlaced: nextTarget === null,
@@ -1323,6 +1431,15 @@ export function computeDragComboPreviewLinks(
  */
 export function getLevelForecast(level: number): LevelForecast {
   const safeLvl = Math.max(1, Math.floor(level));
+  const script = getStrategicScript(safeLvl);
+  if (script) {
+    return {
+      bugTypes: [...new Set(script.spawns.map((s) => s.type))],
+      activeRails: [...new Set(script.spawns.map((s) => s.rail))].sort((a, b) => a - b),
+      hasLateralConduits: script.spawns.some((s) => Boolean(s.entry)),
+      bossTier: script.spawns.find((s) => s.boss)?.boss?.tier ?? 'none',
+    };
+  }
   if (safeLvl === 1) {
     return {
       bugTypes: ['speed_ant'],
@@ -1550,7 +1667,42 @@ export function checkPhaseTransition(
  * - Level 31 (ONLY 3 PIECES): 1 Escuadra Deflectora 90° + 1 Estropajo + 1 Flus-Flus (Tutorial Invasión Lateral)
  * - Level 32+ (6 pieces): Full tactical toolkit + Escuadra Deflectora 90°
  */
+const LOADOUT_ID_PREFIX: Record<UtensilType, string> = {
+  spray_flus: 'spray',
+  scourer_nanas: 'scourer',
+  aerosol_torch: 'aerosol',
+  soap_bar: 'soap',
+  mop_vortex: 'mop',
+  wc_shield: 'wcshield',
+  bleach_cannon: 'bleach',
+  corner_square: 'square',
+};
+
+/** Piezas en bandeja a partir del reparto de un guion (ids estables para los tutoriales: u-aerosol-1…). */
+function piecesFromLoadout(loadout: readonly UtensilType[]): UtensilPiece[] {
+  const seen = new Map<UtensilType, number>();
+  return loadout.map((type) => {
+    const n = (seen.get(type) ?? 0) + 1;
+    seen.set(type, n);
+    return {
+      id: `u-${LOADOUT_ID_PREFIX[type]}-${n}`,
+      type,
+      level: 1,
+      rail: null,
+      row: null,
+      gunkTimer: 0,
+      cooldown: 0,
+      fireTimer: type === 'spray_flus' ? 0.35 : type === 'mop_vortex' ? 0.3 : 0,
+      comboType: 'none',
+    };
+  });
+}
+
 export function createInitialBoardPieces(level = 1): UtensilPiece[] {
+  const script = getStrategicScript(level);
+  if (script) {
+    return evaluateBoardCombos(ensureTrayHasSprayFlus(piecesFromLoadout(script.loadout))).updatedPieces;
+  }
   let initial: UtensilPiece[];
 
   if (level === 1) {

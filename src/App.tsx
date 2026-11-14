@@ -1316,78 +1316,16 @@ export default function App() {
 
             {/* Main Lockup + Roguelite-First CTA Hierarchy (No my-auto overflow on 20:9 displays) */}
             <div className="max-w-md w-full space-y-3 sm:space-y-4">
-              {/* Bespoke Inline SVG Title Emblem */}
-              <svg
-                viewBox="0 0 460 135"
-                className="w-full max-w-[390px] drop-shadow-[0_6px_0_rgba(20,10,4,0.95)]"
-                role="img"
-                aria-label="CHEF BASTION: Higiene Letal 3D"
-              >
-                <rect
-                  x="6"
-                  y="8"
-                  width="448"
-                  height="118"
-                  rx="22"
-                  fill="#451a03"
-                  stroke="#facc15"
-                  strokeWidth="6"
-                />
-                <rect
-                  x="16"
-                  y="18"
-                  width="428"
-                  height="98"
-                  rx="16"
-                  fill="#78350f"
-                  stroke="#d97706"
-                  strokeWidth="2"
-                />
-                {/* Chef Hat Badge */}
-                <g transform="translate(28, 28)">
-                  <path
-                    d="M16 42 C4 34 6 12 24 10 C32 -2 56 -2 64 10 C82 12 84 34 72 42 L68 64 L20 64 Z"
-                    fill="#ffffff"
-                    stroke="#0f172a"
-                    strokeWidth="5"
-                  />
-                  <rect
-                    x="19"
-                    y="56"
-                    width="50"
-                    height="14"
-                    rx="4"
-                    fill="#00d2ff"
-                    stroke="#0f172a"
-                    strokeWidth="4"
-                  />
-                </g>
-                <text
-                  x="124"
-                  y="64"
-                  fill="#fde047"
-                  stroke="#0f172a"
-                  strokeWidth="7"
-                  paintOrder="stroke fill"
-                  fontFamily="Outfit, sans-serif"
-                  fontWeight="900"
-                  fontSize="41"
-                  letterSpacing="1"
-                >
-                  CHEF BASTION
-                </text>
-                <text
-                  x="126"
-                  y="98"
-                  fill="#ffffff"
-                  fontFamily="Plus Jakarta Sans, sans-serif"
-                  fontWeight="800"
-                  fontSize="14.2"
-                  letterSpacing="1.8"
-                >
-                  HIGIENE LETAL · BULLET HELL 3D
-                </text>
-              </svg>
+              {/* Title logo (docs/branding/logo-chef-bastion.png, 1400 px WebP for the app) */}
+              <img
+                src="/branding/logo-chef-bastion.webp"
+                alt="CHEF BASTION: Higiene Letal"
+                width={1400}
+                height={841}
+                decoding="async"
+                draggable={false}
+                className="w-full max-w-[400px] h-auto mx-auto select-none drop-shadow-[0_6px_10px_rgba(0,0,0,0.55)]"
+              />
 
               {/* Logical Onboarding CTA Hierarchy: New players (< Lv.3) see Strategic FIRST; Veterans (>= Lv.3) see Rush FIRST */}
               <div className="pointer-events-auto flex flex-col gap-2.5 max-w-[400px]">
@@ -1401,7 +1339,7 @@ export default function App() {
                       className="apk-touch-target w-full px-5 py-3.5 sm:py-4 rounded-2xl bg-yellow-400 hover:bg-yellow-300 active:scale-95 text-slate-950 border-4 border-slate-950 shadow-[0_6px_0_#0f172a] transition cursor-pointer flex flex-col items-center justify-center text-center"
                     >
                       <span className="inline-flex items-center justify-center gap-2 font-display font-black text-lg sm:text-xl tracking-wide leading-tight">
-                        <span>🧠 MODO ESTRATÉGICO (NIVEL {progress.currentLevel})</span>
+                        <span>🧠 ESTRATEGIA · Nv.{progress.currentLevel}</span>
                       </span>
                       <span className="font-sans font-extrabold text-xs text-slate-800 mt-0.5">
                         ¡Empieza aquí! Aprende cada arma paso a paso
@@ -1456,7 +1394,7 @@ export default function App() {
                       onClick={() => setShowStrategicModal(true)}
                       className="apk-touch-target w-full px-4 py-3 rounded-2xl bg-slate-900/95 hover:bg-slate-800 active:scale-95 text-cyan-200 font-display font-black text-sm sm:text-base tracking-wide border-2 border-cyan-400/80 shadow-[0_4px_0_#0f172a] transition cursor-pointer inline-flex items-center justify-center"
                     >
-                      🧠 MODO ESTRATÉGICO (NIVEL {progress.currentLevel})
+                      🧠 ESTRATEGIA · Nv.{progress.currentLevel}
                     </button>
                   </>
                 )}
@@ -1488,73 +1426,17 @@ export default function App() {
               </div>
             </div>
 
-            {/* Bottom Safe Margin: Gameplay Merge Hint + Official CritFuse Mobile Games Studio Badge (Inline SVG) */}
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-              <div className="text-[11px] sm:text-xs font-bold text-amber-100/90 tracking-wide leading-snug">
-                Funde armas iguales en caliente (Nv.1 ➔ Plata ➔ Oro) · Une 2 Oro en Evolución Suprema
-              </div>
-              <div
+            {/* Bottom Safe Margin: CritFuse studio logo (docs/branding/logo-critfuse-horizontal.png) */}
+            <div className="flex flex-col items-center">
+              <img
                 data-testid="critfuse-studio-badge"
-                className="inline-flex items-center gap-2 self-start sm:self-auto rounded-xl bg-slate-950/92 border border-orange-500/65 px-2.5 py-1.5 shadow-md"
-              >
-                <svg
-                  viewBox="0 0 40 44"
-                  className="w-6 h-6 shrink-0"
-                  aria-hidden="true"
-                >
-                  <path
-                    d="M20 2 L6 8 V21 C6 31 12 38 20 42 Z"
-                    fill="#334155"
-                    stroke="#94a3b8"
-                    strokeWidth="2.2"
-                  />
-                  <path
-                    d="M20 2 L34 8 V21 C34 31 28 38 20 42 Z"
-                    fill="#9a3412"
-                    stroke="#f97316"
-                    strokeWidth="2.2"
-                  />
-                  <text
-                    x="13"
-                    y="27"
-                    textAnchor="middle"
-                    fill="#e2e8f0"
-                    fontFamily="Outfit, sans-serif"
-                    fontWeight="900"
-                    fontSize="15"
-                  >
-                    C
-                  </text>
-                  <text
-                    x="27"
-                    y="27"
-                    textAnchor="middle"
-                    fill="#fb923c"
-                    fontFamily="Outfit, sans-serif"
-                    fontWeight="900"
-                    fontSize="15"
-                  >
-                    F
-                  </text>
-                  <polygon
-                    points="22,9 15,23 20,23 18,35 26,20 21,20"
-                    fill="#fde047"
-                    stroke="#0f172a"
-                    strokeWidth="1"
-                  />
-                </svg>
-                <div className="flex flex-col leading-none">
-                  <span className="text-[11px] font-display font-black tracking-wide text-white">
-                    Crit<span className="text-orange-400">Fuse</span>{' '}
-                    <span className="text-[9.5px] font-sans font-extrabold text-slate-300 uppercase">
-                      Mobile Games
-                    </span>
-                  </span>
-                  <span className="text-[9.5px] font-mono font-bold text-amber-300/90 mt-0.5">
-                    critfuse.com
-                  </span>
-                </div>
-              </div>
+                src="/branding/logo-critfuse.webp"
+                alt="CritFuse Mobile Games"
+                width={1000}
+                height={281}
+                draggable={false}
+                className="h-14 sm:h-16 w-auto select-none pointer-events-none drop-shadow-[0_2px_6px_rgba(0,0,0,0.7)]"
+              />
             </div>
           </section>
         )}

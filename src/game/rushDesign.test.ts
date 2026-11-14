@@ -15,6 +15,9 @@ import {
   planRushWave,
   RUSH_EVOLUTION_WEAR_SECONDS,
   RUSH_INITIAL_SUPPLY,
+  RUSH_MAX_BUG_SPEED_MULT,
+  RUSH_MAX_CONCURRENT_BUGS,
+  RUSH_MAX_SPRAY_FLUS_ON_BOARD,
   RUSH_OPENING_CENTER_RAIL,
   RUSH_SUPPLY_BASE_PER_SEC,
   RUSH_WAVE_WARNING_SECONDS,
@@ -203,6 +206,7 @@ interface SimBug {
 const SIM_BUG_HP: Record<BugType, number> = { speed_ant: 38, cap_beetle: 78, acid_wasp: 60, shift_roach: 56, king_crab: 145 };
 const SIM_BUG_SPEED: Record<BugType, number> = { speed_ant: 0.68, cap_beetle: 0.48, acid_wasp: 0.52, shift_roach: 0.55, king_crab: 0.4 };
 const SIM_DPS: Record<number, number> = { 1: 13.5, 2: 19.5, 3: 27 };
+const SIM_SHOOTERS: ReadonlySet<UtensilType> = new Set<UtensilType>(['spray_flus', 'mop_vortex', 'aerosol_torch']);
 
 type Bot = {
   onAnnounce(plan: RushWavePlan, ctx: BotContext): void;
@@ -241,7 +245,6 @@ function simulateRush(seed: number, bot: Bot, maxSeconds = 180, log?: (msg: stri
     buy(type, rail, row) {
       if (towers.length >= ctx.cap || supply < ctx.cost) return false;
       if (towers.some((tw) => tw.piece.rail === rail && tw.piece.row === row)) return false;
-      supply -= ctx.cost;
       const placed = executeRushDropOrMerge(
         towers.map((tw) => tw.piece),
         makePiece(`t${nextId++}`, type, 1, null, null),
@@ -250,6 +253,9 @@ function simulateRush(seed: number, bot: Bot, maxSeconds = 180, log?: (msg: stri
         2,
         ctx.cap
       );
+      // Same rules as the game: board cap and the 2 Flus-Flus limit reject the purchase.
+      if (placed.outcome !== 'placed') return false;
+      supply -= ctx.cost;
       const newPiece = placed.updatedPieces[placed.updatedPieces.length - 1];
       towers.push({
         piece: newPiece,
@@ -337,7 +343,10 @@ function simulateRush(seed: number, bot: Bot, maxSeconds = 180, log?: (msg: stri
       if (onRail.length === 0) continue;
       const types = new Set(onRail.map((tw) => tw.piece.type));
       const fan = types.has('spray_flus') && types.has('scourer_nanas');
-      const dps = onRail.reduce((acc, tw) => acc + SIM_DPS[Math.min(3, tw.piece.level)], 0);
+      // Only shooters deal damage (as in the engine): Estropajo and Jabón shape shots/bugs but never fire.
+      const dps = onRail
+        .filter((tw) => SIM_SHOOTERS.has(tw.piece.type))
+        .reduce((acc, tw) => acc + SIM_DPS[Math.min(3, tw.piece.level)], 0);
       const hittable = bugs
         .filter((b) => Math.round(b.rail) === rail && b.y >= 0 && b.hp > 0 && !b.shielded)
         .sort((a, b) => b.y - a.y);
@@ -376,13 +385,16 @@ function simulateRush(seed: number, bot: Bot, maxSeconds = 180, log?: (msg: stri
   return maxSeconds;
 }
 
-/** Covers rails with the cheapest weapon and never moves anything (the old dominant strategy). */
+/**
+ * Covers rails with the cheapest weapon and never moves anything (the old dominant strategy). With the
+ * 2 Flus-Flus limit it walls the remaining rails with Estropajo instead.
+ */
 const staticCoverBot: Bot = {
   onAnnounce() {},
   act(ctx) {
     for (const rail of [1, 2, 0, 3]) {
       if (!ctx.towers.some((tw) => tw.piece.rail === rail)) {
-        ctx.buy('spray_flus', rail, 5);
+        if (!ctx.buy('spray_flus', rail, 5)) ctx.buy('scourer_nanas', rail, 5);
       }
     }
   },
@@ -479,4 +491,40 @@ test('Diseño Supervivencia: tapar carriles y no tocar nada pierde pronto; leer 
     median(tacticalTimes) >= 1.8 * median(staticTimes),
     `jugar bien debe multiplicar la supervivencia: mediana táctica ${median(tacticalTimes)} s vs estática ${median(staticTimes)} s`
   );
+});
+
+// ---------------------------------------------------------------------------
+// Orquestación: invariantes que mantienen el tablero legible (si Gemini los rompe, la CI se pone en rojo)
+// ---------------------------------------------------------------------------
+
+test('Orquestación: como máximo 2 Flus-Flus en la mesa; fusionar y mover siguen permitidos', () => {
+  const board = [
+    { ...executeRushDropOrMerge([], makePiece('f1', 'spray_flus', 1, null, null), 0, 5, 2, 5).updatedPieces[0] },
+  ];
+  const two = executeRushDropOrMerge(board, makePiece('f2', 'spray_flus', 1, null, null), 2, 5, 2, 5).updatedPieces;
+  assert.equal(two.filter((p) => p.type === 'spray_flus').length, RUSH_MAX_SPRAY_FLUS_ON_BOARD);
+
+  const third = executeRushDropOrMerge(two, makePiece('f3', 'spray_flus', 1, null, null), 3, 5, 2, 5);
+  assert.equal(third.outcome, 'type_cap_reached');
+  assert.equal(third.updatedPieces.length, 2);
+
+  // Other weapons still fit under the board cap.
+  assert.equal(executeRushDropOrMerge(two, makePiece('s1', 'soap_bar', 1, null, null), 3, 5, 2, 5).outcome, 'placed');
+  // Fusing the card into a Flus-Flus already on the counter is allowed.
+  assert.equal(executeRushDropOrMerge(two, makePiece('f4', 'spray_flus', 1, null, null), 0, 5, 2, 5).outcome, 'merged');
+  // Moving a placed Flus-Flus to another rail is the intended play.
+  const moved = executeRushDropOrMerge(two, two[0], 1, 4, 2, 5);
+  assert.equal(moved.outcome, 'placed');
+  assert.equal(moved.updatedPieces.filter((p) => p.type === 'spray_flus').length, 2);
+});
+
+test('Orquestación: nunca más de 4 bichos a la vez y velocidad con techo, sea cual sea el tiempo o el arsenal', () => {
+  for (let t = 0; t <= 600; t += 5) {
+    for (const power of [0, 3, 8, 15, 30]) {
+      const dir = computeRushDirectorParams(t, power);
+      assert.ok(dir.maxConcurrentBugs <= RUSH_MAX_CONCURRENT_BUGS, `t=${t}s poder=${power}: ${dir.maxConcurrentBugs} bichos`);
+      assert.ok(dir.speedMultiplier <= RUSH_MAX_BUG_SPEED_MULT, `t=${t}s poder=${power}: velocidad ${dir.speedMultiplier}`);
+    }
+  }
+  assert.equal(computeRushDirectorParams(10, 0).maxConcurrentBugs, 3);
 });
