@@ -8,11 +8,7 @@ Notación: carril **C1–C4** y fila **F1–F7**, como en las fichas de nivel. F
 
 ## 1. Calendario
 
-Con un bicho nuevo cada 2–3 niveles, 3 niveles seguidos por bicho y ningún debut en un X0, solo hay dos opciones:
-- **A (la de este documento):** dos bichos debutan en un nivel de mini-jefe (25 y 45). Son de respuesta simple, salen solos los primeros 15 s y el mini-jefe entra después.
-- **B:** ningún debut en jefes. Entonces el último bicho nuevo entra en el 52 y los niveles 55–59 se quedan sin bicho nuevo.
-
-Elegir A o B es decisión del autor.
+**Decidido (autor): opción A.** Con un bicho nuevo cada 2–3 niveles, 3 niveles seguidos por bicho y ningún debut en un X0, la única forma de cubrir hasta el Nv.59 es que dos bichos debuten en un nivel de mini-jefe (25 y 45). Son de respuesta simple, salen solos los primeros 15 s y el mini-jefe entra después. (La opción B, sin debuts en jefes, dejaba los Nv.55–59 sin bicho nuevo.)
 
 | # | Bicho | Niveles | Cómo se mata | Silueta / color a 48 px |
 |---|---|---|---|---|
@@ -47,7 +43,7 @@ El Nv.60 (gran jefe final) queda sin bicho de escolta propio en las dos opciones
 | Pompa devuelta por el Gel WC | calor |
 | Jabón, Escuadra | control, sin daño |
 
-La ola de lejía al perder un Sello lo mata todo (999). Si la Ultimate sigue llenándose en 3 bajas, también se salta cualquiera de estas respuestas: hay que decidir antes qué hace la Ultimate en el Estratégico.
+La ola de lejía al perder un Sello lo mata todo (999). **Decidido (autor): en el Estratégico la Ultimate se usa una vez por nivel**; los guiones deben aguantar ese único uso sin que se salte la respuesta del bicho que enseña el nivel.
 
 ## 3. Fichas
 
