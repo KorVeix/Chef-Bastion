@@ -101,7 +101,7 @@ La ola de lejía al perder un Sello lo mata todo (999). **Decidido (autor): en e
   - Cada chorro de Lejía, cada pompa del Gel y cada 0,5 s dentro del puente UV le **restan 2 s de mecha**. La espuma no cuenta, ni siquiera la corrosiva: no concentra el calor.
   - Con la mecha a 0, **¡POP!**:
     - Pringa 5 s las armas a 1 casilla.
-    - Suelta 3 palomitas (vida 16, a 1,0) que bajan rectas por su carril y los dos vecinos.
+    - Suelta 3 palomitas (vida 16, a 1,0) que bajan rectas por su carril y los dos vecinos. En C1 o C4 suelta 2: su carril y el único vecino.
     - La explosión cuenta como baja.
   - Si explota en F1–F2 no pringa nada (ahí no hay armas).
 - **Cómo se mata:** Lejía sin Estropajo en su carril (F6–F7). La calienta y la empuja una fila cada 1,55 s, así que explota en F1–F2 a los ≈4,5 s. Un abanico más abajo limpia las palomitas.
@@ -146,7 +146,8 @@ La ola de lejía al perder un Sello lo mata todo (999). **Decidido (autor): en e
 - **Cómo se mata:** un Jabón alto en su carril (F3) y el abanico bajo (Estropajo en F6, Flus-Flus en F7). Ya emulsionada recorre ≈7 s de fuego; necesita ≈3. También vale una Fregona en su carril después del Jabón.
 - **Qué NO lo mata:**
   - **Abanico solo:** resbala.
-  - **Lejía + Estropajo, puente, Gel:** salpica y acelera.
+  - **Lejía + Estropajo, puente:** salpica y acelera.
+  - **Gel WC:** no hace nada (la Mancha no escupe, así que no hay nada que devolver).
   - **Jabón→Fregona al lado (respuesta de la cucaracha):** el Jabón no la desvía, así que nunca llega a la Fregona vecina.
 
 ### 8. Chipirón en su Tinta · Nv.37–39
@@ -162,7 +163,7 @@ La ola de lejía al perder un Sello lo mata todo (999). **Decidido (autor): en e
   - **Abanico solo:** el Estropajo pasa todo el rato manchado.
   - **Abanico desde el carril de al lado (lección del Nv.9):** la tinta diagonal también lo alcanza.
   - **Gel:** se mancha.
-  - **Puente:** se mancha el Aerosol de su carril y se corta.
+  - **Puente:** se mancha el Aerosol de su carril y el puente se corta. Es una regla nueva: hoy `evaluateBoardCombos` monta el puente aunque un Aerosol esté pringado, y ni el motor ni el simulador lo comprueban (ver punto 5).
   - **Jabón→Fregona:** ventosas.
 
 ### 9. Moscardón Verde · Nv.39–41
@@ -206,7 +207,8 @@ La ola de lejía al perder un Sello lo mata todo (999). **Decidido (autor): en e
 - **Aspecto:** lata de atún plateada-azulada (#94A3B8) con etiqueta roja; asoman 2 pinzas rojas, patitas y ojos en pedúnculos. Cilindro bajo y ancho.
 - **Comportamiento:**
   - Vida 160.
-  - Entra por un **conducto lateral** en F4 o F5 y **cruza andando de lado** (×1,2 en lateral, mucho más lento que la hormiga de conducto, que va a ×4).
+  - Velocidad base 0,50: cruza de lado a ×1,2 de esa base (la hormiga de conducto cruza a ×4) y, enderezado, baja a 0,50.
+  - Entra por un **conducto lateral** en F4 o F5 y **cruza andando de lado**.
   - Al llegar al borde contrario no baja: **se da la vuelta y cruza otra vez una fila más abajo**, como un invasor, hasta pasar de F7.
   - La lata **refleja el agua y el UV**: todo lo que no sea Lejía (chorro o espuma corrosiva) le hace un 20 %.
 - **Cómo se mata:** una Escuadra en su fila lo endereza hacia abajo por ese carril y una Lejía debajo, en el mismo carril, lo funde y lo frena con el empuje. Puede ir con o sin Estropajo.
@@ -286,10 +288,12 @@ Para estimar el coste. Cada regla va en el motor y en `strategicSim.ts` a la vez
 5. **Enroscarse al primer impacto y tope de Escuadra** (Cochinilla).
 6. **Reflejar proyectiles e inmunidad sobre casillas con arma** (Caracol).
 7. **Emulsión por Jabón sin desvío y salpicadura térmica** (Aceite).
-8. **Tinta en abanico de 3, sin efecto de Jabón ni Fregona, y Fregona que limpia alrededor** (Chipirón).
+8. **Tinta en abanico de 3, sin efecto de Jabón ni Fregona, Fregona que limpia alrededor, y puente UV que se corta si uno de sus dos Aerosoles está manchado o pringado** (Chipirón). Esto último cambia también la avispa y la Chinche: hoy el ácido que pringa un Aerosol no corta su puente. Hay que revalidar los guiones que lo usen.
 9. **Vuelo alto, zigzag y atracción por el Gel** (Moscardón).
 10. **Empapado acumulable, solo daño por puente** (Bayeta).
 11. **Inmunidad al último tipo de daño** (Pulgón).
 12. **Cruce lateral que da la vuelta una fila más abajo**, regla común para Ermitaño y Grillo.
+    - **Ermitaño:** la lata deja en el 20 % todo lo que no sea Lejía, incluido el puente UV y la pompa del Gel. No sirve `armoredTankDamageMult`, que da daño completo a todo lo térmico.
+    - **Grillo:** en horizontal salta por encima de las armas (el Jabón no le hace nada). Enderezado por una Escuadra, baja con zigzag de carril cada 1,6 s hasta que pisa un Jabón.
 13. **Nube al cambiar de carril:** reutiliza el ácido de la avispa y el zigzag de la cucaracha (Chinche).
 14. **Vapor periódico:** reutiliza el ácido, más la coraza del cangrejo (Olla Exprés).
