@@ -85,6 +85,10 @@ test('Guiones: las apariciones salen en su segundo y la fase avanza por tercios'
 const FULL_SEARCH = process.env.STRATEGIC_FULL === '1';
 const SAMPLE_LIMIT = 400;
 
+// Nota: «ganar» aquí es limpiar el guion sin perder ningún plato. En partida hay 3 sellos: cada
+// fuga arruina un plato y lanza una onda de Lejía, y se pierde con la cuarta (`simulateStrategic`
+// con `seals: 3` lo mide). Estos tests exigen recolocar para el resultado perfecto.
+
 /** Momentos de recolocación: pasos de la solución separados más de 3 s (sin contar la colocación inicial). */
 function moveMoments(script: (typeof STRATEGIC_SCRIPTS)[number]): number[] {
   const sorted = [...script.solution].sort((a, b) => a.t - b.t);
@@ -98,7 +102,7 @@ function moveMoments(script: (typeof STRATEGIC_SCRIPTS)[number]): number[] {
 }
 
 for (const script of STRATEGIC_SCRIPTS.filter((s) => s.minMoves)) {
-  test(`Guion Nv.${script.level}: exige ${script.minMoves} recolocaciones y parar antes pierde`, () => {
+  test(`Guion Nv.${script.level}: exige ${script.minMoves} recolocaciones; parar antes pierde algún plato`, () => {
     const moments = moveMoments(script);
     assert.ok(moments.length >= script.minMoves!, `solo ${moments.length} recolocaciones`);
     for (const cut of moments) {
@@ -108,7 +112,7 @@ for (const script of STRATEGIC_SCRIPTS.filter((s) => s.minMoves)) {
     }
   });
 
-  test(`Guion Nv.${script.level}: ningún tablero quieto con los combos montados gana${FULL_SEARCH ? '' : ' (muestra)'}`, () => {
+  test(`Guion Nv.${script.level}: ningún tablero quieto con los combos montados gana sin perder platos${FULL_SEARCH ? '' : ' (muestra)'}`, () => {
     const all = enumerateComboLayouts(script.loadout, { looseRows: script.staticSearchRows });
     assert.ok(all.length > 0);
     // `bun run test` recorre una muestra fija (como mucho SAMPLE_LIMIT tableros repartidos por toda la
@@ -153,4 +157,17 @@ test('Gran Jefe en el simulador: pasa por las 3 fases y el mismo guion da siempr
   // Solo con el Flus-Flus (sin calor ni control) la coraza y la esquiva lo dejan pasar.
   const weak = simulateStrategic({ level: 10, spawns, plan: [{ t: 0, placements: [{ type: 'spray_flus', rail: 1, row: 5 }] }] });
   assert.equal(weak.leaks.length, 1);
+});
+
+test('Sellos: la solución de cada guion no pierde platos y el simulador modela la onda de Lejía', () => {
+  for (const script of STRATEGIC_SCRIPTS) {
+    const res = simulateStrategic({ level: script.level, spawns: script.spawns, plan: script.solution, seals: 3 });
+    assert.equal(res.platesLost, 0, `Nv.${script.level}: la solución pierde ${res.platesLost} platos`);
+    assert.equal(res.defeated, false);
+  }
+  // Sin defensas en el Nv.1 se pierden los 3 sellos y llega la derrota.
+  const nv1 = getStrategicScript(1)!;
+  const bare = simulateStrategic({ level: 1, spawns: nv1.spawns, plan: [], seals: 3 });
+  assert.equal(bare.platesLost, 3);
+  assert.equal(bare.defeated, true);
 });

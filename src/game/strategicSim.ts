@@ -85,6 +85,9 @@ export interface SimResult {
   firstKillT: number | null;
   /** Mayor tramo sin ningún bicho en pantalla mientras el guion sigue (tiempo muerto). */
   maxDeadGap: number;
+  /** Con `seals`: platos perdidos y si una fuga llegó sin sellos (derrota del motor). */
+  platesLost: number;
+  defeated: boolean;
   endTime: number;
 }
 
@@ -195,6 +198,14 @@ export function simulateStrategic(opts: {
   maxTime?: number;
   /** Corta la simulación en la primera fuga (búsquedas de disposiciones que pierden). */
   stopOnFirstLeak?: boolean;
+  /**
+   * Sellos del motor (3 en partida): cada fuga gasta uno, arruina un plato y lanza una onda de
+   * Lejía por su carril (999 de daño, 180 a un jefe, que vuelve a la fila 2,4). Con 0 (por defecto)
+   * cualquier fuga cuenta como fallo de diseño; con 3 se mide la derrota real (`defeated`).
+   */
+  seals?: number;
+  /** Con `seals`: corta en la derrota (búsquedas). */
+  stopOnDefeat?: boolean;
 }): SimResult {
   const dt = opts.dt ?? 1 / 60;
   const maxTime = opts.maxTime ?? 600;
@@ -216,6 +227,9 @@ export function simulateStrategic(opts: {
   let firstSpawnT: number | null = null;
   let deadGap = 0;
   let maxDeadGap = 0;
+  let sealsLeft = opts.seals ?? 0;
+  let platesLost = 0;
+  let defeated = false;
   let t = 0;
 
   const applyLayout = (step: SimLayoutStep) => {
@@ -632,6 +646,29 @@ export function simulateStrategic(opts: {
       }
       if (bug.y >= PLATE_ROW) {
         leaks.push({ t, type: bug.type, rail: railInt });
+        if (sealsLeft > 0) {
+          sealsLeft -= 1;
+          platesLost += 1;
+          projectiles.push({
+            x: railInt,
+            y: 6.8,
+            vx: 0,
+            vy: -8.5,
+            damage: bug.bossTier ? 180 : 999,
+            pierce: true,
+            life: 1.8,
+            flavor: 'reflected_bubble',
+            fromVortex: false,
+            fromDiagonalFoam: false,
+            thermal: true,
+          });
+          if (bug.bossTier) {
+            bug.y = 2.4;
+            alive.push(bug);
+          }
+          continue;
+        }
+        if (opts.seals) defeated = true;
         continue;
       }
       alive.push(bug);
@@ -641,6 +678,7 @@ export function simulateStrategic(opts: {
     t += dt;
     if (spawnIdx >= spawns.length && bugs.length === 0) break;
     if (opts.stopOnFirstLeak && leaks.length > 0) break;
+    if (opts.stopOnDefeat && defeated) break;
   }
 
   return {
@@ -653,5 +691,7 @@ export function simulateStrategic(opts: {
     firstKillT: kills.length > 0 ? kills[0].t : null,
     maxDeadGap,
     endTime: t,
+    platesLost,
+    defeated,
   };
 }
