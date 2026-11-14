@@ -8,6 +8,7 @@ import {
 } from './strategicScripts';
 import { SIM_SUPPORTED_BUGS, simulateStrategic, validateLayout } from './strategicSim';
 import type { BugType } from './types';
+import { enumerateComboLayouts } from './strategicLayouts';
 
 const leaksLabel = (leaks: Array<{ t: number; type: BugType; rail: number }>) =>
   leaks.map((l) => `${l.type}@carril ${l.rail + 1} (${l.t.toFixed(1)} s)`).join(', ');
@@ -78,3 +79,46 @@ test('Guiones: las apariciones salen en su segundo y la fase avanza por tercios'
   assert.equal(getScriptPhase(script, 0), 1);
   assert.equal(getScriptPhase(script, script.spawns.length), 3);
 });
+
+/** Momentos de recolocación: pasos de la solución separados más de 3 s (sin contar la colocación inicial). */
+function moveMoments(script: (typeof STRATEGIC_SCRIPTS)[number]): number[] {
+  const sorted = [...script.solution].sort((a, b) => a.t - b.t);
+  const starts: number[] = [];
+  let last = -99;
+  for (const step of sorted) {
+    if (step.t - last > 3) starts.push(step.t);
+    last = step.t;
+  }
+  return starts.slice(1);
+}
+
+for (const script of STRATEGIC_SCRIPTS.filter((s) => s.minMoves)) {
+  test(`Guion Nv.${script.level}: exige ${script.minMoves} recolocaciones y parar antes pierde`, () => {
+    const moments = moveMoments(script);
+    assert.ok(moments.length >= script.minMoves!, `solo ${moments.length} recolocaciones`);
+    for (const cut of moments) {
+      const plan = script.solution.filter((s) => s.t < cut);
+      const res = simulateStrategic({ level: script.level, spawns: script.spawns, plan });
+      assert.ok(res.leaks.length >= 1, `dejar de mover en el segundo ${cut} también gana`);
+    }
+  });
+
+  test(`Guion Nv.${script.level}: ningún tablero quieto con los combos montados gana`, () => {
+    const layouts = enumerateComboLayouts(script.loadout, { looseRows: script.staticSearchRows });
+    assert.ok(layouts.length > 0);
+    const winners = layouts.filter(
+      (placements) =>
+        simulateStrategic({
+          level: script.level,
+          spawns: script.spawns,
+          plan: [{ t: 0, placements }],
+          stopOnFirstLeak: true,
+        }).leaks.length === 0
+    );
+    const show = winners
+      .slice(0, 3)
+      .map((l) => l.map((p) => `${p.type}@C${p.rail + 1}F${p.row + 1}`).join(' '))
+      .join(' | ');
+    assert.equal(winners.length, 0, `${winners.length}/${layouts.length} tableros quietos ganan: ${show}`);
+  });
+}

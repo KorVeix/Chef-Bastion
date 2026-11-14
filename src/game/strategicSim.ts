@@ -163,6 +163,8 @@ export function simulateStrategic(opts: {
   plan: readonly SimLayoutStep[];
   dt?: number;
   maxTime?: number;
+  /** Corta la simulación en la primera fuga (búsquedas de disposiciones que pierden). */
+  stopOnFirstLeak?: boolean;
 }): SimResult {
   const dt = opts.dt ?? 1 / 60;
   const maxTime = opts.maxTime ?? 600;
@@ -544,6 +546,7 @@ export function simulateStrategic(opts: {
 
     t += dt;
     if (spawnIdx >= spawns.length && bugs.length === 0) break;
+    if (opts.stopOnFirstLeak && leaks.length > 0) break;
   }
 
   return {
