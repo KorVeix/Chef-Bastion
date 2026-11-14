@@ -51,6 +51,57 @@ function getVerticalAnchorClass(yPct: number): string {
   return 'top-[64%]';
 }
 
+// Rejilla fina de anclajes para los avisos de tanda (clases literales para que Tailwind las genere).
+const VENT_WARNING_LEFT = [
+  'left-[10%]', 'left-[14%]', 'left-[18%]', 'left-[22%]', 'left-[26%]', 'left-[30%]', 'left-[34%]',
+  'left-[38%]', 'left-[42%]', 'left-[46%]', 'left-[50%]', 'left-[54%]', 'left-[58%]', 'left-[62%]',
+  'left-[66%]', 'left-[70%]', 'left-[74%]', 'left-[78%]', 'left-[82%]', 'left-[86%]', 'left-[90%]',
+] as const;
+const VENT_WARNING_TOP = [
+  'top-[14%]', 'top-[17%]', 'top-[20%]', 'top-[23%]', 'top-[26%]', 'top-[29%]', 'top-[32%]', 'top-[35%]',
+  'top-[38%]', 'top-[41%]', 'top-[44%]', 'top-[47%]', 'top-[50%]', 'top-[53%]', 'top-[56%]', 'top-[59%]',
+  'top-[62%]', 'top-[65%]', 'top-[68%]', 'top-[71%]', 'top-[74%]', 'top-[77%]', 'top-[80%]',
+] as const;
+const snapClass = (classes: readonly string[], pct: number, from: number, step: number) =>
+  classes[Math.max(0, Math.min(classes.length - 1, Math.round((pct - from) / step)))];
+
+export interface VentWarningView {
+  id: string;
+  xPct: number;
+  yPct: number;
+  label: string;
+  secondsLeft: number;
+  tone: 'amber' | 'pink' | 'red';
+}
+
+/** Avisos de tanda sobre su respiradero (o conducto): «🐜×3 · 2s», visibles hasta que sale la tanda. */
+export const VentWarningLayer: React.FC<{ warnings: readonly VentWarningView[] }> = ({ warnings }) => {
+  if (warnings.length === 0) return null;
+  const toneClass: Record<VentWarningView['tone'], string> = {
+    amber: 'border-amber-400 text-amber-200',
+    pink: 'border-fuchsia-400 text-fuchsia-200',
+    red: 'border-red-500 text-red-200 animate-pulse',
+  };
+  return (
+    <div aria-live="polite" className="pointer-events-none fixed inset-0 z-20 overflow-hidden">
+      {warnings.map((w) => (
+        <div
+          key={w.id}
+          data-testid="vent-warning"
+          className={`fixed ${snapClass(VENT_WARNING_LEFT, w.xPct, 10, 4)} ${snapClass(
+            VENT_WARNING_TOP,
+            w.yPct,
+            14,
+            3
+          )} -translate-x-1/2 -translate-y-full bg-slate-950/90 border-2 ${toneClass[w.tone]} px-2 py-0.5 rounded-lg text-[11px] font-display font-black tracking-wide whitespace-nowrap shadow-[0_3px_0_#0f172a]`}
+        >
+          {w.label} · {Math.max(1, Math.ceil(w.secondsLeft))}s
+        </div>
+      ))}
+    </div>
+  );
+};
+
 export const FloatingComboLayer: React.FC<{ combos: FloatingComboEvent[] }> = ({ combos }) => {
   if (combos.length === 0) return null;
 
