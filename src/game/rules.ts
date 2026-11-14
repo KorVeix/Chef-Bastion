@@ -2060,6 +2060,17 @@ export const DEFAULT_KITCHEN_UPGRADES: KitchenUpgrades = {
   ultBaseCharge: 0,
 };
 
+/** Usos de la Ultimate por nivel en el Estratégico (decisión del autor). En Supervivencia no hay límite. */
+export const STRATEGIC_ULTIMATE_USES_PER_LEVEL = 1;
+
+/**
+ * ¿Puede la Ultimate cargarse o dispararse? En el Estratégico, una vez gastada en el nivel
+ * deja de cargarse hasta el nivel siguiente, para que no se salte el combo que enseña el guion.
+ */
+export function canUseUltimate(gameMode: 'rush' | 'strategic', usesThisLevel: number): boolean {
+  return gameMode === 'rush' || usesThisLevel < STRATEGIC_ULTIMATE_USES_PER_LEVEL;
+}
+
 /**
  * Nota de un nivel del Estratégico por los sellos perdidos (cada fuga arruina un plato):
  * 0 → 3 estrellas, 1 → 2, 2 o 3 → 1. Pasar sin recolocar es posible perdiendo platos;
@@ -3178,6 +3189,8 @@ export function getTacticalInspectorCard(
     equippedSpecial: SpecialWeaponId;
     ultimateCharge: number;
     isRushMode: boolean;
+    /** Estratégico: Ultimate ya usada en este nivel. */
+    ultimateSpent?: boolean;
   }
 ): TacticalInspectorCardData | null {
   if (!target) return null;
@@ -3202,6 +3215,15 @@ export function getTacticalInspectorCard(
   if (target.kind === 'ultimate') {
     const spec = SPECIAL_WEAPONS_CATALOG[opts.equippedSpecial] ?? SPECIAL_WEAPONS_CATALOG.hydro_blast;
     const pct = Math.min(100, Math.max(0, Math.round(opts.ultimateCharge)));
+    if (opts.ultimateSpent) {
+      return {
+        title: `${spec.icon} ${spec.name}`,
+        badge: 'USADA EN ESTE NIVEL',
+        whatItDoes: spec.desc,
+        combineOrMerge: 'En el Estratégico hay una Ultimate por nivel: vuelve a estar disponible en el siguiente.',
+        accent: 'yellow',
+      };
+    }
     return {
       title: `${spec.icon} ${spec.name}`,
       badge: pct >= 100 ? '¡LISTO PARA LANZAR!' : `CARGA ${pct}%`,

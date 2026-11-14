@@ -94,6 +94,7 @@ import {
   getLevelSpeedMultiplier,
   getTutorialGuideForLevel,
   HEAVY_IMPACT_HITSTOP_SECONDS,
+  canUseUltimate,
   isBiomeTransitionLevel,
   isDynamicOnboardingLevel,
   LEVEL_DURATION_SECONDS,
@@ -197,6 +198,8 @@ export interface HudSnapshot {
   sanitationSeals: number;
   score: number;
   pressurePct: number;
+  /** Estratégico: la Ultimate de este nivel ya se gastó (no vuelve a cargar hasta el siguiente). */
+  ultimateSpent?: boolean;
   slowMoActive: boolean;
   prepTimer: number;
   levelTimer: number;
@@ -1231,6 +1234,10 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
     let lastStandTimer = 0;
     let bossSpawnedForLevel = false;
     let pressurePct = 45;
+    // Ultimates disparadas en este nivel (el Estratégico solo permite una: `canUseUltimate`).
+    let ultimateUsesThisLevel = 0;
+    const ultimateMode = (): 'rush' | 'strategic' =>
+      stateRef.current.gameMode === 'rush' ? 'rush' : 'strategic';
     let spawnTimer = 2.0;
     let prepTimer = 0; // 3-second breather timer between Phase 1 -> 2 -> 3
     let levelTimer = LEVEL_DURATION_SECONDS; // 120s (2-minute) intense wave timer for Level 5+
@@ -1875,6 +1882,7 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
       bossSpawnedForLevel = false;
       const initUpgrades = computeKitchenUpgradeEffects(stateRef.current.kitchenUpgrades);
       pressurePct = initUpgrades.initialUltimatePct;
+      ultimateUsesThisLevel = 0;
       spawnTimer = isRush ? 1.4 : dynamicOnboarding ? 3.2 : 2.4;
       prepTimer = 0;
       levelTimer = LEVEL_DURATION_SECONDS;
@@ -2667,7 +2675,9 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
       // Consume Strategic Mode Coin Boosters (Level 15+)
       if (stateRef.current.boostUltimateRef?.current) {
         stateRef.current.boostUltimateRef.current = false;
-        pressurePct = Math.min(100, pressurePct + 50);
+        if (canUseUltimate(ultimateMode(), ultimateUsesThisLevel)) {
+          pressurePct = Math.min(100, pressurePct + 50);
+        }
         spawnParticles(0, 0.65, 4.18, 18, 0xfacc15, 2.9);
       }
       if (stateRef.current.boostPlateShieldRef?.current) {
@@ -2686,10 +2696,14 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
       }
 
       // Check Ultimate trigger (Roomba Kamikaze / Hidrolimpiadora / Volcano — Volcano uses real chemical orange/red fire!)
+      if (triggerUltimateRef.current && gState === 'playing' && !canUseUltimate(ultimateMode(), ultimateUsesThisLevel)) {
+        triggerUltimateRef.current = false;
+      }
       if (triggerUltimateRef.current && gState === 'playing') {
         triggerUltimateRef.current = false;
         inPlacementPhase = false;
         pressurePct = 0;
+        ultimateUsesThisLevel += 1;
         cameraTrauma = 0.85;
         hitstopTimer = 0.06;
         chefCelebrateTimer = 0.9;
@@ -5335,10 +5349,12 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
             score += ptsAwarded;
             const basePressureGain =
               stateRef.current.armorId === 'golden_scourer_mail' ? 24 : 18;
-            pressurePct = Math.min(
-              100,
-              pressurePct + Math.round(basePressureGain * liveMenuBuffs.ultChargeMult)
-            );
+            if (canUseUltimate(ultimateMode(), ultimateUsesThisLevel)) {
+              pressurePct = Math.min(
+                100,
+                pressurePct + Math.round(basePressureGain * liveMenuBuffs.ultChargeMult)
+              );
+            }
 
             const killNowMs = Date.now();
             if (killNowMs - lastRapidKillAtMs < 1200) {
@@ -6088,6 +6104,7 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
           sanitationSeals,
           score,
           pressurePct: Math.round(pressurePct),
+          ultimateSpent: !canUseUltimate(ultimateMode(), ultimateUsesThisLevel),
           slowMoActive: !inPlacementPhase && timeScale < 0.5,
           prepTimer,
           levelTimer: Math.ceil(levelTimer),

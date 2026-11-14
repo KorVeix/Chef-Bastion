@@ -1100,3 +1100,43 @@ test('Nota del nivel: 3★ sin platos perdidos, 2★ con uno, 1★ con dos o má
   assert.deepEqual(sanitizeLevelStars({ 1: 3, 2: 5, x: 2, 0: 1, 7: 2 }), { 1: 3, 7: 2 });
   assert.deepEqual(sanitizeLevelStars(null), {});
 });
+
+test('Ultimate: una vez por nivel en el Estratégico, sin límite en Supervivencia', async () => {
+  const { canUseUltimate, STRATEGIC_ULTIMATE_USES_PER_LEVEL } = await import('./rules');
+  assert.equal(STRATEGIC_ULTIMATE_USES_PER_LEVEL, 1);
+  assert.equal(canUseUltimate('strategic', 0), true);
+  assert.equal(canUseUltimate('strategic', 1), false);
+  assert.equal(canUseUltimate('strategic', 2), false);
+  assert.equal(canUseUltimate('rush', 0), true);
+  assert.equal(canUseUltimate('rush', 5), true);
+});
+
+test('Inspector de la Ultimate: gastada en el Estratégico dice que vuelve en el nivel siguiente', () => {
+  const spent = getTacticalInspectorCard(
+    { kind: 'ultimate' },
+    {
+      pieces: [],
+      intactPlates: [true, true, true, true],
+      vipPlateRail: null,
+      equippedSpecial: 'hydro_blast',
+      ultimateCharge: 0,
+      isRushMode: false,
+      ultimateSpent: true,
+    }
+  );
+  assert.ok(spent);
+  assert.equal(spent.badge, 'USADA EN ESTE NIVEL');
+  assert.ok(spent.combineOrMerge.includes('siguiente'));
+  const charging = getTacticalInspectorCard(
+    { kind: 'ultimate' },
+    {
+      pieces: [],
+      intactPlates: [true, true, true, true],
+      vipPlateRail: null,
+      equippedSpecial: 'hydro_blast',
+      ultimateCharge: 40,
+      isRushMode: false,
+    }
+  );
+  assert.equal(charging?.badge, 'CARGA 40%');
+});
