@@ -252,6 +252,8 @@ interface ChefBastionCanvasProps {
     bugsCleaned: number;
     vipSaved?: boolean;
     allFourPlatesIntact?: boolean;
+    /** Estratégico: sellos perdidos (cada fuga arruina un plato); da la nota del nivel. */
+    sealsLost?: number;
     survivedSeconds?: number;
     mergesCount?: number;
     evolutionsCount?: number;
@@ -5631,6 +5633,7 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
             breachesByBug: { ...breachesByBug },
             vipSaved,
             allFourPlatesIntact,
+            sealsLost: Math.max(0, 3 - sanitationSeals),
           });
         }, 450);
       }

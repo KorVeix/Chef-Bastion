@@ -63,6 +63,9 @@ import {
   WORLD_UNLOCK_LEVELS,
   migrateLegacyProgressIds,
   VALID_SPECIALS,
+  computeLevelStars,
+  mergeBestLevelStars,
+  sanitizeLevelStars,
 } from './game/rules';
 import {
   ArmorId,
@@ -96,6 +99,7 @@ function loadSavedProgress(): PlayerProgress {
     const raw = localStorage.getItem(SAVE_STORAGE_KEY);
     if (!raw) return DEFAULT_PROGRESS;
     const parsed = migrateLegacyProgressIds(JSON.parse(raw) as Partial<PlayerProgress>);
+    parsed.levelStars = sanitizeLevelStars(parsed.levelStars);
     const equippedSpecial = VALID_SPECIALS.includes(parsed.equippedSpecial as SpecialWeaponId)
       ? (parsed.equippedSpecial as SpecialWeaponId)
       : DEFAULT_PROGRESS.equippedSpecial;
@@ -296,6 +300,9 @@ export default function App() {
     vipSaved?: boolean;
     coinsEarned?: number;
     classicToqueBonusApplied?: boolean;
+    /** Nota del nivel (solo en victoria del Estratégico) y la mejor que había antes. */
+    levelStars?: 1 | 2 | 3;
+    previousBestStars?: number;
   } | null>(null);
 
   const openCodexModal = useCallback((initialPage: 'all' | BugType = 'all') => {
@@ -651,6 +658,7 @@ export default function App() {
         bugsCleaned: number;
         vipSaved?: boolean;
         allFourPlatesIntact?: boolean;
+        sealsLost?: number;
         survivedSeconds?: number;
         mergesCount?: number;
         evolutionsCount?: number;
@@ -712,6 +720,8 @@ export default function App() {
         baseVictoryCoins: 120,
         baseDefeatCoins: 40,
       });
+      const playedLevel = progressRef.current.currentLevel;
+      const levelStars = victory ? computeLevelStars(finalStats.sealsLost ?? 0) : undefined;
       setRushReceipt(null);
       setEndOutcome({
         victory,
@@ -719,6 +729,8 @@ export default function App() {
         vipSaved,
         coinsEarned,
         classicToqueBonusApplied,
+        levelStars,
+        previousBestStars: progressRef.current.levelStars?.[playedLevel] ?? 0,
       });
       setGameState('gameover');
       setProgress((prev) => {
@@ -738,6 +750,9 @@ export default function App() {
           coins: prev.coins + coinsEarned,
           bestScore: Math.max(prev.bestScore, finalStats.score),
           totalBugsCleaned: prev.totalBugsCleaned + finalStats.bugsCleaned,
+          levelStars: levelStars
+            ? mergeBestLevelStars(prev.levelStars, playedLevel, levelStars)
+            : prev.levelStars,
         };
       });
     },
@@ -2639,6 +2654,28 @@ export default function App() {
                       endOutcome.phaseReached
                     )}
               </p>
+              {endOutcome.victory && endOutcome.levelStars && (
+                <div data-testid="level-stars" className="mt-2 flex flex-col items-center gap-0.5">
+                  <div
+                    className="text-3xl tracking-widest"
+                    aria-label={`Nota del nivel: ${endOutcome.levelStars} de 3 estrellas`}
+                  >
+                    {[1, 2, 3].map((i) => (
+                      <span key={i} className={i <= endOutcome.levelStars! ? 'text-yellow-300' : 'text-amber-800'}>
+                        ★
+                      </span>
+                    ))}
+                  </div>
+                  <div className="text-[11px] font-bold text-amber-200">
+                    {endOutcome.levelStars === 3
+                      ? '¡Nivel perfecto: ningún plato perdido!'
+                      : `Platos perdidos: ${endOutcome.levelStars === 2 ? 1 : '2 o más'} · repite sin perder ninguno para 3★`}
+                    {endOutcome.levelStars > (endOutcome.previousBestStars ?? 0) &&
+                      (endOutcome.previousBestStars ?? 0) > 0 &&
+                      ' · ¡Nuevo récord!'}
+                  </div>
+                </div>
+              )}
               {endOutcome.victory && endOutcome.vipSaved && (
                 <div
                   data-testid="vip-saved-badge"

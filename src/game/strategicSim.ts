@@ -88,7 +88,12 @@ export interface SimResult {
   firstKillT: number | null;
   /** Mayor tramo sin ningún bicho en pantalla mientras el guion sigue (tiempo muerto). */
   maxDeadGap: number;
+<<<<<<< HEAD
   /** Derrota real: el motor absorbe 3 fugas con los Sellos Sanitarios y pierde en la 4.ª. */
+=======
+  /** Con `seals`: platos perdidos y si una fuga llegó sin sellos (derrota del motor). */
+  platesLost: number;
+>>>>>>> origin/claude/dale-33w4mv
   defeated: boolean;
   endTime: number;
 }
@@ -207,10 +212,20 @@ export function simulateStrategic(opts: {
   /** Corta la simulación en la primera fuga (búsquedas de disposiciones que pierden). */
   stopOnFirstLeak?: boolean;
   /**
+<<<<<<< HEAD
    * Desfase del reloj con el que gira la Fregona: el motor usa el reloj real (incluye colocación y pausas),
    * así que los tests prueban varias fases.
    */
   clockOffset?: number;
+=======
+   * Sellos del motor (3 en partida): cada fuga gasta uno, arruina un plato y lanza una onda de
+   * Lejía por su carril (999 de daño, 180 a un jefe, que vuelve a la fila 2,4). Con 0 (por defecto)
+   * cualquier fuga cuenta como fallo de diseño; con 3 se mide la derrota real (`defeated`).
+   */
+  seals?: number;
+  /** Con `seals`: corta en la derrota (búsquedas). */
+  stopOnDefeat?: boolean;
+>>>>>>> origin/claude/dale-33w4mv
 }): SimResult {
   const clockOffset = opts.clockOffset ?? 0;
   const dt = opts.dt ?? 1 / 60;
@@ -233,9 +248,14 @@ export function simulateStrategic(opts: {
   let firstSpawnT: number | null = null;
   let deadGap = 0;
   let maxDeadGap = 0;
+<<<<<<< HEAD
   // Platos intactos: sus bonos (computeLiveMenuBuffs) se apagan al perder cada plato.
   const intactPlates = [true, true, true, true];
   let seals = SIM_SANITATION_SEALS;
+=======
+  let sealsLeft = opts.seals ?? 0;
+  let platesLost = 0;
+>>>>>>> origin/claude/dale-33w4mv
   let defeated = false;
   let t = 0;
 
@@ -674,12 +694,38 @@ export function simulateStrategic(opts: {
       }
       if (bug.y >= PLATE_ROW) {
         leaks.push({ t, type: bug.type, rail: railInt });
+<<<<<<< HEAD
         if (seals > 0) {
           seals -= 1;
           intactPlates[railInt] = false;
         } else {
           defeated = true;
         }
+=======
+        if (sealsLeft > 0) {
+          sealsLeft -= 1;
+          platesLost += 1;
+          projectiles.push({
+            x: railInt,
+            y: 6.8,
+            vx: 0,
+            vy: -8.5,
+            damage: bug.bossTier ? 180 : 999,
+            pierce: true,
+            life: 1.8,
+            flavor: 'reflected_bubble',
+            fromVortex: false,
+            fromDiagonalFoam: false,
+            thermal: true,
+          });
+          if (bug.bossTier) {
+            bug.y = 2.4;
+            alive.push(bug);
+          }
+          continue;
+        }
+        if (opts.seals) defeated = true;
+>>>>>>> origin/claude/dale-33w4mv
         continue;
       }
       alive.push(bug);
@@ -689,6 +735,7 @@ export function simulateStrategic(opts: {
     t += dt;
     if (spawnIdx >= spawns.length && bugs.length === 0) break;
     if (opts.stopOnFirstLeak && leaks.length > 0) break;
+    if (opts.stopOnDefeat && defeated) break;
   }
 
   return {
@@ -702,5 +749,7 @@ export function simulateStrategic(opts: {
     maxDeadGap,
     defeated,
     endTime: t,
+    platesLost,
+    defeated,
   };
 }
