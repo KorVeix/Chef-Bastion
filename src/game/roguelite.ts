@@ -1176,7 +1176,7 @@ export function computeRushDirectorParams(
       ? 0.58 + elapsedSeconds * 0.002
       : 0.61 +
         (elapsedSeconds - 15) * 0.0028 +
-        Math.max(0, elapsedSeconds - 72) * 0.0165;
+        Math.max(0, elapsedSeconds - 72) * 0.0155;
   const hpMultiplier = Number((timeHp * adaptiveHpMult).toFixed(2));
 
   // Fixed small ceiling (not tied to time or arsenal power): there must always be room to build combos.
