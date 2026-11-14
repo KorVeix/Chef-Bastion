@@ -19,6 +19,9 @@ test('Constantes de combate: ni el motor ni el simulador redeclaran tablas propi
     /isInCombo \? 0\.6 :/, // cadencia del Flus-Flus
     /inCombo \? 0\.6 :/,
     /\? 240\s*\n\s*: 65/, // contacto de la Fregona
+    /\[-0\.55, -0\.26, 0, 0\.26, 0\.55\]/, // ángulos del abanico
+    /Math\.abs\(ang\) > 0\.2\b/, // umbral de perforación del abanico
+    /currentRowInt\) < 0\.3\)/, // ventana del puente UV
   ];
   for (const [name, src] of Object.entries(sources)) {
     for (const re of forbidden) {

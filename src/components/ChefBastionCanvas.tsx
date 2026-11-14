@@ -3177,7 +3177,7 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
               (p.row === activePreviewTarget.row - 1 || p.row === activePreviewTarget.row - 2)
           );
           if (hasScourerAhead) {
-            const fanAngles = [-0.55, -0.26, 0, 0.26, 0.55];
+            const fanAngles = COMBAT.foam.angles;
             fanAngles.forEach((ang, idx) => {
               const cone = previewCones[idx];
               cone.visible = true;
@@ -3193,7 +3193,7 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
             cone.rotation.set(-Math.PI / 2, 0, 0);
           }
         } else if (selPiece.type === 'scourer_nanas') {
-          const fanAngles = [-0.55, -0.26, 0, 0.26, 0.55];
+          const fanAngles = COMBAT.foam.angles;
           fanAngles.forEach((ang, idx) => {
             const cone = previewCones[idx];
             cone.visible = true;
@@ -4403,7 +4403,7 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
                 0x34d399,
                 2.0
               );
-              const angles = [-0.55, -0.26, 0, 0.26, 0.55];
+              const angles = COMBAT.foam.angles;
               const dmgBonus =
                 (stateRef.current.hatId === 'tp_gasmask' ? 1.25 : 1.0) *
                 (scourer.level >= 3 ? 1.65 : scourer.level === 2 ? 1.3 : 1.0) *
@@ -4420,12 +4420,12 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
                   damage: Math.round(COMBAT.foam.damage * dmgBonus * frontalMult),
                   isEnemy: false,
                   flavor: 'foam_fan',
-                  pierceShield: Math.abs(ang) > 0.2,
+                  pierceShield: Math.abs(ang) > COMBAT.foam.pierceAngle,
                   isExplosiveOrThermal: proj.flavor === 'bleach_glob',
-                  fromDiagonalFoam: Math.abs(ang) > 0.2,
+                  fromDiagonalFoam: Math.abs(ang) > COMBAT.foam.pierceAngle,
                   fromVortex: false,
                   bouncesLeft: isRushMode && rushModifiers.wallRicochet ? 1 : 0,
-                  life: 1.4,
+                  life: COMBAT.foam.life,
                 });
               });
               proj.life = 0;
@@ -5020,7 +5020,7 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
               l.fromRow === currentRowInt &&
               (l.fromRail === currentRailInt || l.toRail === currentRailInt)
           );
-          if (bridgeLink && Math.abs(bug.yProgress - currentRowInt) < 0.3) {
+          if (bridgeLink && Math.abs(bug.yProgress - currentRowInt) < COMBAT.bridgeUv.halfWindowRows) {
             triggerThermalShockIfEligible(bug);
 
             // Chain Reaction (~8.3-10Hz throttled): Wet/Soaped bug touching UV Beam propagates electric arc to bugs on contiguous wet cells!
