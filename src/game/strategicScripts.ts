@@ -26,8 +26,12 @@ export interface StrategicScript {
   spawns: SimSpawn[];
   /** Solución de referencia: debe limpiar el guion sin perder ningún plato. */
   solution: SimLayoutStep[];
-  /** Plan sin el combo que enseña el nivel: debe dejar pasar al menos un bicho. */
-  failsWithout: { label: string; plan: SimLayoutStep[] };
+  /**
+   * Plan sin el combo que enseña el nivel: debe perder de verdad (4.ª fuga, tras los 3 Sellos).
+   * `minLeaks` solo en niveles de presentación con «2 bichos nuevos» (regla del autor): ahí basta con que
+   * se escapen todos los nuevos.
+   */
+  failsWithout: { label: string; plan: SimLayoutStep[]; minLeaks?: number };
 }
 
 const at = (t: number, type: BugType, ...rails: number[]): SimSpawn[] =>
@@ -167,6 +171,8 @@ export const STRATEGIC_SCRIPTS: readonly StrategicScript[] = [
     solution: placedLive([...foam(1), ...bridge(2, 2)]),
     failsWithout: {
       label: 'Aerosoles separados (sin puente)',
+      // Presentación de la rata blindada: «salen 2 nuevos» (regla del autor). Sin puente pasan las 2.
+      minLeaks: 2,
       plan: placedLive([
         ...foam(1),
         { type: 'aerosol_torch', rail: 3, row: 2 },
@@ -261,6 +267,15 @@ export const STRATEGIC_SCRIPTS: readonly StrategicScript[] = [
       roach(37, 0, 1),
       roach(37, 1, -1),
       roach(37, 2, 1),
+      // Presión extra en el lado del Jabón y la Fregona: sin Jabón se pierde (4.ª fuga).
+      roach(9.5, 3, -1),
+      roach(17.5, 2, -1),
+      roach(25.5, 3, -1),
+      roach(30, 2, 1),
+      roach(33, 3, -1),
+      roach(39, 2, -1),
+      roach(39, 3, -1),
+      roach(41, 1, 1),
     ],
     // Disposición del tutorial: Fregona [R2,F3], Jabón al lado [R3,F3], Flus-Flus [R2,F5].
     solution: [
@@ -360,12 +375,17 @@ export const STRATEGIC_SCRIPTS: readonly StrategicScript[] = [
       'Avispas: vuelan (el Jabón y la Fregona no las tocan) y su ácido pringa tus armas. El Gel WC en su carril les devuelve el ácido.',
     tutorial: null,
     spawns: [
+      // Avispas espaciadas por el carril 3 (el del Gel WC): sin Gel pasan 6 y se pierde.
+      ...at(6, 'acid_wasp', 2),
+      ...at(12, 'acid_wasp', 2),
+      ...at(18, 'acid_wasp', 2),
+      ...at(26, 'acid_wasp', 2),
+      ...at(32, 'acid_wasp', 2),
+      ...at(38, 'acid_wasp', 2),
       roach(0.5, 1, 1),
       roach(2, 2, -1),
       roach(4, 0, 1),
       roach(4, 3, -1),
-      ...at(6, 'acid_wasp', 1),
-      ...at(6, 'acid_wasp', 2),
       roach(7, 1, 1),
       roach(9.5, 2, -1),
       roach(12, 0, 1),
@@ -382,8 +402,6 @@ export const STRATEGIC_SCRIPTS: readonly StrategicScript[] = [
       roach(20, 3, -1),
       roach(23, 2, -1),
       roach(25.5, 1, 1),
-      ...at(26, 'acid_wasp', 1),
-      ...at(26, 'acid_wasp', 2),
       roach(28, 0, 1),
       roach(28, 2, -1),
       roach(28, 3, -1),

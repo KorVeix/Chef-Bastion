@@ -13,6 +13,8 @@ import {
   getRushWearFraction,
   getRushWearSeconds,
   planRushWave,
+  capRushSpeedMultiplier,
+  drainPendingSpawnsWithinCap,
   RUSH_PINCER_FROM_SEC,
   RUSH_EVOLUTION_WEAR_SECONDS,
   RUSH_INITIAL_SUPPLY,
@@ -546,4 +548,15 @@ test('Orquestación: nunca más de 4 bichos a la vez y velocidad con techo, sea 
     }
   }
   assert.equal(computeRushDirectorParams(10, 0).maxConcurrentBugs, 3);
+});
+
+test('Orquestación: el techo de velocidad vale tras mundo, bioma y pactos; las apariciones especiales respetan el cupo', () => {
+  // Mundo Nevera (×1,15) + pacto de frenesí (×1,2) sobre el techo del director: sigue en ×1,3.
+  assert.equal(capRushSpeedMultiplier(RUSH_MAX_BUG_SPEED_MULT, 1.2, 1.15, 1.06), RUSH_MAX_BUG_SPEED_MULT);
+  assert.ok(capRushSpeedMultiplier(0.8, 1, 1, 1) < RUSH_MAX_BUG_SPEED_MULT);
+  // Hora Punta con 3 vivos y tope 4: sale 1 y esperan 3.
+  const drained = drainPendingSpawnsWithinCap(['a', 'b', 'c', 'd'], 3, RUSH_MAX_CONCURRENT_BUGS);
+  assert.deepEqual(drained.spawnNow, ['a']);
+  assert.deepEqual(drained.remaining, ['b', 'c', 'd']);
+  assert.equal(drainPendingSpawnsWithinCap(['a'], 5, RUSH_MAX_CONCURRENT_BUGS).spawnNow.length, 0);
 });

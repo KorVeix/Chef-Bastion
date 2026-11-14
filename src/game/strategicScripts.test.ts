@@ -9,6 +9,9 @@ import {
 import { SIM_SUPPORTED_BUGS, simulateStrategic, validateLayout } from './strategicSim';
 import type { BugType } from './types';
 
+/** Fases del reloj de la Fregona (el motor gira con el reloj real): la solución debe valer en todas. */
+const CLOCK_OFFSETS = [0, 0.2, 0.4, 0.6, 0.8, 1.0, 1.2, 1.4];
+
 const leaksLabel = (leaks: Array<{ t: number; type: BugType; rail: number }>) =>
   leaks.map((l) => `${l.type}@carril ${l.rail + 1} (${l.t.toFixed(1)} s)`).join(', ');
 
@@ -21,21 +24,35 @@ for (const script of STRATEGIC_SCRIPTS) {
       assert.ok(SIM_SUPPORTED_BUGS.has(sp.type), `${sp.type} no está modelado en el simulador`);
       assert.ok(sp.rail >= 0 && sp.rail <= 3);
     }
-    const res = simulateStrategic({ level: script.level, spawns: script.spawns, plan: script.solution });
-    assert.equal(res.leaks.length, 0, `fugas: ${leaksLabel(res.leaks)}`);
-    assert.equal(res.kills.length, script.spawns.length);
+    for (const clockOffset of CLOCK_OFFSETS) {
+      const res = simulateStrategic({ level: script.level, spawns: script.spawns, plan: script.solution, clockOffset });
+      assert.equal(res.leaks.length, 0, `fase ${clockOffset}: fugas ${leaksLabel(res.leaks)}`);
+      assert.equal(res.kills.length, script.spawns.length);
+    }
   });
 
   test(`Guion Nv.${script.level}: sin el combo que enseña («${script.failsWithout.label}») se pierde`, () => {
     for (const step of script.failsWithout.plan) {
       assert.equal(validateLayout(step, script.loadout), null);
     }
-    const res = simulateStrategic({
-      level: script.level,
-      spawns: script.spawns,
-      plan: script.failsWithout.plan,
-    });
-    assert.ok(res.leaks.length >= 1, 'el guion se puede pasar sin el combo que enseña');
+    // Perder de verdad: el motor absorbe 3 fugas con los Sellos y pierde en la 4.ª.
+    for (const clockOffset of CLOCK_OFFSETS) {
+      const res = simulateStrategic({
+        level: script.level,
+        spawns: script.spawns,
+        plan: script.failsWithout.plan,
+        clockOffset,
+      });
+      const min = script.failsWithout.minLeaks;
+      if (min !== undefined) {
+        assert.ok(res.leaks.length >= min, `fase ${clockOffset}: sin el combo solo pasan ${res.leaks.length} de ${min}`);
+      } else {
+        assert.ok(
+          res.defeated,
+          `fase ${clockOffset}: sin el combo solo pasan ${res.leaks.length} (hacen falta 4 para perder)`
+        );
+      }
+    }
   });
 
   test(`Guion Nv.${script.level}: regla de los 10 s (sin tiempos muertos)`, () => {

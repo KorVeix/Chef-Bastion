@@ -1130,6 +1130,32 @@ export function pickRushSpawnRail(
 }
 
 /**
+ * Velocidad final de los bichos en Supervivencia: el techo ×1,3 se aplica DESPUÉS de componer el director,
+ * los pactos de caos, el mundo y el bioma (antes solo limitaba el valor del director).
+ */
+export function capRushSpeedMultiplier(
+  directorMult: number,
+  chaosMult: number,
+  worldMult: number,
+  frictionFactor: number
+): number {
+  return Math.min(RUSH_MAX_BUG_SPEED_MULT, directorMult * chaosMult * worldMult * frictionFactor);
+}
+
+/**
+ * Apariciones especiales (Hora Punta, Fuga Lateral, Invasión de Jefe) respetan el tope de bichos a la vez:
+ * salen las que caben y el resto espera en cola.
+ */
+export function drainPendingSpawnsWithinCap<T>(
+  pending: readonly T[],
+  aliveCount: number,
+  maxConcurrent: number
+): { spawnNow: T[]; remaining: T[] } {
+  const room = Math.max(0, maxConcurrent - aliveCount);
+  return { spawnNow: pending.slice(0, room), remaining: pending.slice(room) };
+}
+
+/**
  * Computes the adaptive difficulty multiplier at 75% of `(armas × nivel medio)` growth above baseline 1.
  * E.g. growing arsenalPower from 1 -> 5 (+400% growth) scales adaptive pressure by +300% (4.0x = 1 + 0.75 * 4),
  * leaving the remaining pressure to elapsed time.
