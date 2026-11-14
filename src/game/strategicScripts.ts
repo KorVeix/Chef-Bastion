@@ -160,6 +160,17 @@ const mirrorSpawns = (spawns: readonly SimSpawn[]): SimSpawn[] =>
 const mirrorLayout = (placements: SimLayoutStep['placements']): SimLayoutStep['placements'] =>
   placements.map((p) => ({ ...p, rail: 3 - p.rail }));
 
+/**
+ * Nv.9: abanico fijo en el carril 2 (filas 5 y 7), puente UV en la fila 4 del lado que aprietan
+ * las ratas y Gel WC (fila 3) en el carril de las avispas.
+ */
+const ratsAndWasps = (side: 'left' | 'right', gelRail: number): SimLayoutStep['placements'] => [
+  { type: 'scourer_nanas', rail: 1, row: 4 },
+  { type: 'spray_flus', rail: 1, row: 6 },
+  ...bridge(side === 'left' ? 0 : 2, 3),
+  { type: 'wc_shield', rail: gelRail, row: 2 },
+];
+
 /** Colocación en vivo (niveles sin fase de colocación): una pieza cada 1,5 s desde el segundo 1,5. */
 const placedLive = (pieces: SimLayoutStep['placements']): SimLayoutStep[] =>
   pieces.map((_, i) => ({ t: 1.5 * (i + 1), placements: pieces.slice(0, i + 1) }));
@@ -466,6 +477,54 @@ export const STRATEGIC_SCRIPTS: readonly StrategicScript[] = [
     },
     minMoves: 2,
     staticSearchRows: { wc_shield: [2, 3], spray_flus: [4, 5, 6] },
+  },
+  {
+    level: 9,
+    loadout: ['scourer_nanas', 'spray_flus', 'aerosol_torch', 'aerosol_torch', 'wc_shield'],
+    teaches:
+      'Ratas blindadas y avispas a la vez (vuelve la rata del Nv.3-5): el puente UV va donde aprietan las ratas y el Gel WC al carril de las avispas, que entran por el lado contrario, fuera del alcance del puente.',
+    tutorial: null,
+    spawns: [
+      // Las avispas entran siempre por el lado contrario a las ratas, donde no llega el puente.
+      // Tramo 1: ratas por la izquierda, avispas por el carril 4.
+      ...pressure('cap_beetle', 0.5, 8, 0.9, RATS_LEFT),
+      ...at(3, 'acid_wasp', 3),
+      ...at(5, 'acid_wasp', 3),
+      ...at(7, 'acid_wasp', 3),
+      // Tramo 2: ratas por la derecha, avispas por el carril 1 (mover puente y Gel ~20-26 s).
+      ...pressure('cap_beetle', 16, 8, 0.9, RATS_RIGHT),
+      ...at(17, 'acid_wasp', 0),
+      ...at(19, 'acid_wasp', 0),
+      ...at(21, 'acid_wasp', 0),
+      // Tramo 3: ratas por la izquierda, avispas por el carril 4 (mover ~36-42 s).
+      ...at(35, 'acid_wasp', 3),
+      ...at(37, 'acid_wasp', 3),
+      ...at(39, 'acid_wasp', 3),
+      ...pressure('cap_beetle', 34, 8, 0.9, RATS_LEFT),
+    ],
+    solution: [
+      { t: 0, placements: ratsAndWasps('left', 3) },
+      ...relocate(23, ratsAndWasps('left', 3), ratsAndWasps('right', 0)),
+      ...relocate(39, ratsAndWasps('right', 0), ratsAndWasps('left', 3)),
+    ],
+    failsWithout: {
+      label: 'Sin Gel WC',
+      plan: [
+        { t: 0, placements: ratsAndWasps('left', 3).filter((p) => p.type !== 'wc_shield') },
+        ...relocate(
+          23,
+          ratsAndWasps('left', 3).filter((p) => p.type !== 'wc_shield'),
+          ratsAndWasps('right', 0).filter((p) => p.type !== 'wc_shield')
+        ),
+        ...relocate(
+          39,
+          ratsAndWasps('right', 0).filter((p) => p.type !== 'wc_shield'),
+          ratsAndWasps('left', 3).filter((p) => p.type !== 'wc_shield')
+        ),
+      ],
+    },
+    minMoves: 2,
+    staticSearchRows: { wc_shield: [2, 3] },
   },
 ];
 
