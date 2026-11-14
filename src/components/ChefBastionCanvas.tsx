@@ -87,6 +87,7 @@ import {
   getBossPuzzleTypeForLevel,
   getBossTierForLevel,
   getGrandBossPhase,
+  nextGrandBossEvadeRail,
   getGrandBossPhaseLabel,
   getLevelForecast,
   GRID_RAILS,
@@ -4179,8 +4180,10 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
         if (nextPhase === 2) {
           // Phase 2: Sabotage & Evasion (shift rail + start acid sabotage loop)
           const curR = THREE.MathUtils.clamp(Math.round(bug.rail), 0, GRID_RAILS - 1);
-          bug.targetRail = curR < GRID_RAILS - 1 ? curR + 1 : curR - 1;
-          bug.bossEvadeTimer = 2.2;
+          const firstEvade = nextGrandBossEvadeRail(curR, curR < GRID_RAILS - 1 ? 1 : -1);
+          bug.targetRail = firstEvade.rail;
+          bug.bossEvadeDir = firstEvade.dir;
+          bug.bossEvadeTimer = COMBAT.grandBoss.firstEvadeSec;
           stateRef.current.onComicPop({
             id: `boss-p2-${bug.id}-${Date.now()}`,
             title: '⚡ ¡CORAZA ROTA · FASE 2/3!',
@@ -4844,14 +4847,14 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
             !isRushMode && !activeScript && stateRef.current.level === 1 && phase === 1 ? 0.65 : 1.0;
           // Grand Boss Phase 3 Frenzy: +30% speed!
           const bossFrenzyFactor =
-            bug.bossTier === 'grand' && (bug.bossPhase ?? 1) === 3 ? 1.3 : 1.0;
+            bug.bossTier === 'grand' && (bug.bossPhase ?? 1) === 3 ? COMBAT.grandBoss.frenzySpeedMult : 1.0;
           const controlSlowFactor = bug.slowTimer > 0 ? COMBAT.slowSpeedFactor : 1.0;
           const isChefStunned = Boolean(bug.chefStunTimer && bug.chefStunTimer > 0);
           const isStunnedBoss = Boolean(bug.bossStunTimer && bug.bossStunTimer > 0);
           const effectiveSpeed = isChefStunned
             ? 0
             : isStunnedBoss
-            ? 0.08
+            ? COMBAT.grandBoss.stunnedSpeed
             : speedMap[bug.type] *
               worldMult *
               levelMult *
@@ -4900,36 +4903,33 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
           if (
             bug.bossTier === 'grand' &&
             (bug.bossPhase ?? 1) >= 2 &&
-            bug.yProgress > 0.2 &&
-            bug.yProgress < 4.6 &&
+            bug.yProgress > COMBAT.grandBoss.evadeMinRow &&
+            bug.yProgress < COMBAT.grandBoss.evadeMaxRow &&
             !isStunnedBoss
           ) {
-            bug.bossEvadeTimer = (bug.bossEvadeTimer ?? 2.6) - waveSimDt * (bug.slowTimer > 0 ? 0.45 : 1.0);
+            bug.bossEvadeTimer =
+              (bug.bossEvadeTimer ?? 2.6) -
+              waveSimDt * (bug.slowTimer > 0 ? COMBAT.grandBoss.slowedEvadeRate : 1.0);
             if (bug.bossEvadeTimer <= 0) {
-              bug.bossEvadeTimer = (bug.bossPhase ?? 1) === 3 ? 2.4 : 3.0;
+              bug.bossEvadeTimer =
+                (bug.bossPhase ?? 1) === 3 ? COMBAT.grandBoss.evadeIntervalP3 : COMBAT.grandBoss.evadeIntervalP2;
               const curR = THREE.MathUtils.clamp(Math.round(bug.rail), 0, GRID_RAILS - 1);
-              const nextR =
-                curR === 0
-                  ? 1
-                  : curR === GRID_RAILS - 1
-                  ? GRID_RAILS - 2
-                  : Math.random() < 0.5
-                  ? curR - 1
-                  : curR + 1;
-              bug.targetRail = nextR;
+              const evade = nextGrandBossEvadeRail(curR, bug.bossEvadeDir ?? 1);
+              bug.targetRail = evade.rail;
+              bug.bossEvadeDir = evade.dir;
               projectiles.push({
                 id: `boss-acid-${bug.id}-${Date.now()}`,
                 x: curR,
                 y: bug.yProgress + 0.35,
                 vx: 0,
-                vy: 3.2,
-                damage: 10,
+                vy: COMBAT.grandBoss.acidSpeed,
+                damage: COMBAT.grandBoss.acidDamage,
                 isEnemy: true,
                 flavor: 'enemy_acid',
                 pierceShield: false,
                 fromDiagonalFoam: false,
                 fromVortex: false,
-                life: 2.2,
+                life: COMBAT.grandBoss.acidLife,
               });
             }
           }

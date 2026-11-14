@@ -9,7 +9,8 @@
  * Mini-jefes: multiplicadores de `computeBossDamageMultiplier`, coraza que funde el puente UV y
  * aturdimiento del puzle (puente UV, Jabón o Escuadra).
  * Avispa (de guion, vuela): Jabón y Fregona no la tocan; ácido cada ~2,2 s entre las filas 0,5 y 3,6 que pringa armas 3,5 s; el Gel WC lo devuelve (45).
- * No modela (todavía): Lejía, invasión lateral ni Grandes Jefes (3 fases).
+ * Gran Jefe: 3 fases por vida (coraza, esquiva con ácido en barrido sin azar, frenesí ×1,3).
+ * No modela (todavía): Lejía ni invasión lateral.
  * Un guion que los use debe ampliar antes este simulador (ver `SIM_SUPPORTED_BUGS`).
  */
 import type { BossPuzzleType, BossTier, BugEnemy, BugType, UtensilPiece, UtensilType } from './types';
@@ -20,6 +21,8 @@ import {
   applyPhysicalKnockback,
   computeBossDamageMultiplier,
   evaluateBoardCombos,
+  getGrandBossPhase,
+  nextGrandBossEvadeRail,
   getBiomeForLevel,
   getLevelSpeedMultiplier,
 } from './rules';
@@ -98,6 +101,11 @@ interface SimBug {
   attackWindup: number;
   roachTimer: number | null;
   roachDir: 1 | -1;
+  maxHp: number;
+  /** Gran Jefe: fase por vida (1 > 66 %, 2 > 33 %, 3 el resto). */
+  phase: 1 | 2 | 3;
+  evadeTimer: number;
+  evadeDir: 1 | -1;
 }
 
 interface SimProjectile {
@@ -116,11 +124,28 @@ interface SimProjectile {
   thermal?: boolean;
 }
 
+/** Cambio de fase del Gran Jefe (como `evaluateGrandBossTransition` del motor). */
+function checkGrandBossPhase(bug: SimBug): void {
+  if (bug.bossTier !== 'grand' || bug.hp <= 0) return;
+  const next = getGrandBossPhase(bug.hp, bug.maxHp);
+  if (next <= bug.phase) return;
+  bug.phase = next;
+  bug.armorBroken = true;
+  bug.hasShield = false;
+  if (next === 2) {
+    const cur = Math.max(0, Math.min(GRID_RAILS - 1, Math.round(bug.rail)));
+    const first = nextGrandBossEvadeRail(cur, cur < GRID_RAILS - 1 ? 1 : -1);
+    bug.targetRail = first.rail;
+    bug.evadeDir = first.dir;
+    bug.evadeTimer = COMBAT.grandBoss.firstEvadeSec;
+  }
+}
+
 function bossMult(bug: SimBug, opts: { thermal: boolean; control: boolean }): number {
   if (!bug.bossTier) return 1;
   return computeBossDamageMultiplier({
     tier: bug.bossTier,
-    phase: 1,
+    phase: bug.phase,
     armorBroken: bug.armorBroken,
     isThermalOrExplosive: opts.thermal,
     isControlCombo: opts.control,
@@ -309,6 +334,10 @@ export function simulateStrategic(opts: {
         attackWindup: 0,
         roachTimer: sp.type === 'shift_roach' ? ROACH_SHIFT_INTERVAL_SEC : null,
         roachDir: sp.dir ?? (sp.rail <= 1 ? 1 : -1),
+        maxHp: sp.boss ? sp.boss.hp : BUG_BASE_HP[sp.type],
+        phase: 1,
+        evadeTimer: 2.6,
+        evadeDir: 1,
       });
       spawnIdx += 1;
       if (firstSpawnT === null) firstSpawnT = t;
@@ -406,6 +435,7 @@ export function simulateStrategic(opts: {
             const control =
               proj.fromDiagonalFoam || proj.fromVortex || bug.isSlidingFromSoap || bug.redirectedBySquare;
             bug.hp -= proj.damage * bossMult(bug, { thermal: Boolean(proj.thermal), control });
+            checkGrandBossPhase(bug);
             if (proj.fromVortex) bug.slowTimer = Math.max(bug.slowTimer, 1.8);
           } else if (bug.hasShield && !proj.pierce) {
             // ¡CLINK! sin daño.
@@ -430,10 +460,11 @@ export function simulateStrategic(opts: {
       bug.slowTimer = Math.max(0, bug.slowTimer - dt);
       bug.knockbackCooldown = Math.max(0, bug.knockbackCooldown - dt);
       bug.stunTimer = Math.max(0, bug.stunTimer - dt);
+      const frenzy = bug.bossTier === 'grand' && bug.phase === 3 ? COMBAT.grandBoss.frenzySpeedMult : 1.0;
       const speed =
         bug.stunTimer > 0
-          ? 0.08
-          : BUG_BASE_SPEED[bug.type] * speedMult * (bug.slowTimer > 0 ? COMBAT.slowSpeedFactor : 1.0);
+          ? COMBAT.grandBoss.stunnedSpeed
+          : BUG_BASE_SPEED[bug.type] * speedMult * frenzy * (bug.slowTimer > 0 ? COMBAT.slowSpeedFactor : 1.0);
       if (bug.roachTimer !== null) {
         const z = stepRoachZigzag(
           {
@@ -451,6 +482,37 @@ export function simulateStrategic(opts: {
       }
       bug.rail = damp(bug.rail, bug.targetRail, 9, dt);
       bug.y += speed * dt;
+
+      // Gran Jefe, fase 2+: esquiva de carril (barrido sin azar) y escupitajo de ácido por su carril.
+      if (
+        bug.bossTier === 'grand' &&
+        bug.phase >= 2 &&
+        bug.y > COMBAT.grandBoss.evadeMinRow &&
+        bug.y < COMBAT.grandBoss.evadeMaxRow &&
+        bug.stunTimer <= 0
+      ) {
+        bug.evadeTimer -= dt * (bug.slowTimer > 0 ? COMBAT.grandBoss.slowedEvadeRate : 1.0);
+        if (bug.evadeTimer <= 0) {
+          bug.evadeTimer = bug.phase === 3 ? COMBAT.grandBoss.evadeIntervalP3 : COMBAT.grandBoss.evadeIntervalP2;
+          const cur = Math.max(0, Math.min(GRID_RAILS - 1, Math.round(bug.rail)));
+          const evade = nextGrandBossEvadeRail(cur, bug.evadeDir);
+          bug.targetRail = evade.rail;
+          bug.evadeDir = evade.dir;
+          projectiles.push({
+            x: cur,
+            y: bug.y + 0.35,
+            vx: 0,
+            vy: COMBAT.grandBoss.acidSpeed,
+            damage: COMBAT.grandBoss.acidDamage,
+            pierce: false,
+            life: COMBAT.grandBoss.acidLife,
+            flavor: 'enemy_acid',
+            fromVortex: false,
+            fromDiagonalFoam: false,
+            isEnemy: true,
+          });
+        }
+      }
 
       if (bug.type === 'acid_wasp' && bug.y > COMBAT.wasp.minRow && bug.y < COMBAT.wasp.maxRow && bug.stunTimer <= 0) {
         bug.attackWindup += dt * COMBAT.wasp.windupPerSec;
@@ -498,6 +560,7 @@ export function simulateStrategic(opts: {
           if (bug.bossTier === 'mini' && bug.puzzle === 'uv_overheat') bug.stunTimer = COMBAT.bridgeUv.miniBossStunSec;
         }
         bug.hp -= COMBAT.bridgeUv.dps * bossMult(bug, { thermal: true, control: false }) * dt;
+        checkGrandBossPhase(bug);
       }
 
       const flying = bug.type === 'acid_wasp';
@@ -520,8 +583,10 @@ export function simulateStrategic(opts: {
       if (mopHere && !flying && Math.abs(bug.y - rowInt) < 0.45) {
         bug.slowTimer = Math.max(bug.slowTimer, 2.2);
         if (!bug.isSlidingFromSoap && bug.knockbackCooldown <= 0) {
-          bug.y = Math.max(-0.2, bug.y - (bug.bossTier === 'mini' ? 0.45 : 1.0));
-          bug.knockbackCooldown = 1.25;
+          if (bug.bossTier !== 'grand') {
+            bug.y = Math.max(-0.2, bug.y - (bug.bossTier === 'mini' ? 0.45 : 1.0));
+            bug.knockbackCooldown = 1.25;
+          }
         }
         const vortexDps = bug.bossTier
           ? (bug.isSlidingFromSoap ? COMBAT.mop.bossContactDpsSlipped : COMBAT.mop.bossContactDps) *
@@ -530,6 +595,7 @@ export function simulateStrategic(opts: {
           ? COMBAT.mop.contactDpsSlipped
           : COMBAT.mop.contactDps;
         bug.hp -= vortexDps * dt;
+        checkGrandBossPhase(bug);
       }
 
       if (bug.hp <= 0) {

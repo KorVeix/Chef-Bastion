@@ -110,6 +110,7 @@ export interface BugEnemy {
   bossPhase?: 1 | 2 | 3;       // Real-time 100-67% (1), 66-34% (2), 33-0% (3) for Grand Bosses
   bossArmorBroken?: boolean;   // True when UV/explosive melts Phase 1 heavy carapace
   bossEvadeTimer?: number;     // Rail-shift / sabotage timer in Phase 2+
+  bossEvadeDir?: 1 | -1;       // Sentido del barrido de esquiva (sin azar: rebota en los bordes)
   bossFrenzyTriggered?: boolean; // Escort/lateral ambush trigger in Phase 3
   bossPhaseFlashTimer?: number;  // 300ms visual flash on phase break
   bossStunTimer?: number;      // > 0 when boss mechanic is countered

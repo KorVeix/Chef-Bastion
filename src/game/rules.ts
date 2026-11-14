@@ -358,6 +358,21 @@ export function getGrandBossPhase(hp: number, maxHp: number): 1 | 2 | 3 {
   return 3;
 }
 
+/**
+ * Esquiva del Gran Jefe en fase 2+: barre los carriles en un sentido y rebota en los bordes.
+ * Sin azar, para que el guion de los niveles de jefe sea el mismo en cada intento.
+ */
+export function nextGrandBossEvadeRail(
+  currentRail: number,
+  dir: 1 | -1,
+  railCount = GRID_RAILS
+): { rail: number; dir: 1 | -1 } {
+  const cur = Math.max(0, Math.min(railCount - 1, Math.round(currentRail)));
+  let d = dir;
+  if (cur + d < 0 || cur + d > railCount - 1) d = (d === 1 ? -1 : 1) as 1 | -1;
+  return { rail: cur + d, dir: d };
+}
+
 export function getGrandBossPhaseLabel(phase: 1 | 2 | 3, tier: BossTier): string {
   if (tier === 'mini') return 'MINI-JEFE · RESISTENCIA FRONTAL';
   if (phase === 1) return 'FASE 1/3 · CORAZA PESADA (-65% Básico · ×2.5 UV/Explosivo)';

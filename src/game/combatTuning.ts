@@ -83,6 +83,24 @@ export const COMBAT = {
     reflectDamagePerLevel: 45,
   },
 
+  /** Gran Jefe (3 fases por vida: >66 %, >33 %, resto). */
+  grandBoss: {
+    /** Fase 2+: esquiva de carril y escupitajo de ácido, entre estas filas. */
+    evadeMinRow: 0.2,
+    evadeMaxRow: 4.6,
+    /** Primera esquiva al entrar en fase 2 y luego cada `evadeIntervalP2`/`evadeIntervalP3` s. */
+    firstEvadeSec: 2.2,
+    evadeIntervalP2: 3.0,
+    evadeIntervalP3: 2.4,
+    /** Frenado (Jabón/Fregona) ralentiza el reloj de esquiva a este ritmo. */
+    slowedEvadeRate: 0.45,
+    frenzySpeedMult: 1.3,
+    stunnedSpeed: 0.08,
+    acidSpeed: 3.2,
+    acidDamage: 10,
+    acidLife: 2.2,
+  },
+
   wasp: {
     /** Carga del ataque por segundo (dispara al llegar a 1). */
     windupPerSec: 0.45,

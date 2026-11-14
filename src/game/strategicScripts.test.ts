@@ -122,3 +122,40 @@ for (const script of STRATEGIC_SCRIPTS.filter((s) => s.minMoves)) {
     assert.equal(winners.length, 0, `${winners.length}/${layouts.length} tableros quietos ganan: ${show}`);
   });
 }
+
+test('Gran Jefe: la esquiva barre los carriles sin azar y rebota en los bordes', async () => {
+  const { nextGrandBossEvadeRail } = await import('./rules');
+  const path: number[] = [];
+  let rail = 1;
+  let dir: 1 | -1 = 1;
+  for (let i = 0; i < 6; i++) {
+    const next = nextGrandBossEvadeRail(rail, dir);
+    rail = next.rail;
+    dir = next.dir;
+    path.push(rail);
+  }
+  assert.deepEqual(path, [2, 3, 2, 1, 0, 1]);
+});
+
+test('Gran Jefe en el simulador: pasa por las 3 fases y el mismo guion da siempre el mismo resultado', () => {
+  const spawns = [{ t: 0.5, type: 'king_crab' as const, rail: 1, boss: { tier: 'grand' as const, puzzle: 'uv_overheat' as const, hp: 460 } }];
+  const plan = [
+    {
+      t: 0,
+      placements: [
+        { type: 'aerosol_torch' as const, rail: 0, row: 3 },
+        { type: 'aerosol_torch' as const, rail: 1, row: 3 },
+        { type: 'soap_bar' as const, rail: 2, row: 3 },
+        { type: 'mop_vortex' as const, rail: 3, row: 3 },
+        { type: 'spray_flus' as const, rail: 1, row: 5 },
+      ],
+    },
+  ];
+  const a = simulateStrategic({ level: 10, spawns, plan });
+  const b = simulateStrategic({ level: 10, spawns, plan });
+  assert.equal(a.kills.length, 1);
+  assert.equal(a.kills[0].t, b.kills[0].t);
+  // Solo con el Flus-Flus (sin calor ni control) la coraza y la esquiva lo dejan pasar.
+  const weak = simulateStrategic({ level: 10, spawns, plan: [{ t: 0, placements: [{ type: 'spray_flus', rail: 1, row: 5 }] }] });
+  assert.equal(weak.leaks.length, 1);
+});
