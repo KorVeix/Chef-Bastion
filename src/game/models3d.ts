@@ -953,7 +953,7 @@ export function buildGhostUtensilMesh(
 }
 
 /**
- * Builds the 3D "Roomba Kamikaze con Cuchillos" autonomous horizontal patrol bot
+ * Builds the 3D "Robot Aspirador Kamikaze con Cuchillos" autonomous horizontal patrol bot
  * deployed in front of the 4 plates when defeating the Min 3:00 Rush Boss or picking its Comanda!
  */
 export function buildKnifeRoombaMesh(): THREE.Group {
@@ -1017,10 +1017,51 @@ export function buildKnifeRoombaMesh(): THREE.Group {
 // 4. PLAGAS 3D SUAVIZADAS CON CONTORNO DE TINTA LIMPIO (ESCALA 0.75)
 // ============================================================================
 
+// Plantilla por tipo de bicho: las geometrías y materiales base se crean una sola vez y cada
+// bicho es un clon que los comparte. El Canvas clona los materiales toon por instancia (destello
+// blanco) y solo esos clones se liberan al retirar el bicho (`disposeBugInstance`).
+const bugTemplateCache = new Map<string, THREE.Group>();
+
 /**
  * @param variant `'duct'`: hormiga de conducto (Estratégico con guion): mismo modelo con caparazón verde azulado.
  */
 export function buildBugMesh(type: BugType, variant?: 'duct'): THREE.Group {
+  const key = `${type}:${variant ?? ''}`;
+  let template = bugTemplateCache.get(key);
+  if (!template) {
+    template = buildBugMeshTemplate(type, variant);
+    bugTemplateCache.set(key, template);
+  }
+  return template.clone(true);
+}
+
+/** Libera solo los materiales propios del clon (los de `userData.toonMats`); la plantilla se conserva. */
+export function disposeBugInstance(mesh: THREE.Object3D): void {
+  const mats = mesh.userData.toonMats as { mat: THREE.Material }[] | undefined;
+  mats?.forEach((entry) => entry.mat.dispose());
+  mesh.userData.toonMats = [];
+}
+
+/**
+ * Libera geometrías y materiales de un objeto construido desde cero (utensilios). Las texturas
+ * cacheadas del módulo (`map`) no se tocan: `Material.dispose()` no libera texturas.
+ */
+export function disposeObjectTree(root: THREE.Object3D): void {
+  const geometries = new Set<THREE.BufferGeometry>();
+  const materials = new Set<THREE.Material>();
+  root.traverse((child) => {
+    const mesh = child as THREE.Mesh;
+    if (!mesh.isMesh && !(child as THREE.Points).isPoints && !(child as THREE.Line).isLine) return;
+    if (mesh.geometry) geometries.add(mesh.geometry);
+    const mat = mesh.material;
+    if (Array.isArray(mat)) mat.forEach((m) => materials.add(m));
+    else if (mat) materials.add(mat);
+  });
+  geometries.forEach((g) => g.dispose());
+  materials.forEach((m) => m.dispose());
+}
+
+function buildBugMeshTemplate(type: BugType, variant?: 'duct'): THREE.Group {
   const root = new THREE.Group();
   root.scale.setScalar(0.75);
   const isBoss = type === 'king_crab';
@@ -1806,7 +1847,7 @@ export function buildOvercookedKitchenProps(railToWorldX: (r: number) => number)
 
 /**
  * Builds a 3D showcase prop for the Wardrobe "⚔️ Armas Élite" tab so players can inspect
- * their equipped or previewed Ultimate weapon (Kärcher, Volcán Químico, or Roomba Kamikaze) in 3D.
+ * their equipped or previewed Ultimate weapon (Hidrolimpiadora, Volcán Químico, or Robot Aspirador Kamikaze) in 3D.
  */
 export function buildWardrobeSpecialShowcaseMesh(specialId: SpecialWeaponId): THREE.Group {
   const root = new THREE.Group();
@@ -1825,7 +1866,7 @@ export function buildWardrobeSpecialShowcaseMesh(specialId: SpecialWeaponId): TH
   goldRim.position.y = 0.14;
   root.add(pedestal, goldRim);
 
-  if (specialId === 'knife_roomba') {
+  if (specialId === 'knife_robot') {
     const roomba = buildKnifeRoombaMesh();
     roomba.position.y = 0.16;
     roomba.scale.setScalar(0.95);
@@ -1857,8 +1898,8 @@ export function buildWardrobeSpecialShowcaseMesh(specialId: SpecialWeaponId): TH
     return root;
   }
 
-  // Default: karcher_blast ("Hidrolimpiadora Kärcher Alta Presión")
-  const karcherGroup = new THREE.Group();
+  // Default: hydro_blast ("Hidrolimpiadora Industrial")
+  const hydroGroup = new THREE.Group();
   const tank = new THREE.Mesh(
     new THREE.BoxGeometry(0.5, 0.68, 0.42),
     createToonMaterial(0xfacc15)
@@ -1875,9 +1916,9 @@ export function buildWardrobeSpecialShowcaseMesh(specialId: SpecialWeaponId): TH
   );
   lance.position.set(0.26, 0.76, 0.12);
   lance.rotation.z = -0.35;
-  karcherGroup.add(tank, cap, lance);
-  addInkOutline(karcherGroup);
-  root.add(karcherGroup);
+  hydroGroup.add(tank, cap, lance);
+  addInkOutline(hydroGroup);
+  root.add(hydroGroup);
   return root;
 }
 

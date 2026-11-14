@@ -263,10 +263,35 @@ function interleave<T>(a: readonly T[], b: readonly T[]): T[] {
 }
 
 /**
+ * Guion por tramos de Supervivencia: en cada tramo de tiempo las oleadas siguen un ciclo fijo de patrones
+ * (solo el carril sale del `rng`). Cada oleada pide UNA respuesta (abanico, puente UV, Jabón + Fregona o
+ * Gel WC) hasta que el cupo de armas permite montar dos a la vez; la pinza (abanico + puente) no aparece
+ * antes de `RUSH_PINCER_FROM_SEC`.
+ */
+export const RUSH_PINCER_FROM_SEC = 65;
+
+export const RUSH_SCRIPT_TRAMOS: readonly { untilSec: number; cycle: readonly RushWavePatternId[] }[] = [
+  { untilSec: 35, cycle: ['ant_trickle', 'armored_column', 'ant_trickle'] },
+  { untilSec: RUSH_PINCER_FROM_SEC, cycle: ['ant_swarm', 'armored_column', 'ant_trickle', 'wasp_raid', 'armored_column'] },
+  { untilSec: 95, cycle: ['ant_swarm', 'pincer', 'armored_column', 'wasp_raid', 'ant_swarm', 'pincer'] },
+  { untilSec: Infinity, cycle: ['pincer', 'ant_swarm', 'roach_cross', 'armored_column', 'pincer', 'wasp_raid'] },
+];
+
+export function getRushScriptPattern(elapsedSec: number, waveIndex: number): RushWavePatternId {
+  const tramo = RUSH_SCRIPT_TRAMOS.find((t) => elapsedSec < t.untilSec) ?? RUSH_SCRIPT_TRAMOS[RUSH_SCRIPT_TRAMOS.length - 1];
+  return tramo.cycle[Math.abs(waveIndex) % tramo.cycle.length];
+}
+
+/**
  * Plans the next wave: every wave is concentrated on 1-2 rails and asks for a specific answer
  * (fan of foam for swarms, UV bridge or soap for shields, soap + mop or the square for roaches).
+ * The pattern comes from the script by tramos (`getRushScriptPattern`); only the rails are random.
  */
-export function planRushWave(elapsedSec: number, rng: () => number = Math.random): RushWavePlan {
+export function planRushWave(
+  elapsedSec: number,
+  rng: () => number = Math.random,
+  waveIndex = 0
+): RushWavePlan {
   const extra = elapsedSec >= 95 ? Math.min(3, Math.floor((elapsedSec - 95) / 60) + 1) : 0;
 
   if (elapsedSec < RUSH_CENTRAL_RAIL_ONLY_SECONDS) {
@@ -278,30 +303,17 @@ export function planRushWave(elapsedSec: number, rng: () => number = Math.random
     };
   }
 
-  const roll = rng();
-  let pattern: RushWavePatternId;
-  if (elapsedSec < 35) {
-    pattern = roll < 0.6 ? 'ant_trickle' : 'armored_column';
-  } else if (elapsedSec < 95) {
-    pattern = roll < 0.3 ? 'ant_swarm' : roll < 0.6 ? 'armored_column' : roll < 0.8 ? 'pincer' : 'wasp_raid';
-  } else {
-    pattern =
-      roll < 0.22
-        ? 'ant_swarm'
-        : roll < 0.44
-        ? 'armored_column'
-        : roll < 0.68
-        ? 'pincer'
-        : roll < 0.84
-        ? 'roach_cross'
-        : 'wasp_raid';
-  }
+  const pattern = getRushScriptPattern(elapsedSec, waveIndex);
 
   if (pattern === 'pincer') {
-    const [antRail, shieldRail] = pickDistinctRails(2, rng);
+    // Carriles vecinos: el abanico del carril de hormigas y el puente del carril blindado comparten casillas.
+    const left = Math.floor(rng() * 3) % 3;
+    const swap = rng() < 0.5;
+    const antRail = swap ? left + 1 : left;
+    const shieldRail = swap ? left : left + 1;
     return {
       pattern,
-      hotRails: [antRail, shieldRail].sort((a, b) => a - b),
+      hotRails: [left, left + 1],
       spawns: interleave(
         repeatSpawns(antRail, 'speed_ant', 2 + extra),
         repeatSpawns(shieldRail, 'cap_beetle', 1 + Math.floor(extra / 2))
@@ -348,7 +360,7 @@ export function tickRushWaveDirector(
   let announced: RushWavePlan | null = null;
 
   if (next.stage === 'calm' && next.timer <= 0) {
-    next.plan = planRushWave(elapsedSec, rng);
+    next.plan = planRushWave(elapsedSec, rng, state.wavesStarted);
     next.stage = 'warning';
     next.timer = RUSH_WAVE_WARNING_SECONDS;
     next.nextSpawnIndex = 0;
@@ -1057,7 +1069,7 @@ export function getChaosDirectorEventForMinute(minuteMark: number): ChaosDirecto
       id: 'boss_invasion',
       minuteMark: 3,
       title: '👑 MIN 3:00 · ¡INVASIÓN DE JEFE!',
-      subtitle: '¡Abátelo para desplegar la Roomba con Cuchillos!',
+      subtitle: '¡Abátelo para desplegar el Robot Aspirador con Cuchillos!',
       color: 'pink',
     };
   }
@@ -1115,6 +1127,32 @@ export function pickRushSpawnRail(
     return RUSH_OPENING_CENTER_RAIL;
   }
   return Math.floor(rng() * 4) % 4;
+}
+
+/**
+ * Velocidad final de los bichos en Supervivencia: el techo ×1,3 se aplica DESPUÉS de componer el director,
+ * los pactos de caos, el mundo y el bioma (antes solo limitaba el valor del director).
+ */
+export function capRushSpeedMultiplier(
+  directorMult: number,
+  chaosMult: number,
+  worldMult: number,
+  frictionFactor: number
+): number {
+  return Math.min(RUSH_MAX_BUG_SPEED_MULT, directorMult * chaosMult * worldMult * frictionFactor);
+}
+
+/**
+ * Apariciones especiales (Hora Punta, Fuga Lateral, Invasión de Jefe) respetan el tope de bichos a la vez:
+ * salen las que caben y el resto espera en cola.
+ */
+export function drainPendingSpawnsWithinCap<T>(
+  pending: readonly T[],
+  aliveCount: number,
+  maxConcurrent: number
+): { spawnNow: T[]; remaining: T[] } {
+  const room = Math.max(0, maxConcurrent - aliveCount);
+  return { spawnNow: pending.slice(0, room), remaining: pending.slice(room) };
 }
 
 /**
@@ -1260,7 +1298,7 @@ export const COMANDAS_POOL: readonly Omit<ComandaTicket, 'id'>[] = [
     effectId: 'deploy_roomba',
     color: 'blue',
     icon: '🔪',
-    title: 'Roomba Con Cuchillos',
+    title: 'Robot Aspirador con Cuchillos',
   },
   {
     effectId: 'supply_boost',
@@ -1413,10 +1451,10 @@ export const RUSH_ADRENALINE_MILESTONES: readonly RushAdrenalineMilestone[] = [
   {
     id: 'rush_boss_3min',
     title: '👑 ¡HITO: JEFE MIN 3:00 ABATIDO!',
-    subtitle: 'Roomba Kamikaze + Traje EPI permanentes + 200 🪙',
+    subtitle: 'Robot Kamikaze + Traje EPI permanentes + 200 🪙',
     coinsBonus: 200,
     unlockArmor: 'hazmat_epi',
-    unlockSpecial: 'knife_roomba',
+    unlockSpecial: 'knife_robot',
   },
   {
     id: 'rush_overdrive_4min',

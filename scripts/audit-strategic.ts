@@ -20,3 +20,4 @@ for (const r of results) {
 }
 const failing = results.filter((r) => !r.ok).map((r) => r.level);
 console.log(`\nNiveles que fallan (${failing.length}): ${failing.join(', ') || 'ninguno'}`);
+if (failing.length > 0) process.exitCode = 1;

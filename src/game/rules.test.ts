@@ -942,7 +942,7 @@ test('Comprehension & Anti-Overlap Polish: 0.08x Inspector, 0.20x Comanda Slow-M
       pieces: boardPieces,
       intactPlates: [true, true, false, true],
       vipPlateRail: 0,
-      equippedSpecial: 'karcher_blast',
+      equippedSpecial: 'hydro_blast',
       ultimateCharge: 65,
       isRushMode: true,
     }
@@ -957,7 +957,7 @@ test('Comprehension & Anti-Overlap Polish: 0.08x Inspector, 0.20x Comanda Slow-M
       pieces: boardPieces,
       intactPlates: [true, true, false, true],
       vipPlateRail: 0,
-      equippedSpecial: 'karcher_blast',
+      equippedSpecial: 'hydro_blast',
       ultimateCharge: 65,
       isRushMode: false,
     }
@@ -970,7 +970,7 @@ test('Comprehension & Anti-Overlap Polish: 0.08x Inspector, 0.20x Comanda Slow-M
       pieces: boardPieces,
       intactPlates: [true, true, true, true],
       vipPlateRail: null,
-      equippedSpecial: 'karcher_blast',
+      equippedSpecial: 'hydro_blast',
       ultimateCharge: 100,
       isRushMode: true,
     }
@@ -1055,3 +1055,48 @@ test('Comprehension & Anti-Overlap Polish: 0.08x Inspector, 0.20x Comanda Slow-M
 
 
 
+
+test('Ultimates renombradas (Kärcher, Roomba): las partidas con el id antiguo cargan la nueva', async () => {
+  const { migrateLegacyProgressIds, SPECIAL_WEAPONS_CATALOG } = await import('./rules');
+  const migrated = migrateLegacyProgressIds({
+    equippedSpecial: 'karcher_blast',
+    unlockedSpecials: ['karcher_blast', 'baking_volcano', 'hydro_blast', 'knife_roomba'],
+  });
+  assert.equal(migrated.equippedSpecial, 'hydro_blast');
+  assert.deepEqual(migrated.unlockedSpecials, ['hydro_blast', 'baking_volcano', 'knife_robot']);
+  assert.equal(migrateLegacyProgressIds({ equippedSpecial: 'knife_roomba' }).equippedSpecial, 'knife_robot');
+  for (const spec of Object.values(SPECIAL_WEAPONS_CATALOG)) {
+    assert.ok(!/k[aä]rcher|roomba/i.test(spec.name + spec.desc), `marca registrada en «${spec.name}»`);
+  }
+});
+
+test('Marcas registradas: ningún texto visible dice Kärcher ni Roomba', async () => {
+  const { readFileSync } = await import('node:fs');
+  const { fileURLToPath } = await import('node:url');
+  const files = ['../App.tsx', '../components/ChefBastionCanvas.tsx', './rules.ts', './roguelite.ts'];
+  for (const rel of files) {
+    const src = readFileSync(fileURLToPath(new URL(rel, import.meta.url)), 'utf8');
+    src.split('\n').forEach((line, i) => {
+      if (/^\s*(\/\/|\*)/.test(line)) return;
+      assert.ok(
+        !/[\s'"`>¡·]\s*(k[aä]rcher|roomba)\b/i.test(line),
+        `${rel}:${i + 1} muestra una marca registrada: ${line.trim()}`
+      );
+    });
+  }
+});
+
+test('Nota del nivel: 3★ sin platos perdidos, 2★ con uno, 1★ con dos o más; la mejor nunca baja', async () => {
+  const { computeLevelStars, mergeBestLevelStars, sanitizeLevelStars } = await import('./rules');
+  assert.equal(computeLevelStars(0), 3);
+  assert.equal(computeLevelStars(1), 2);
+  assert.equal(computeLevelStars(2), 1);
+  assert.equal(computeLevelStars(3), 1);
+  let best = mergeBestLevelStars(undefined, 4, 2);
+  best = mergeBestLevelStars(best, 4, 1);
+  assert.equal(best[4], 2);
+  best = mergeBestLevelStars(best, 4, 3);
+  assert.equal(best[4], 3);
+  assert.deepEqual(sanitizeLevelStars({ 1: 3, 2: 5, x: 2, 0: 1, 7: 2 }), { 1: 3, 7: 2 });
+  assert.deepEqual(sanitizeLevelStars(null), {});
+});

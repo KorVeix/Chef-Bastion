@@ -12,7 +12,8 @@
  * Gran Jefe de guion: 3 fases por vida (66 % / 33 %), evasión alterna con ácido en fase 2+ y +30 % de
  * velocidad en fase 3. Sin escoltas (las del motor solo salen desde el Nv.30).
  * Invasión lateral: cruza en horizontal (×0,92) bajando ×0,22; la Escuadra la endereza por su carril.
- * No modela (todavía): Lejía.
+ * Lejía: chorro térmico de 30 que atraviesa escudos y empuja; con Estropajo, espuma corrosiva (térmica).
+ * Cangrejo de guion: tanque acorazado (35 % de daño de lo no térmico, ver `armoredTankDamageMult`).
  * Un guion que los use debe ampliar antes este simulador (ver `SIM_SUPPORTED_BUGS`).
  */
 import type { BossPuzzleType, BossTier, BugEnemy, BugType, UtensilPiece, UtensilType } from './types';
@@ -22,13 +23,20 @@ import {
   MIN_PLACEABLE_ROW,
   applyPhysicalKnockback,
   computeBossDamageMultiplier,
+  computeLiveMenuBuffs,
   evaluateBoardCombos,
   getBiomeForLevel,
   getGrandBossPhase,
   getLevelSpeedMultiplier,
 } from './rules';
-import { ROACH_SHIFT_INTERVAL_SEC, nextBossEvadeRail, stepRoachZigzag } from './strategicScripts';
-import { STRATEGIC_BUG_BASE_HP, STRATEGIC_BUG_BASE_SPEED, SHIELDED_BUGS } from './levelAudit';
+import {
+  ROACH_SHIFT_INTERVAL_SEC,
+  armoredTankDamageMult,
+  nextBossEvadeRail,
+  stepRoachZigzag,
+} from './strategicScripts';
+import { SHIELDED_BUGS } from './levelAudit';
+import { BUG_BASE_HP, BUG_BASE_SPEED, COMBAT } from './combatTuning';
 
 // Cucaracha de guion: zigzag de carril (stepRoachZigzag), clavada al resbalar en el Jabón.
 export const SIM_SUPPORTED_BUGS: ReadonlySet<BugType> = new Set<BugType>([
@@ -84,8 +92,13 @@ export interface SimResult {
   firstKillT: number | null;
   /** Mayor tramo sin ningún bicho en pantalla mientras el guion sigue (tiempo muerto). */
   maxDeadGap: number;
+  /** Derrota real: el motor absorbe 3 fugas con los Sellos Sanitarios y pierde en la 4.ª. */
+  defeated: boolean;
   endTime: number;
 }
+
+/** Fugas que aguanta el motor antes de perder (3 Sellos Sanitarios; pierde en la siguiente). */
+export const SIM_SANITATION_SEALS = 3;
 
 interface SimBug {
   id: number;
@@ -109,6 +122,7 @@ interface SimBug {
   evadeDir: 1 | -1;
   attackWindup: number;
   lateralDir: 0 | 1 | -1;
+  armoredTank: boolean;
   lateralSpeed: number;
   roachTimer: number | null;
   roachDir: 1 | -1;
@@ -122,7 +136,7 @@ interface SimProjectile {
   damage: number;
   pierce: boolean;
   life: number;
-  flavor: 'water_drop' | 'foam_fan' | 'vortex_soap' | 'enemy_acid' | 'reflected_bubble';
+  flavor: 'water_drop' | 'bleach_glob' | 'foam_fan' | 'vortex_soap' | 'enemy_acid' | 'reflected_bubble';
   fromVortex: boolean;
   fromDiagonalFoam: boolean;
   /** Ácido de avispa: pringa la primera arma que toca (3,5 s sin funcionar) salvo el Gel WC, que lo devuelve. */
@@ -158,7 +172,7 @@ function bossMult(bug: SimBug, opts: { thermal: boolean; control: boolean }): nu
 
 const PLATE_ROW = 6.85;
 const SPAWN_ROW = -0.35;
-const FOAM_ANGLES = [-0.55, -0.26, 0, 0.26, 0.55];
+const FOAM_ANGLES = COMBAT.foam.angles;
 
 function frictionFactor(level: number): number {
   const f = getBiomeForLevel(level).friction;
@@ -192,7 +206,15 @@ export function simulateStrategic(opts: {
   plan: readonly SimLayoutStep[];
   dt?: number;
   maxTime?: number;
+  /** Corta la simulación en la primera fuga (búsquedas de disposiciones que pierden algún plato). */
+  stopOnFirstLeak?: boolean;
+  /**
+   * Desfase del reloj con el que gira la Fregona: el motor usa el reloj real (incluye colocación y pausas),
+   * así que los tests prueban varias fases.
+   */
+  clockOffset?: number;
 }): SimResult {
+  const clockOffset = opts.clockOffset ?? 0;
   const dt = opts.dt ?? 1 / 60;
   const maxTime = opts.maxTime ?? 600;
   const speedMult = getLevelSpeedMultiplier(opts.level) * frictionFactor(opts.level);
@@ -213,6 +235,10 @@ export function simulateStrategic(opts: {
   let firstSpawnT: number | null = null;
   let deadGap = 0;
   let maxDeadGap = 0;
+  // Platos intactos: sus bonos (computeLiveMenuBuffs) se apagan al perder cada plato.
+  const intactPlates = [true, true, true, true];
+  let seals = SIM_SANITATION_SEALS;
+  let defeated = false;
   let t = 0;
 
   const applyLayout = (step: SimLayoutStep) => {
@@ -226,7 +252,22 @@ export function simulateStrategic(opts: {
         used.add(same);
         return same;
       }
-      // Pieza recién colocada o movida: 0,3 s de enganche magnético (moveOrSwapUtensil).
+      return null as unknown as UtensilPiece;
+    });
+    // Piezas movidas: conservan su temporizador de disparo y solo reciben el enganche de 0,3 s
+    // (como moveOrSwapUtensil). Las nuevas salen de la bandeja con su temporizador inicial.
+    pieces = pieces.map((p, idx) => {
+      if (p) return p;
+      const pl = step.placements[idx];
+      const moved = prev.find((q) => !used.has(q) && q.type === pl.type && !pieces.includes(q));
+      if (moved) {
+        used.add(moved);
+        moved.rail = pl.rail;
+        moved.row = pl.row;
+        moved.cooldown = 0.3;
+        moved.gunkTimer = 0;
+        return moved;
+      }
       return {
         id: `sim-${pl.type}-${idx}-${step.t}`,
         type: pl.type,
@@ -237,7 +278,7 @@ export function simulateStrategic(opts: {
         cooldown: 0.3,
         fireTimer: pl.type === 'spray_flus' ? 0.35 : pl.type === 'mop_vortex' ? 0.3 : 0,
         comboType: 'none',
-      };
+      } as UtensilPiece;
     });
     const evaluated = evaluateBoardCombos(pieces);
     // Conservar las referencias (temporizadores) y copiar solo el combo.
@@ -256,6 +297,8 @@ export function simulateStrategic(opts: {
       planIdx += 1;
     }
 
+    const buffs = computeLiveMenuBuffs(intactPlates);
+
     // 1. Disparo de armas (Nv.1, Estratégico).
     for (const piece of pieces) {
       if (piece.rail === null || piece.row === null) continue;
@@ -269,7 +312,17 @@ export function simulateStrategic(opts: {
       }
       const inCombo = piece.comboType !== 'none';
       const interval =
-        piece.type === 'spray_flus' ? (inCombo ? 0.6 : 1.65) : piece.type === 'mop_vortex' ? (inCombo ? 0.85 : 1.45) : 999;
+        piece.type === 'spray_flus'
+          ? inCombo
+            ? COMBAT.flus.comboInterval
+            : COMBAT.flus.interval
+          : piece.type === 'bleach_cannon'
+          ? (inCombo ? 0.85 : 1.55) / buffs.thermalRateMult
+          : piece.type === 'mop_vortex'
+          ? inCombo
+            ? COMBAT.mop.comboInterval
+            : COMBAT.mop.interval
+          : 999;
       piece.fireTimer -= dt;
       if (piece.fireTimer > 0 || interval >= 100) continue;
       piece.fireTimer = interval;
@@ -278,26 +331,41 @@ export function simulateStrategic(opts: {
           x: piece.rail,
           y: piece.row - 0.25,
           vx: 0,
-          vy: -5.0,
-          damage: inCombo ? 19 : 14,
+          vy: -COMBAT.flus.speed,
+          damage: Math.round((inCombo ? COMBAT.flus.comboDamage : COMBAT.flus.damage) * buffs.frontalDamageMult),
           pierce: false,
-          life: 2.3,
+          life: COMBAT.flus.life,
           flavor: 'water_drop',
           fromVortex: false,
           fromDiagonalFoam: false,
         });
+      } else if (piece.type === 'bleach_cannon') {
+        // Lejía: chorro pesado corrosivo (térmico): atraviesa escudos y empuja 1 casilla.
+        projectiles.push({
+          x: piece.rail,
+          y: piece.row - 0.25,
+          vx: 0,
+          vy: -5.0,
+          damage: Math.round(30 * buffs.frontalDamageMult),
+          pierce: false,
+          life: 2.3,
+          flavor: 'bleach_glob',
+          fromVortex: false,
+          fromDiagonalFoam: false,
+          thermal: true,
+        });
       } else if (piece.type === 'mop_vortex') {
-        const dirs = inCombo ? 8 : 4;
+        const dirs = inCombo ? COMBAT.mop.comboShots : COMBAT.mop.shots;
         for (let d = 0; d < dirs; d++) {
-          const ang = (d / dirs) * Math.PI * 2 + t * 2;
+          const ang = (d / dirs) * Math.PI * 2 + (t + clockOffset) * 2;
           projectiles.push({
             x: piece.rail,
             y: piece.row,
-            vx: Math.cos(ang) * 2.5,
-            vy: Math.sin(ang) * 2.5,
-            damage: inCombo ? 24 : 14,
+            vx: Math.cos(ang) * COMBAT.mop.speed,
+            vy: Math.sin(ang) * COMBAT.mop.speed,
+            damage: inCombo ? COMBAT.mop.comboDamage : COMBAT.mop.damage,
             pierce: true,
-            life: 0.88,
+            life: COMBAT.mop.life,
             flavor: 'vortex_soap',
             fromVortex: true,
             fromDiagonalFoam: false,
@@ -316,8 +384,9 @@ export function simulateStrategic(opts: {
         targetRail: sp.entry === 'left' ? -0.75 : sp.entry === 'right' ? 3.75 : sp.rail,
         y: sp.entry ? sp.row ?? 2 : SPAWN_ROW,
         lateralDir: sp.entry === 'left' ? 1 : sp.entry === 'right' ? -1 : 0,
+        armoredTank: sp.type === 'king_crab' && !sp.boss,
         lateralSpeed: sp.lateralSpeed ?? 0.92,
-        hp: sp.boss ? sp.boss.hp : STRATEGIC_BUG_BASE_HP[sp.type],
+        hp: sp.boss ? sp.boss.hp : BUG_BASE_HP[sp.type],
         hasShield: sp.boss ? true : SHIELDED_BUGS.has(sp.type),
         slowTimer: 0,
         knockbackCooldown: 0,
@@ -327,7 +396,7 @@ export function simulateStrategic(opts: {
         puzzle: sp.boss?.puzzle ?? null,
         armorBroken: false,
         stunTimer: 0,
-        maxHp: sp.boss ? sp.boss.hp : STRATEGIC_BUG_BASE_HP[sp.type],
+        maxHp: sp.boss ? sp.boss.hp : BUG_BASE_HP[sp.type],
         bossPhase: 1,
         evadeTimer: 2.6,
         evadeDir: -1,
@@ -353,7 +422,7 @@ export function simulateStrategic(opts: {
       proj.x += proj.vx * dt;
       proj.y += proj.vy * dt;
       proj.life -= dt;
-      if (proj.flavor === 'water_drop') {
+      if (proj.flavor === 'water_drop' || proj.flavor === 'bleach_glob') {
         const scourer = pieces.find(
           (p) =>
             p.type === 'scourer_nanas' &&
@@ -368,14 +437,17 @@ export function simulateStrategic(opts: {
             surviving.push({
               x: scourer.rail,
               y: scourer.row - 0.38,
-              vx: Math.sin(ang) * 3.2,
-              vy: -Math.cos(ang) * 4.5,
-              damage: 16,
-              pierce: Math.abs(ang) > 0.2,
-              life: 1.4,
+              vx: Math.sin(ang) * COMBAT.foam.speedX,
+              vy: -Math.cos(ang) * COMBAT.foam.speedY,
+              // Solo la burbuja central es «frontal» (motor: frontalDamageMult en |ángulo| < 0,1).
+              damage: Math.round(16 * (Math.abs(ang) < 0.1 ? buffs.frontalDamageMult : 1)),
+              pierce: Math.abs(ang) > COMBAT.foam.pierceAngle,
+              life: COMBAT.foam.life,
               flavor: 'foam_fan',
               fromVortex: false,
-              fromDiagonalFoam: Math.abs(ang) > 0.2,
+              fromDiagonalFoam: Math.abs(ang) > COMBAT.foam.pierceAngle,
+              // Súper Espuma Corrosiva: la de la Lejía es térmica.
+              thermal: proj.flavor === 'bleach_glob',
             });
           }
           continue;
@@ -397,9 +469,9 @@ export function simulateStrategic(opts: {
             proj.pierce = true;
             proj.thermal = true;
             proj.fromDiagonalFoam = true;
-            proj.damage = 45 * hitPiece.level;
+            proj.damage = COMBAT.gelWc.reflectDamagePerLevel * hitPiece.level;
           } else {
-            hitPiece.gunkTimer = 3.5;
+            hitPiece.gunkTimer = COMBAT.wasp.gunkSec;
             continue;
           }
         }
@@ -411,7 +483,7 @@ export function simulateStrategic(opts: {
         // Las avispas vuelan: el remolino de la Fregona (suelo) no las alcanza.
         if (proj.fromVortex && bug.type === 'acid_wasp') continue;
         if (Math.abs(bug.rail - proj.x) < 0.48 && Math.abs(bug.y - proj.y) < 0.5) {
-          if (proj.fromVortex && bug.knockbackCooldown <= 0) {
+          if ((proj.fromVortex || proj.flavor === 'bleach_glob') && bug.knockbackCooldown <= 0) {
             const kb = applyPhysicalKnockback(
               {
                 yProgress: bug.y,
@@ -430,15 +502,21 @@ export function simulateStrategic(opts: {
           if (bug.bossTier) {
             const control =
               proj.fromDiagonalFoam || proj.fromVortex || bug.isSlidingFromSoap || bug.redirectedBySquare;
-            bug.hp -= proj.damage * bossMult(bug, { thermal: Boolean(proj.thermal), control });
-            if (proj.fromVortex) bug.slowTimer = Math.max(bug.slowTimer, 1.8);
+            const mult = bossMult(bug, { thermal: Boolean(proj.thermal), control });
+            // Motor: un impacto térmico/explosivo rompe la coraza del jefe (tras calcular el multiplicador).
+            if (proj.thermal && !bug.armorBroken) {
+              bug.armorBroken = true;
+              bug.hasShield = false;
+            }
+            bug.hp -= proj.damage * mult;
+            if (proj.fromVortex) bug.slowTimer = Math.max(bug.slowTimer, 1.8 * buffs.controlDurationMult);
             evaluateGrandPhase(bug);
-          } else if (bug.hasShield && !proj.pierce) {
+          } else if (bug.hasShield && !proj.pierce && !proj.thermal) {
             // ¡CLINK! sin daño.
           } else {
-            if (bug.hasShield && proj.pierce) bug.hasShield = false;
-            bug.hp -= proj.damage;
-            if (proj.fromVortex) bug.slowTimer = Math.max(bug.slowTimer, 1.4);
+            if (bug.hasShield) bug.hasShield = false;
+            bug.hp -= proj.damage * armoredTankDamageMult(bug.armoredTank, Boolean(proj.thermal));
+            if (proj.fromVortex) bug.slowTimer = Math.max(bug.slowTimer, 1.4 * buffs.controlDurationMult);
           }
           proj.life = 0;
           break;
@@ -456,11 +534,11 @@ export function simulateStrategic(opts: {
       bug.slowTimer = Math.max(0, bug.slowTimer - dt);
       bug.knockbackCooldown = Math.max(0, bug.knockbackCooldown - dt);
       bug.stunTimer = Math.max(0, bug.stunTimer - dt);
-      const frenzy = bug.bossTier === 'grand' && bug.bossPhase === 3 ? 1.3 : 1.0;
+      const frenzy = bug.bossTier === 'grand' && bug.bossPhase === 3 ? COMBAT.grandBoss.frenzySpeedMult : 1.0;
       const speed =
         bug.stunTimer > 0
           ? 0.08
-          : STRATEGIC_BUG_BASE_SPEED[bug.type] * speedMult * frenzy * (bug.slowTimer > 0 ? 0.55 : 1.0);
+          : BUG_BASE_SPEED[bug.type] * speedMult * frenzy * (bug.slowTimer > 0 ? COMBAT.slowSpeedFactor : 1.0);
       if (bug.roachTimer !== null) {
         const z = stepRoachZigzag(
           {
@@ -520,7 +598,7 @@ export function simulateStrategic(opts: {
       }
 
       if (bug.type === 'acid_wasp' && bug.y > 0.5 && bug.y < 3.6 && bug.stunTimer <= 0) {
-        bug.attackWindup += dt * 0.45;
+        bug.attackWindup += dt * COMBAT.wasp.windupPerSec;
         if (bug.attackWindup >= 1.0) {
           bug.attackWindup = 0;
           projectiles.push({
@@ -561,13 +639,13 @@ export function simulateStrategic(opts: {
       const bridge = links.find(
         (l) => l.kind === 'bridge_uv' && l.fromRow === rowInt && (l.fromRail === railInt || l.toRail === railInt)
       );
-      if (bridge && Math.abs(bug.y - rowInt) < 0.3) {
+      if (bridge && Math.abs(bug.y - rowInt) < COMBAT.bridgeUv.halfWindowRows) {
         if (bug.hasShield || (bug.bossTier && !bug.armorBroken)) {
           bug.hasShield = false;
           bug.armorBroken = true;
-          if (bug.bossTier === 'mini' && bug.puzzle === 'uv_overheat') bug.stunTimer = 3.2;
+          if (bug.bossTier === 'mini' && bug.puzzle === 'uv_overheat') bug.stunTimer = COMBAT.bridgeUv.miniBossStunSec * buffs.controlDurationMult;
         }
-        bug.hp -= 48 * bossMult(bug, { thermal: true, control: false }) * dt;
+        bug.hp -= COMBAT.bridgeUv.dps * buffs.thermalRateMult * bossMult(bug, { thermal: true, control: false }) * dt;
         evaluateGrandPhase(bug);
       }
 
@@ -575,9 +653,9 @@ export function simulateStrategic(opts: {
       const soap = pieceAt('soap_bar', railInt, rowInt);
       if (soap && !flying && !bug.isSlidingFromSoap && Math.abs(bug.y - rowInt) < 0.32) {
         bug.isSlidingFromSoap = true;
-        bug.slowTimer = Math.max(bug.slowTimer, 2.6);
+        bug.slowTimer = Math.max(bug.slowTimer, COMBAT.soap.slowSec * buffs.controlDurationMult);
         if (bug.bossTier === 'mini' && bug.puzzle === 'soap_stun') {
-          bug.stunTimer = 3.5;
+          bug.stunTimer = 3.5 * buffs.controlDurationMult;
           bug.hasShield = false;
           bug.armorBroken = true;
         }
@@ -589,16 +667,14 @@ export function simulateStrategic(opts: {
 
       const mopHere = pieceAt('mop_vortex', railInt, rowInt);
       if (mopHere && !flying && Math.abs(bug.y - rowInt) < 0.45) {
-        bug.slowTimer = Math.max(bug.slowTimer, 2.2);
+        bug.slowTimer = Math.max(bug.slowTimer, 2.2 * buffs.controlDurationMult);
         if (!bug.isSlidingFromSoap && bug.knockbackCooldown <= 0 && bug.bossTier !== 'grand') {
           bug.y = Math.max(-0.2, bug.y - (bug.bossTier === 'mini' ? 0.45 : 1.0));
           bug.knockbackCooldown = 1.25;
         }
         const vortexDps = bug.bossTier
           ? (bug.isSlidingFromSoap ? 88 : 46) * bossMult(bug, { thermal: false, control: true })
-          : bug.isSlidingFromSoap
-          ? 240
-          : 65;
+          : (bug.isSlidingFromSoap ? COMBAT.mop.contactDpsSlipped : COMBAT.mop.contactDps) * armoredTankDamageMult(bug.armoredTank, false);
         bug.hp -= vortexDps * dt;
         evaluateGrandPhase(bug);
       }
@@ -609,6 +685,32 @@ export function simulateStrategic(opts: {
       }
       if (bug.y >= PLATE_ROW) {
         leaks.push({ t, type: bug.type, rail: railInt });
+        if (seals > 0) {
+          seals -= 1;
+          intactPlates[railInt] = false;
+          // Motor: al perder un Sello sale una ola de lejía por ese carril (999 al primer bicho; 180 a un jefe).
+          projectiles.push({
+            x: railInt,
+            y: 6.8,
+            vx: 0,
+            vy: -8.5,
+            damage: bug.bossTier ? 180 : 999,
+            pierce: true,
+            life: 1.8,
+            flavor: 'bleach_glob',
+            fromVortex: false,
+            fromDiagonalFoam: false,
+            thermal: true,
+          });
+          if (bug.bossTier) {
+            // El jefe no desaparece: vuelve a la fila 3.
+            bug.y = 2.4;
+            alive.push(bug);
+            continue;
+          }
+        } else {
+          defeated = true;
+        }
         continue;
       }
       alive.push(bug);
@@ -617,6 +719,8 @@ export function simulateStrategic(opts: {
 
     t += dt;
     if (spawnIdx >= spawns.length && bugs.length === 0) break;
+    if (opts.stopOnFirstLeak && leaks.length > 0) break;
+    if (opts.stopOnFirstLeak && leaks.length > 0) break;
   }
 
   return {
@@ -628,6 +732,7 @@ export function simulateStrategic(opts: {
     firstSpawnT,
     firstKillT: kills.length > 0 ? kills[0].t : null,
     maxDeadGap,
+    defeated,
     endTime: t,
   };
 }

@@ -452,8 +452,8 @@ export const ACHIEVEMENTS_CATALOG: AchievementDef[] = [
     recipeIcons: ['🧼', '➔', '🌪️', '💥', '👑'],
     description: 'Haz patinar a la Rata Blindada en la Pastilla de Jabón directo hacia la Fregona Turbo-Spin.',
     rewardType: 'special_weapon',
-    rewardId: 'knife_roomba',
-    rewardLabel: 'Roomba Kamikaze con Cuchillos',
+    rewardId: 'knife_robot',
+    rewardLabel: 'Robot Aspirador Kamikaze con Cuchillos',
     unlockCostCoins: 350,
   },
   {
@@ -551,8 +551,8 @@ export const SPECIAL_WEAPONS_CATALOG: Record<
   SpecialWeaponId,
   { name: string; icon: string; desc: string }
 > = {
-  karcher_blast: {
-    name: 'Hidrolimpiadora "Kärcher" Alta Presión',
+  hydro_blast: {
+    name: 'Hidrolimpiadora Industrial',
     icon: '🌊',
     desc: 'Empuja hacia atrás y blanquea a todos los bichos de los 4 raíles.',
   },
@@ -561,8 +561,8 @@ export const SPECIAL_WEAPONS_CATALOG: Record<
     icon: '🌋',
     desc: 'Inunda el tablero de espuma ácida que funde todas las chapas.',
   },
-  knife_roomba: {
-    name: 'Roomba Kamikaze con Cuchillos',
+  knife_robot: {
+    name: 'Robot Aspirador Kamikaze con Cuchillos',
     icon: '🔪',
     desc: 'Cruza los 4 raíles rebotando a toda pastilla y triturando todo a su paso.',
   },
@@ -738,9 +738,9 @@ export function getTacticalOnboardingCard(level: number): TacticalOnboardingCard
         },
       ],
       flowArrowLabel: '🪳 pisa 🧼 en R3 ➔ deja de esquivar y patina hacia 🌪️ en R2 ➔ ¡Centrifugado 3★!',
-      rewardTitle: '🎁 Recompensa 3★: Roomba Kamikaze con Cuchillos',
+      rewardTitle: '🎁 Recompensa 3★: Robot Aspirador Kamikaze con Cuchillos',
       rewardExplanation:
-        'Las bajas 3★ cargan al máximo el Manómetro Ultimate y desbloquean la Roomba Kamikaze en el Álbum.',
+        'Las bajas 3★ cargan al máximo el Manómetro Ultimate y desbloquean el Robot Aspirador Kamikaze en el Álbum.',
     };
   }
 
@@ -2060,6 +2060,37 @@ export const DEFAULT_KITCHEN_UPGRADES: KitchenUpgrades = {
   ultBaseCharge: 0,
 };
 
+/**
+ * Nota de un nivel del Estratégico por los sellos perdidos (cada fuga arruina un plato):
+ * 0 → 3 estrellas, 1 → 2, 2 o 3 → 1. Pasar sin recolocar es posible perdiendo platos;
+ * la nota perfecta exige el guion bien jugado.
+ */
+export function computeLevelStars(sealsLost: number): 1 | 2 | 3 {
+  const lost = Math.max(0, Math.floor(Number.isFinite(sealsLost) ? sealsLost : 3));
+  return lost === 0 ? 3 : lost === 1 ? 2 : 1;
+}
+
+/** Guarda la mejor nota de cada nivel (nunca baja). */
+export function mergeBestLevelStars(
+  prev: Record<number, 1 | 2 | 3> | undefined,
+  level: number,
+  stars: 1 | 2 | 3
+): Record<number, 1 | 2 | 3> {
+  const current = prev?.[level] ?? 0;
+  return { ...(prev ?? {}), [level]: (Math.max(current, stars) as 1 | 2 | 3) };
+}
+
+/** Limpia las notas guardadas (partida local o código de copia): niveles ≥ 1 y notas 1-3. */
+export function sanitizeLevelStars(raw: unknown): Record<number, 1 | 2 | 3> {
+  const out: Record<number, 1 | 2 | 3> = {};
+  if (!raw || typeof raw !== 'object') return out;
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+    const level = Number(k);
+    if (Number.isInteger(level) && level >= 1 && (v === 1 || v === 2 || v === 3)) out[level] = v;
+  }
+  return out;
+}
+
 export const DEFAULT_PROGRESS: PlayerProgress = {
   currentLevel: 1,
   highestLevel: 1,
@@ -2069,10 +2100,10 @@ export const DEFAULT_PROGRESS: PlayerProgress = {
   unlockedAchievements: [],
   unlockedHats: ['classic_toque'],
   unlockedArmors: ['white_apron'],
-  unlockedSpecials: ['karcher_blast'],
+  unlockedSpecials: ['hydro_blast'],
   equippedHat: 'classic_toque',
   equippedArmor: 'white_apron',
-  equippedSpecial: 'karcher_blast',
+  equippedSpecial: 'hydro_blast',
   bestScore: 0,
   totalBugsCleaned: 0,
   kitchenUpgrades: { ...DEFAULT_KITCHEN_UPGRADES },
@@ -2513,7 +2544,7 @@ export function computeThermalShockResult(
 
 /**
  * Physical Knockback ("Empuje físico"):
- * Sweep or explosion weapons (Fregona 360° / Volcán / Kärcher) physically push light/medium
+ * Sweep or explosion weapons (Fregona 360° / Volcán / Hidrolimpiadora) physically push light/medium
  * plagues 1 cell backward (or deflect to a neighboring rail), allowing re-pushing into an active UV Bridge.
  */
 export function applyPhysicalKnockback(
@@ -2846,10 +2877,34 @@ const VALID_ARMORS: readonly ArmorId[] = [
   'hazmat_epi',
   'golden_scourer_mail',
 ];
-const VALID_SPECIALS: readonly SpecialWeaponId[] = [
-  'karcher_blast',
+/** Ids de Ultimate retirados → id actual (partidas guardadas y códigos de copia antiguos). */
+const LEGACY_SPECIAL_IDS: Record<string, SpecialWeaponId> = {
+  karcher_blast: 'hydro_blast',
+  knife_roomba: 'knife_robot',
+};
+
+/** Traduce un id de Ultimate antiguo al actual; deja igual cualquier otro valor. */
+export function migrateSpecialId(id: unknown): unknown {
+  return typeof id === 'string' && id in LEGACY_SPECIAL_IDS ? LEGACY_SPECIAL_IDS[id] : id;
+}
+
+/** Aplica `migrateSpecialId` a los campos de Ultimate de un progreso guardado. */
+export function migrateLegacyProgressIds<T extends { equippedSpecial?: unknown; unlockedSpecials?: unknown }>(
+  prog: T
+): T {
+  return {
+    ...prog,
+    ...(prog.equippedSpecial !== undefined ? { equippedSpecial: migrateSpecialId(prog.equippedSpecial) } : {}),
+    ...(Array.isArray(prog.unlockedSpecials)
+      ? { unlockedSpecials: Array.from(new Set(prog.unlockedSpecials.map(migrateSpecialId))) }
+      : {}),
+  };
+}
+
+export const VALID_SPECIALS: readonly SpecialWeaponId[] = [
+  'hydro_blast',
   'baking_volcano',
-  'knife_roomba',
+  'knife_robot',
 ];
 
 /**
@@ -2942,7 +2997,11 @@ export function importProgressFromBase64(
   const unlockedWorlds = filterList(rawProg.unlockedWorlds, VALID_WORLDS, ['sunny_counter']);
   const unlockedHats = filterList(rawProg.unlockedHats, VALID_HATS, ['classic_toque']);
   const unlockedArmors = filterList(rawProg.unlockedArmors, VALID_ARMORS, ['white_apron']);
-  const unlockedSpecials = filterList(rawProg.unlockedSpecials, VALID_SPECIALS, ['karcher_blast']);
+  const migratedSpecials = migrateLegacyProgressIds({
+    equippedSpecial: rawProg.equippedSpecial,
+    unlockedSpecials: rawProg.unlockedSpecials,
+  });
+  const unlockedSpecials = filterList(migratedSpecials.unlockedSpecials, VALID_SPECIALS, ['hydro_blast']);
 
   const currentWorld = VALID_WORLDS.includes(rawProg.currentWorld as WorldId)
     ? (rawProg.currentWorld as WorldId)
@@ -2953,9 +3012,9 @@ export function importProgressFromBase64(
   const equippedArmor = VALID_ARMORS.includes(rawProg.equippedArmor as ArmorId)
     ? (rawProg.equippedArmor as ArmorId)
     : 'white_apron';
-  const equippedSpecial = VALID_SPECIALS.includes(rawProg.equippedSpecial as SpecialWeaponId)
-    ? (rawProg.equippedSpecial as SpecialWeaponId)
-    : 'karcher_blast';
+  const equippedSpecial = VALID_SPECIALS.includes(migratedSpecials.equippedSpecial as SpecialWeaponId)
+    ? (migratedSpecials.equippedSpecial as SpecialWeaponId)
+    : 'hydro_blast';
 
   const currentLevel = Math.max(1, Math.floor(rawProg.currentLevel));
   const highestLevel =
@@ -2996,6 +3055,7 @@ export function importProgressFromBase64(
     kitchenUpgrades: normalizeKitchenUpgrades(
       rawProg.kitchenUpgrades as Partial<KitchenUpgrades> | undefined
     ),
+    levelStars: sanitizeLevelStars(rawProg.levelStars),
   };
 
   let validatedSettings: GameSettings | undefined;
@@ -3140,7 +3200,7 @@ export function getTacticalInspectorCard(
   }
 
   if (target.kind === 'ultimate') {
-    const spec = SPECIAL_WEAPONS_CATALOG[opts.equippedSpecial] ?? SPECIAL_WEAPONS_CATALOG.karcher_blast;
+    const spec = SPECIAL_WEAPONS_CATALOG[opts.equippedSpecial] ?? SPECIAL_WEAPONS_CATALOG.hydro_blast;
     const pct = Math.min(100, Math.max(0, Math.round(opts.ultimateCharge)));
     return {
       title: `${spec.icon} ${spec.name}`,
