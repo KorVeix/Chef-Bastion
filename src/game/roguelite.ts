@@ -1166,7 +1166,7 @@ export function computeRushDirectorParams(
       ? 0.28 + elapsedSeconds * 0.002
       : 0.31 +
         (elapsedSeconds - 15) * 0.0018 +
-        Math.max(0, elapsedSeconds - 72) * 0.0095;
+        Math.max(0, elapsedSeconds - 72) * 0.0085;
   const effectiveFreq = timeFreq * adaptiveFreqMult;
   const spawnIntervalSec = Number(Math.max(0.28, 1 / effectiveFreq).toFixed(2));
 
