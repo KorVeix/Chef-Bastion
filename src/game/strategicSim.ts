@@ -206,6 +206,8 @@ export function simulateStrategic(opts: {
   plan: readonly SimLayoutStep[];
   dt?: number;
   maxTime?: number;
+  /** Corta la simulación en la primera fuga (búsquedas de disposiciones que pierden algún plato). */
+  stopOnFirstLeak?: boolean;
   /**
    * Desfase del reloj con el que gira la Fregona: el motor usa el reloj real (incluye colocación y pausas),
    * así que los tests prueban varias fases.
@@ -715,9 +717,10 @@ export function simulateStrategic(opts: {
     }
     bugs = alive;
 
-    if (defeated) break;
     t += dt;
     if (spawnIdx >= spawns.length && bugs.length === 0) break;
+    if (opts.stopOnFirstLeak && leaks.length > 0) break;
+    if (opts.stopOnFirstLeak && leaks.length > 0) break;
   }
 
   return {
