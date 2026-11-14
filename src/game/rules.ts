@@ -3189,6 +3189,8 @@ export function getTacticalInspectorCard(
     equippedSpecial: SpecialWeaponId;
     ultimateCharge: number;
     isRushMode: boolean;
+    /** Estratégico: Ultimate ya usada en este nivel. */
+    ultimateSpent?: boolean;
   }
 ): TacticalInspectorCardData | null {
   if (!target) return null;
@@ -3213,6 +3215,15 @@ export function getTacticalInspectorCard(
   if (target.kind === 'ultimate') {
     const spec = SPECIAL_WEAPONS_CATALOG[opts.equippedSpecial] ?? SPECIAL_WEAPONS_CATALOG.hydro_blast;
     const pct = Math.min(100, Math.max(0, Math.round(opts.ultimateCharge)));
+    if (opts.ultimateSpent) {
+      return {
+        title: `${spec.icon} ${spec.name}`,
+        badge: 'USADA EN ESTE NIVEL',
+        whatItDoes: spec.desc,
+        combineOrMerge: 'En el Estratégico hay una Ultimate por nivel: vuelve a estar disponible en el siguiente.',
+        accent: 'yellow',
+      };
+    }
     return {
       title: `${spec.icon} ${spec.name}`,
       badge: pct >= 100 ? '¡LISTO PARA LANZAR!' : `CARGA ${pct}%`,

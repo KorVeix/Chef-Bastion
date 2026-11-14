@@ -1219,6 +1219,7 @@ export default function App() {
           equippedSpecial: progress.equippedSpecial,
           ultimateCharge: hud.pressurePct,
           isRushMode: isRush,
+          ultimateSpent: Boolean(hud.ultimateSpent),
         })
       : null;
 
@@ -2447,9 +2448,9 @@ export default function App() {
                       <button
                         type="button"
                         data-testid="ultimate-btn"
-                        aria-label={`Ultimate ${equippedSpecialMeta.name}: Presión ${hud.pressurePct}%`}
+                        aria-label={`Ultimate ${equippedSpecialMeta.name}: ${hud.ultimateSpent ? 'usada en este nivel' : `Presión ${hud.pressurePct}%`}`}
                         onClick={() => {
-                          if (hud.pressurePct >= 100) {
+                          if (hud.pressurePct >= 100 && !hud.ultimateSpent) {
                             inspectionTargetRef.current = null;
                             triggerUltimateRef.current = true;
                           } else {
@@ -2470,6 +2471,8 @@ export default function App() {
                         className={`w-12 h-12 sm:w-14 sm:h-14 rounded-full border-[2.5px] flex flex-col items-center justify-center shrink-0 transition shadow-[0_3px_0_#0f172a] cursor-pointer ${
                           activeInspectionTarget?.kind === 'ultimate'
                             ? 'border-cyan-300 bg-gradient-to-b from-yellow-300 via-amber-400 to-amber-500 scale-105'
+                            : hud.ultimateSpent
+                            ? 'border-slate-950 bg-gradient-to-b from-slate-400 via-slate-500 to-slate-600 opacity-70'
                             : hud.pressurePct >= 100
                             ? 'border-slate-950 bg-gradient-to-b from-yellow-300 via-amber-400 to-amber-500 animate-pulse scale-105'
                             : 'border-slate-950 bg-gradient-to-b from-amber-300 via-yellow-400 to-amber-600'
@@ -2480,7 +2483,7 @@ export default function App() {
                             Ultimate
                           </span>
                           <span className="font-mono tabular-nums text-[10px] sm:text-[11px] font-black text-white leading-tight drop-shadow-[0_1.5px_0_#0f172a]">
-                            {hud.pressurePct >= 100 ? '100%' : `${hud.pressurePct}%`}
+                            {hud.ultimateSpent ? 'Usada' : hud.pressurePct >= 100 ? '100%' : `${hud.pressurePct}%`}
                           </span>
                         </div>
                       </button>

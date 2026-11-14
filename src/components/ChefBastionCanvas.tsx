@@ -198,6 +198,8 @@ export interface HudSnapshot {
   sanitationSeals: number;
   score: number;
   pressurePct: number;
+  /** Estratégico: la Ultimate de este nivel ya se gastó (no vuelve a cargar hasta el siguiente). */
+  ultimateSpent?: boolean;
   slowMoActive: boolean;
   prepTimer: number;
   levelTimer: number;
@@ -6102,6 +6104,7 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
           sanitationSeals,
           score,
           pressurePct: Math.round(pressurePct),
+          ultimateSpent: !canUseUltimate(ultimateMode(), ultimateUsesThisLevel),
           slowMoActive: !inPlacementPhase && timeScale < 0.5,
           prepTimer,
           levelTimer: Math.ceil(levelTimer),
