@@ -37,19 +37,20 @@ import {
 } from './roguelite';
 import { getStrategicScript, type StrategicScript } from './strategicScripts';
 
-const SCRIPT_TUTORIAL_KEY: Record<NonNullable<StrategicScript['tutorial']>, 1 | 2 | 3 | 31> = {
+const SCRIPT_TUTORIAL_KEY: Record<NonNullable<StrategicScript['tutorial']>, 1 | 2 | 3 | 11 | 31> = {
   line_foam: 1,
   bridge_uv: 2,
   slip_vortex: 3,
+  duct_square: 11,
   corner_square: 31,
 };
 
 /**
  * Qué tutorial (por mecánica) corresponde a un nivel. Los niveles con guion eligen su tutorial
  * (`StrategicScript.tutorial`); el resto conserva el tutorial por número de nivel.
- * Claves: 1 abanico, 2 puente UV, 3 Jabón + Fregona, 31 Escuadra.
+ * Claves: 1 abanico, 2 puente UV, 3 Jabón + Fregona, 11 Escuadra + puente (conducto), 31 Escuadra (antiguo).
  */
-function getTutorialKeyForLevel(level: number): 1 | 2 | 3 | 31 | null {
+function getTutorialKeyForLevel(level: number): 1 | 2 | 3 | 11 | 31 | null {
   const script = getStrategicScript(level);
   if (script) return script.tutorial ? SCRIPT_TUTORIAL_KEY[script.tutorial] : null;
   return level === 1 || level === 2 || level === 3 || level === 31 ? level : null;
@@ -356,21 +357,6 @@ export function getGrandBossPhase(hp: number, maxHp: number): 1 | 2 | 3 {
   if (pct > 66) return 1;
   if (pct > 33) return 2;
   return 3;
-}
-
-/**
- * Esquiva del Gran Jefe en fase 2+: barre los carriles en un sentido y rebota en los bordes.
- * Sin azar, para que el guion de los niveles de jefe sea el mismo en cada intento.
- */
-export function nextGrandBossEvadeRail(
-  currentRail: number,
-  dir: 1 | -1,
-  railCount = GRID_RAILS
-): { rail: number; dir: 1 | -1 } {
-  const cur = Math.max(0, Math.min(railCount - 1, Math.round(currentRail)));
-  let d = dir;
-  if (cur + d < 0 || cur + d > railCount - 1) d = (d === 1 ? -1 : 1) as 1 | -1;
-  return { rail: cur + d, dir: d };
 }
 
 export function getGrandBossPhaseLabel(phase: 1 | 2 | 3, tier: BossTier): string {
@@ -758,6 +744,26 @@ export function getTacticalOnboardingCard(level: number): TacticalOnboardingCard
     };
   }
 
+  if (key === 11) {
+    return {
+      level,
+      badge: `NUEVA HERRAMIENTA NIVEL ${level} · HORMIGAS DE CONDUCTO`,
+      title: 'Escuadra Deflectora 90° + Puente UV',
+      subtitle:
+        'Las hormigas de conducto entran por los dos laterales en la fila 5 y cruzan corriendo. La Escuadra en esa fila las frena y las manda por su carril; el puente UV justo debajo las funde.',
+      cells: [
+        { rail: 2, row: 5, icon: '📐', label: '1º Escuadra [R2, F5]', highlightColor: 'yellow' },
+        { rail: 2, row: 6, icon: '⚡', label: '2º Aerosol UV [R2, F6]', highlightColor: 'cyan' },
+        { rail: 3, row: 6, icon: '⚡', label: '3º Aerosol UV [R3, F6]', highlightColor: 'cyan' },
+        { rail: 2, row: 7, icon: '🔫', label: '4º Flus-Flus [R2, F7]', highlightColor: 'green' },
+      ],
+      flowArrowLabel: '➡️ Hormiga cruza corriendo ➔ choca con 📐 ➔ baja por tu carril ➔ ⚡⚡ la funde',
+      rewardTitle: '📐 Mecánica Táctica: 0 Daño Propio · Redirección Total',
+      rewardExplanation:
+        'La Escuadra no hace daño: decide por dónde baja el bicho. Ponla en la fila por la que entran y tu trampa debajo.',
+    };
+  }
+
   if (key === 31) {
     return {
       level,
@@ -1107,6 +1113,52 @@ export function getTutorialGuideForLevel(
     };
   }
 
+  if (key === 11) {
+    const targets: TutorialTargetCell[] = [
+      {
+        pieceId: 'u-square-1',
+        pieceType: 'corner_square',
+        rail: 1,
+        row: 4,
+        label: '📐 Escuadra en la fila del conducto [Raíl 2, Fila 5]',
+        shortTag: '📐 GIRO 90°',
+      },
+      {
+        pieceId: 'u-aerosol-1',
+        pieceType: 'aerosol_torch',
+        rail: 1,
+        row: 5,
+        label: '⚡ Aerosol UV debajo [Raíl 2, Fila 6]',
+        shortTag: '⚡ 1º LÁSER UV',
+      },
+      {
+        pieceId: 'u-aerosol-2',
+        pieceType: 'aerosol_torch',
+        rail: 2,
+        row: 5,
+        label: '⚡ Aerosol UV al lado [Raíl 3, Fila 6]',
+        shortTag: '⚡ PUENTE UV',
+      },
+      {
+        pieceId: 'u-spray-1',
+        pieceType: 'spray_flus',
+        rail: 1,
+        row: 6,
+        label: '🔫 Flus-Flus [Raíl 2, Fila 7]',
+        shortTag: '🔫 APOYO',
+      },
+    ];
+    const nextTarget = targets.find((t) => isInTray(t.pieceId, t.pieceType)) ?? null;
+    return {
+      level,
+      mechanicTitle: `TUTORIAL NIVEL ${level} · ESCUADRA 90° + PUENTE UV (HORMIGAS DE CONDUCTO)`,
+      targets,
+      nextTarget,
+      allTargetsPlaced: nextTarget === null,
+      stepInstruction: nextTarget?.shortTag ?? '✅ ESCUADRA + PUENTE',
+    };
+  }
+
   if (key === 31) {
     const targets: TutorialTargetCell[] = [
       {
@@ -1384,7 +1436,7 @@ export function getLevelForecast(level: number): LevelForecast {
     return {
       bugTypes: [...new Set(script.spawns.map((s) => s.type))],
       activeRails: [...new Set(script.spawns.map((s) => s.rail))].sort((a, b) => a - b),
-      hasLateralConduits: false,
+      hasLateralConduits: script.spawns.some((s) => Boolean(s.entry)),
       bossTier: script.spawns.find((s) => s.boss)?.boss?.tier ?? 'none',
     };
   }

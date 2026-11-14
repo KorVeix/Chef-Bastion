@@ -87,7 +87,6 @@ import {
   getBossPuzzleTypeForLevel,
   getBossTierForLevel,
   getGrandBossPhase,
-  nextGrandBossEvadeRail,
   getGrandBossPhaseLabel,
   getLevelForecast,
   GRID_RAILS,
@@ -108,6 +107,7 @@ import {
   ROACH_SHIFT_INTERVAL_SEC,
   getScriptPhase,
   getStrategicScript,
+  nextBossEvadeRail,
   stepRoachZigzag,
   takeDueScriptSpawns,
   type StrategicScript,
@@ -4039,12 +4039,13 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
             continue;
           }
           const maxHp = STRATEGIC_BUG_BASE_HP[sp.type];
+          const lateralStart = sp.entry === 'left' ? -0.75 : sp.entry === 'right' ? 3.75 : null;
           bugs.push({
             id: `bug-s${stateRef.current.level}-${scriptCursor}-${Date.now()}-${Math.random()}`,
             type: sp.type,
-            rail: sp.rail,
-            targetRail: sp.rail,
-            yProgress: -0.35,
+            rail: lateralStart ?? sp.rail,
+            targetRail: lateralStart ?? sp.rail,
+            yProgress: sp.entry ? sp.row ?? 2 : -0.35,
             hp: maxHp,
             maxHp,
             hasShield: sp.type === 'cap_beetle' || sp.type === 'king_crab',
@@ -4057,9 +4058,11 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
             attackWindup: 0,
             koTimer: 0,
             koStar: 1,
-            isLateralInvasion: false,
-            lateralDir: 0,
+            isLateralInvasion: Boolean(sp.entry),
+            lateralDir: sp.entry === 'left' ? 1 : sp.entry === 'right' ? -1 : 0,
             redirectedBySquare: false,
+            ...(sp.entry ? { lateralSpeedMult: sp.lateralSpeed ?? 0.92 } : {}),
+            ...(sp.entry && sp.type === 'speed_ant' ? { variant: 'duct' as const } : {}),
             ...(sp.type === 'shift_roach'
               ? { roachShiftTimer: ROACH_SHIFT_INTERVAL_SEC, roachShiftDir: sp.dir ?? (sp.rail <= 1 ? 1 : -1) }
               : {}),
@@ -4180,9 +4183,7 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
         if (nextPhase === 2) {
           // Phase 2: Sabotage & Evasion (shift rail + start acid sabotage loop)
           const curR = THREE.MathUtils.clamp(Math.round(bug.rail), 0, GRID_RAILS - 1);
-          const firstEvade = nextGrandBossEvadeRail(curR, curR < GRID_RAILS - 1 ? 1 : -1);
-          bug.targetRail = firstEvade.rail;
-          bug.bossEvadeDir = firstEvade.dir;
+          bug.targetRail = curR < GRID_RAILS - 1 ? curR + 1 : curR - 1;
           bug.bossEvadeTimer = COMBAT.grandBoss.firstEvadeSec;
           stateRef.current.onComicPop({
             id: `boss-p2-${bug.id}-${Date.now()}`,
@@ -4864,7 +4865,7 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
               controlSlowFactor;
 
           if (bug.isLateralInvasion && bug.lateralDir) {
-            bug.rail += bug.lateralDir * effectiveSpeed * 0.92 * waveSimDt;
+            bug.rail += bug.lateralDir * effectiveSpeed * (bug.lateralSpeedMult ?? 0.92) * waveSimDt;
             bug.targetRail = bug.rail;
             bug.yProgress += effectiveSpeed * 0.22 * waveSimDt;
             if (bug.lateralDir === 1 && bug.rail >= 3.0) {
@@ -4914,9 +4915,23 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
               bug.bossEvadeTimer =
                 (bug.bossPhase ?? 1) === 3 ? COMBAT.grandBoss.evadeIntervalP3 : COMBAT.grandBoss.evadeIntervalP2;
               const curR = THREE.MathUtils.clamp(Math.round(bug.rail), 0, GRID_RAILS - 1);
-              const evade = nextGrandBossEvadeRail(curR, bug.bossEvadeDir ?? 1);
-              bug.targetRail = evade.rail;
-              bug.bossEvadeDir = evade.dir;
+              let nextR: number;
+              if (activeScript) {
+                // Jefe de guion: evasión alterna y predecible (sin azar).
+                const ev = nextBossEvadeRail(curR, bug.bossEvadeDir ?? -1);
+                nextR = ev.rail;
+                bug.bossEvadeDir = ev.dir;
+              } else {
+                nextR =
+                  curR === 0
+                    ? 1
+                    : curR === GRID_RAILS - 1
+                    ? GRID_RAILS - 2
+                    : Math.random() < 0.5
+                    ? curR - 1
+                    : curR + 1;
+              }
+              bug.targetRail = nextR;
               projectiles.push({
                 id: `boss-acid-${bug.id}-${Date.now()}`,
                 x: curR,
@@ -5626,7 +5641,7 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
 
         let mesh = bugMeshes.get(bug.id);
         if (!mesh) {
-          mesh = buildBugMesh(bug.type);
+          mesh = buildBugMesh(bug.type, bug.variant);
           const toonMats: { mat: THREE.MeshToonMaterial; origHex: number }[] = [];
           mesh.traverse((child) => {
             if ((child as THREE.Mesh).isMesh && !child.userData?.isInkOutline) {

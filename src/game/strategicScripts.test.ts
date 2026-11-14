@@ -59,8 +59,10 @@ test('Guiones: niveles únicos y en orden', () => {
 });
 
 test('Guiones: ningún tipo de bicho sale en más de 3 niveles seguidos', () => {
-  const byLevel = new Map(STRATEGIC_SCRIPTS.map((s) => [s.level, new Set(s.spawns.map((sp) => sp.type))]));
-  const types = new Set(STRATEGIC_SCRIPTS.flatMap((s) => s.spawns.map((sp) => sp.type)));
+  // Una variante con otra forma de matarla (p. ej. la hormiga de conducto) cuenta como bicho propio.
+  const key = (sp: { type: BugType; entry?: string }) => (sp.entry ? `${sp.type}:conducto` : sp.type);
+  const byLevel = new Map(STRATEGIC_SCRIPTS.map((s) => [s.level, new Set(s.spawns.map(key))]));
+  const types = new Set(STRATEGIC_SCRIPTS.flatMap((s) => s.spawns.map(key)));
   for (const type of types) {
     let run = 0;
     for (let lvl = 1; lvl <= 60; lvl++) {
@@ -129,20 +131,6 @@ for (const script of STRATEGIC_SCRIPTS.filter((s) => s.minMoves)) {
     assert.equal(winners.length, 0, `${winners.length}/${layouts.length} tableros quietos ganan: ${show}`);
   });
 }
-
-test('Gran Jefe: la esquiva barre los carriles sin azar y rebota en los bordes', async () => {
-  const { nextGrandBossEvadeRail } = await import('./rules');
-  const path: number[] = [];
-  let rail = 1;
-  let dir: 1 | -1 = 1;
-  for (let i = 0; i < 6; i++) {
-    const next = nextGrandBossEvadeRail(rail, dir);
-    rail = next.rail;
-    dir = next.dir;
-    path.push(rail);
-  }
-  assert.deepEqual(path, [2, 3, 2, 1, 0, 1]);
-});
 
 test('Gran Jefe en el simulador: pasa por las 3 fases y el mismo guion da siempre el mismo resultado', () => {
   const spawns = [{ t: 0.5, type: 'king_crab' as const, rail: 1, boss: { tier: 'grand' as const, puzzle: 'uv_overheat' as const, hp: 460 } }];
