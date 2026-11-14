@@ -76,7 +76,9 @@ test('Guiones: niveles únicos y en orden', () => {
 
 test('Guiones: ningún tipo de bicho sale en más de 3 niveles seguidos', () => {
   // Una variante con otra forma de matarla (p. ej. la hormiga de conducto) cuenta como bicho propio.
-  const key = (sp: { type: BugType; entry?: string }) => (sp.entry ? `${sp.type}:conducto` : sp.type);
+  // Los jefes (modelo de cangrejo) son exámenes y no cuentan como el cangrejo normal.
+  const key = (sp: { type: BugType; entry?: string; boss?: unknown }) =>
+    sp.boss ? 'jefe' : sp.entry ? `${sp.type}:conducto` : sp.type;
   const byLevel = new Map(STRATEGIC_SCRIPTS.map((s) => [s.level, new Set(s.spawns.map(key))]));
   const types = new Set(STRATEGIC_SCRIPTS.flatMap((s) => s.spawns.map(key)));
   for (const type of types) {

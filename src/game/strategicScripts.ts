@@ -724,6 +724,42 @@ export const STRATEGIC_SCRIPTS: readonly StrategicScript[] = [
       ],
     },
   },
+  {
+    level: 14,
+    loadout: ['scourer_nanas', 'bleach_cannon', 'spray_flus'],
+    teaches:
+      'Cangrejo rey: tanque acorazado. El agua y la espuma normal solo le hacen un 35 %. La Lejía detrás del Estropajo dispara Súper Espuma Corrosiva (térmica) que lo funde.',
+    tutorial: null,
+    spawns: [
+      ...at(0.5, 'king_crab', 1),
+      ...at(3, 'king_crab', 0),
+      ...at(5, 'king_crab', 2),
+      ...at(7, 'king_crab', 0, 1, 2),
+      ...at(12, 'king_crab', 1),
+      ...at(14.5, 'king_crab', 0, 2),
+      ...at(18, 'king_crab', 1),
+      ...at(20.5, 'king_crab', 0, 2),
+      ...at(25, 'king_crab', 1),
+      ...at(27.5, 'king_crab', 0, 1),
+      ...at(31, 'king_crab', 2),
+      ...at(33.5, 'king_crab', 0, 1, 2),
+      ...at(39, 'king_crab', 1, 2),
+    ],
+    solution: [
+      {
+        t: 0,
+        placements: [
+          { type: 'scourer_nanas', rail: 1, row: 3 },
+          { type: 'bleach_cannon', rail: 1, row: 5 },
+          { type: 'spray_flus', rail: 2, row: 5 },
+        ],
+      },
+    ],
+    failsWithout: {
+      label: 'Sin Lejía (abanico normal de Flus-Flus)',
+      plan: [{ t: 0, placements: foam(1) }],
+    },
+  },
 ];
 
 /** La cucaracha cambia de carril cada 2,4 s en zigzag; resbalar en el Jabón la deja clavada. */
@@ -753,6 +789,16 @@ export function stepRoachZigzag(
 export function nextBossEvadeRail(curRail: number, dir: 1 | -1, railCount = 4): { rail: number; dir: 1 | -1 } {
   const rail = curRail <= 0 ? 1 : curRail >= railCount - 1 ? railCount - 2 : curRail + dir;
   return { rail, dir: (dir === 1 ? -1 : 1) as 1 | -1 };
+}
+
+/**
+ * Cangrejo rey de guion (no jefe): tanque acorazado. Lo que no es térmico/corrosivo (agua, espuma normal,
+ * Fregona) solo le hace el 35 %; la Lejía, el puente UV y el ácido devuelto le hacen daño completo.
+ */
+export const ARMORED_TANK_NON_THERMAL_MULT = 0.35;
+
+export function armoredTankDamageMult(isArmoredTank: boolean, isThermalOrExplosive: boolean): number {
+  return isArmoredTank && !isThermalOrExplosive ? ARMORED_TANK_NON_THERMAL_MULT : 1;
 }
 
 export function getStrategicScript(level: number): StrategicScript | null {

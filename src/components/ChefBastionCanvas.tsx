@@ -105,6 +105,7 @@ import {
 } from '../game/rules';
 import {
   ROACH_SHIFT_INTERVAL_SEC,
+  armoredTankDamageMult,
   getScriptPhase,
   getStrategicScript,
   nextBossEvadeRail,
@@ -4069,6 +4070,7 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
               ? { roachShiftTimer: ROACH_SHIFT_INTERVAL_SEC, roachShiftDir: sp.dir ?? (sp.rail <= 1 ? 1 : -1) }
               : {}),
             ...(sp.type === 'acid_wasp' ? { isFlying: true } : {}),
+            ...(sp.type === 'king_crab' ? { isArmoredTank: true } : {}),
           });
         }
         phase = getScriptPhase(activeScript, scriptCursor);
@@ -4623,7 +4625,7 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
                     hitstopTimer = Math.max(hitstopTimer, HEAVY_IMPACT_HITSTOP_SECONDS);
                     bug.flashTimer = Math.max(bug.flashTimer, ENEMY_WHITE_FLASH_SECONDS);
                   }
-                  bug.hp -= proj.damage;
+                  bug.hp -= proj.damage * armoredTankDamageMult(Boolean(bug.isArmoredTank), isThermalOrExplosive);
                   bug.flashTimer = Math.max(bug.flashTimer, 0.08);
                   if (proj.fromDiagonalFoam) bug.hitByDiagonalFoam = true;
                   if (proj.fromVortex) {
@@ -5256,7 +5258,8 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
               : bug.isSlidingFromSoap
               ? 240
               : 65;
-            bug.hp -= rawVortexDps * vortexMult * waveSimDt;
+            bug.hp -=
+              rawVortexDps * vortexMult * armoredTankDamageMult(Boolean(bug.isArmoredTank), false) * waveSimDt;
             evaluateGrandBossTransition(bug);
           }
 
