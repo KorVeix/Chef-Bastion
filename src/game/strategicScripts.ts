@@ -48,12 +48,12 @@ const grandBoss = (t: number, rail: number, hp: number): SimSpawn[] => [
 
 /** Hormiga de conducto: entra por un lateral en la fila `row` y cruza corriendo (×4) hasta el borde contrario. */
 const DUCT_ROW = 4;
-const duct = (t: number, side: 'left' | 'right'): SimSpawn => ({
+const duct = (t: number, side: 'left' | 'right', row = DUCT_ROW): SimSpawn => ({
   t,
   type: 'speed_ant',
   rail: side === 'left' ? 0 : 3,
   entry: side,
-  row: DUCT_ROW,
+  row,
   lateralSpeed: 4,
 });
 
@@ -565,6 +565,145 @@ export const STRATEGIC_SCRIPTS: readonly StrategicScript[] = [
     failsWithout: {
       label: 'Sin Escuadra (salen por los dos bordes)',
       plan: [{ t: 0, placements: [...bridge(1, 5), { type: 'spray_flus', rail: 1, row: 6 }] }],
+    },
+  },
+  {
+    level: 12,
+    loadout: ['corner_square', 'corner_square', 'aerosol_torch', 'aerosol_torch', 'spray_flus'],
+    teaches:
+      'Hormigas de conducto por dos filas a la vez (F4 y F5) y por los dos lados: una Escuadra en cada fila, en escalera, sobre el mismo puente UV.',
+    tutorial: null,
+    spawns: [
+      duct(0.5, 'left', 3),
+      duct(1.5, 'right', 4),
+      duct(3, 'right', 3),
+      duct(4, 'left', 4),
+      duct(5.5, 'left', 3),
+      duct(5.5, 'right', 4),
+      duct(6.5, 'right', 3),
+      duct(9, 'left', 4),
+      duct(10, 'right', 3),
+      duct(11, 'left', 3),
+      duct(11.5, 'right', 4),
+      duct(13, 'left', 4),
+      duct(14, 'right', 3),
+      duct(14.5, 'left', 3),
+      duct(17, 'right', 4),
+      duct(18, 'left', 3),
+      duct(19, 'left', 4),
+      duct(19.5, 'right', 3),
+      duct(21, 'right', 4),
+      duct(22, 'left', 3),
+      duct(22.5, 'left', 4),
+      duct(25, 'right', 3),
+      duct(25.5, 'left', 4),
+      duct(26.5, 'left', 3),
+      duct(27, 'right', 4),
+      duct(28.5, 'right', 3),
+      duct(29, 'left', 4),
+      duct(30, 'left', 3),
+      duct(30.5, 'right', 4),
+    ],
+    solution: [
+      {
+        t: 0,
+        placements: [
+          { type: 'corner_square', rail: 1, row: 3 },
+          { type: 'corner_square', rail: 2, row: 4 },
+          ...bridge(1, 5),
+          { type: 'spray_flus', rail: 1, row: 6 },
+        ],
+      },
+    ],
+    failsWithout: {
+      label: 'Una sola Escuadra (se escapa la otra fila)',
+      plan: [
+        {
+          t: 0,
+          placements: [
+            { type: 'corner_square', rail: 1, row: 4 },
+          ...bridge(1, 5),
+          { type: 'spray_flus', rail: 1, row: 6 },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    level: 13,
+    loadout: ['corner_square', 'corner_square', 'aerosol_torch', 'aerosol_torch', 'spray_flus'],
+    teaches:
+      'Las filas de los conductos cambian a mitad de nivel (F4/F5 → F3/F4): hay que subir una Escuadra a tiempo.',
+    tutorial: null,
+    spawns: [
+      // Tramo 1: filas F4 y F5.
+      duct(0.5, 'left', 3),
+      duct(1.2, 'right', 4),
+      duct(2.5, 'right', 3),
+      duct(3.2, 'left', 4),
+      duct(4.5, 'left', 3),
+      duct(4.5, 'right', 4),
+      duct(5.5, 'right', 3),
+      duct(6.2, 'left', 4),
+      duct(8, 'left', 4),
+      duct(8.6, 'right', 3),
+      duct(9.5, 'left', 3),
+      duct(10, 'right', 4),
+      duct(11.5, 'left', 4),
+      duct(12, 'right', 3),
+      duct(12.5, 'left', 3),
+      duct(13, 'right', 4),
+      // Tramo 2: filas F3 y F4 → la Escuadra de la F5 sube a la F3.
+      duct(18, 'left', 2),
+      duct(18.8, 'right', 3),
+      duct(20, 'right', 2),
+      duct(20.6, 'left', 3),
+      duct(22, 'left', 2),
+      duct(22, 'right', 3),
+      duct(23, 'right', 2),
+      duct(23.6, 'left', 3),
+      duct(25.5, 'left', 3),
+      duct(26, 'right', 2),
+      duct(27, 'left', 2),
+      duct(27.5, 'right', 3),
+      duct(29, 'left', 3),
+      duct(29.5, 'right', 2),
+      duct(30, 'left', 2),
+      duct(30.5, 'right', 3),
+    ],
+    solution: [
+      {
+        t: 0,
+        placements: [
+          { type: 'corner_square', rail: 1, row: 3 },
+          { type: 'corner_square', rail: 2, row: 4 },
+          ...bridge(1, 5),
+          { type: 'spray_flus', rail: 1, row: 6 },
+        ],
+      },
+      {
+        t: 15,
+        placements: [
+          { type: 'corner_square', rail: 1, row: 3 },
+          { type: 'corner_square', rail: 2, row: 2 },
+          ...bridge(1, 5),
+          { type: 'spray_flus', rail: 1, row: 6 },
+        ],
+      },
+    ],
+    failsWithout: {
+      label: 'Escuadras quietas',
+      plan: [
+        {
+          t: 0,
+          placements: [
+            { type: 'corner_square', rail: 1, row: 3 },
+            { type: 'corner_square', rail: 2, row: 4 },
+          ...bridge(1, 5),
+          { type: 'spray_flus', rail: 1, row: 6 },
+          ],
+        },
+      ],
     },
   },
 ];

@@ -1017,7 +1017,10 @@ export function buildKnifeRoombaMesh(): THREE.Group {
 // 4. PLAGAS 3D SUAVIZADAS CON CONTORNO DE TINTA LIMPIO (ESCALA 0.75)
 // ============================================================================
 
-export function buildBugMesh(type: BugType): THREE.Group {
+/**
+ * @param variant `'duct'`: hormiga de conducto (Estratégico con guion): mismo modelo con caparazón verde azulado.
+ */
+export function buildBugMesh(type: BugType, variant?: 'duct'): THREE.Group {
   const root = new THREE.Group();
   root.scale.setScalar(0.75);
   const isBoss = type === 'king_crab';
@@ -1031,8 +1034,13 @@ export function buildBugMesh(type: BugType): THREE.Group {
   const pupilMat = new THREE.MeshBasicMaterial({ color: INK_COLOR_HEX });
 
   if (type === 'speed_ant' || type === 'shift_roach') {
-    const darkShellMat = createToonMaterial(type === 'shift_roach' ? 0x9a3412 : 0xb45309);
-    const wingCaseMat = createToonMaterial(type === 'shift_roach' ? 0xfbbf24 : 0xf59e0b);
+    const isDuct = variant === 'duct' && type === 'speed_ant';
+    const darkShellMat = createToonMaterial(
+      type === 'shift_roach' ? 0x9a3412 : isDuct ? 0x0f766e : 0xb45309
+    );
+    const wingCaseMat = createToonMaterial(
+      type === 'shift_roach' ? 0xfbbf24 : isDuct ? 0x2dd4bf : 0xf59e0b
+    );
     const blackLegMat = createToonMaterial(0x1c1917);
 
     const abdomen = new THREE.Mesh(new THREE.SphereGeometry(0.36, 32, 28), darkShellMat);

@@ -4050,6 +4050,7 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
             lateralDir: sp.entry === 'left' ? 1 : sp.entry === 'right' ? -1 : 0,
             redirectedBySquare: false,
             ...(sp.entry ? { lateralSpeedMult: sp.lateralSpeed ?? 0.92 } : {}),
+            ...(sp.entry && sp.type === 'speed_ant' ? { variant: 'duct' as const } : {}),
             ...(sp.type === 'shift_roach'
               ? { roachShiftTimer: ROACH_SHIFT_INTERVAL_SEC, roachShiftDir: sp.dir ?? (sp.rail <= 1 ? 1 : -1) }
               : {}),
@@ -5632,7 +5633,7 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
 
         let mesh = bugMeshes.get(bug.id);
         if (!mesh) {
-          mesh = buildBugMesh(bug.type);
+          mesh = buildBugMesh(bug.type, bug.variant);
           const toonMats: { mat: THREE.MeshToonMaterial; origHex: number }[] = [];
           mesh.traverse((child) => {
             if ((child as THREE.Mesh).isMesh && !child.userData?.isInkOutline) {
