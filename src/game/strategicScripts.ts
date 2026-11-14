@@ -166,7 +166,8 @@ export const STRATEGIC_SCRIPTS: readonly StrategicScript[] = [
       ...at(35.5, 'speed_ant', 0, 1, 2),
       // …y 2 ratas blindadas por el carril 4, fuera del abanico.
       ...at(9, 'cap_beetle', 3),
-      ...at(26, 'cap_beetle', 3),
+      // La 2.ª llega cuando la 1.ª ya ha pasado: la ola de lejía de un Sello perdido no la borra.
+      ...at(37, 'cap_beetle', 3),
     ],
     solution: placedLive([...foam(1), ...bridge(2, 2)]),
     failsWithout: {
@@ -375,13 +376,18 @@ export const STRATEGIC_SCRIPTS: readonly StrategicScript[] = [
       'Avispas: vuelan (el Jabón y la Fregona no las tocan) y su ácido pringa tus armas. El Gel WC en su carril les devuelve el ácido.',
     tutorial: null,
     spawns: [
-      // Avispas espaciadas por el carril 3 (el del Gel WC): sin Gel pasan 6 y se pierde.
-      ...at(6, 'acid_wasp', 2),
+      // 10 avispas cada 4 s por el carril 3 (el del Gel WC): sin Gel pasan 7 y se pierde
+      // (cada Sello perdido lanza una ola de lejía que se lleva a la siguiente).
+      ...at(4, 'acid_wasp', 2),
+      ...at(8, 'acid_wasp', 2),
       ...at(12, 'acid_wasp', 2),
-      ...at(18, 'acid_wasp', 2),
-      ...at(26, 'acid_wasp', 2),
+      ...at(16, 'acid_wasp', 2),
+      ...at(20, 'acid_wasp', 2),
+      ...at(24, 'acid_wasp', 2),
+      ...at(28, 'acid_wasp', 2),
       ...at(32, 'acid_wasp', 2),
-      ...at(38, 'acid_wasp', 2),
+      ...at(36, 'acid_wasp', 2),
+      ...at(40, 'acid_wasp', 2),
       roach(0.5, 1, 1),
       roach(2, 2, -1),
       roach(4, 0, 1),
@@ -509,6 +515,10 @@ export const STRATEGIC_SCRIPTS: readonly StrategicScript[] = [
       ...at(34, 'acid_wasp', 0, 2, 3),
       ...at(38, 'acid_wasp', 3),
       ...at(40, 'acid_wasp', 0, 1, 2, 3),
+      // Refuerzo en el carril 3, el que cubre el puente: sin puente se pierde.
+      ...at(16, 'acid_wasp', 2),
+      ...at(22, 'acid_wasp', 2),
+      ...at(32, 'acid_wasp', 2),
     ],
     solution: [
       {

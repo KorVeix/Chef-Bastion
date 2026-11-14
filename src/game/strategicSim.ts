@@ -685,6 +685,26 @@ export function simulateStrategic(opts: {
         if (seals > 0) {
           seals -= 1;
           intactPlates[railInt] = false;
+          // Motor: al perder un Sello sale una ola de lejía por ese carril (999 al primer bicho; 180 a un jefe).
+          projectiles.push({
+            x: railInt,
+            y: 6.8,
+            vx: 0,
+            vy: -8.5,
+            damage: bug.bossTier ? 180 : 999,
+            pierce: true,
+            life: 1.8,
+            flavor: 'bleach_glob',
+            fromVortex: false,
+            fromDiagonalFoam: false,
+            thermal: true,
+          });
+          if (bug.bossTier) {
+            // El jefe no desaparece: vuelve a la fila 3.
+            bug.y = 2.4;
+            alive.push(bug);
+            continue;
+          }
         } else {
           defeated = true;
         }
