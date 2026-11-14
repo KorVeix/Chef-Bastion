@@ -359,18 +359,6 @@ export function getGrandBossPhase(hp: number, maxHp: number): 1 | 2 | 3 {
   return 3;
 }
 
-/** Evasión del Gran Jefe: barre los carriles en un sentido y rebota en los bordes, sin azar. */
-export function nextGrandBossEvadeRail(
-  currentRail: number,
-  dir: 1 | -1,
-  railCount = GRID_RAILS
-): { rail: number; dir: 1 | -1 } {
-  const cur = Math.max(0, Math.min(railCount - 1, Math.round(currentRail)));
-  let nextDir = dir;
-  if (cur + nextDir < 0 || cur + nextDir > railCount - 1) nextDir = (nextDir === 1 ? -1 : 1) as 1 | -1;
-  return { rail: cur + nextDir, dir: nextDir };
-}
-
 export function getGrandBossPhaseLabel(phase: 1 | 2 | 3, tier: BossTier): string {
   if (tier === 'mini') return 'MINI-JEFE · RESISTENCIA FRONTAL';
   if (phase === 1) return 'FASE 1/3 · CORAZA PESADA (-65% Básico · ×2.5 UV/Explosivo)';
@@ -3387,5 +3375,6 @@ export function pushFloatingComboNonOverlapping(
   });
   return trimmed;
 }
+
 
 

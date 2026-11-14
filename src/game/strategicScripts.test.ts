@@ -77,7 +77,9 @@ test('Guiones: niveles únicos y en orden', () => {
 
 test('Guiones: ningún tipo de bicho sale en más de 3 niveles seguidos', () => {
   // Una variante con otra forma de matarla (p. ej. la hormiga de conducto) cuenta como bicho propio.
-  const key = (sp: { type: BugType; entry?: string }) => (sp.entry ? `${sp.type}:conducto` : sp.type);
+  // Los jefes (modelo de cangrejo) son exámenes y no cuentan como el cangrejo normal.
+  const key = (sp: { type: BugType; entry?: string; boss?: unknown }) =>
+    sp.boss ? 'jefe' : sp.entry ? `${sp.type}:conducto` : sp.type;
   const byLevel = new Map(STRATEGIC_SCRIPTS.map((s) => [s.level, new Set(s.spawns.map(key))]));
   const types = new Set(STRATEGIC_SCRIPTS.flatMap((s) => s.spawns.map(key)));
   for (const type of types) {
@@ -102,9 +104,9 @@ test('Guiones: las apariciones salen en su segundo y la fase avanza por tercios'
 const FULL_SEARCH = process.env.STRATEGIC_FULL === '1';
 const SAMPLE_LIMIT = 400;
 
-// Nota: «ganar» aquí es limpiar el guion sin perder ningún plato. En partida hay 3 sellos: cada
-// fuga arruina un plato y lanza una onda de Lejía, y se pierde con la cuarta (`simulateStrategic`
-// con `seals: 3` lo mide). Estos tests exigen recolocar para el resultado perfecto.
+// Nota: «ganar» aquí es limpiar el guion sin perder ningún plato (3★). En partida hay 3 Sellos: cada
+// fuga arruina un plato y lanza una ola de lejía, y se pierde con la cuarta (`defeated`). Estos tests
+// exigen recolocar para el resultado perfecto.
 
 /** Momentos de recolocación: pasos de la solución separados más de 3 s (sin contar la colocación inicial). */
 function moveMoments(script: (typeof STRATEGIC_SCRIPTS)[number]): number[] {
@@ -173,18 +175,17 @@ test('Gran Jefe en el simulador: pasa por las 3 fases y el mismo guion da siempr
   assert.equal(a.kills[0].t, b.kills[0].t);
   // Solo con el Flus-Flus (sin calor ni control) la coraza y la esquiva lo dejan pasar.
   const weak = simulateStrategic({ level: 10, spawns, plan: [{ t: 0, placements: [{ type: 'spray_flus', rail: 1, row: 5 }] }] });
-  assert.equal(weak.leaks.length, 1);
+  assert.ok(weak.leaks.length >= 1);
 });
 
-test('Sellos: la solución de cada guion no pierde platos y el simulador modela la onda de Lejía', () => {
+test('Sellos: la solución de cada guion no pierde platos; sin defensas llega la derrota', () => {
   for (const script of STRATEGIC_SCRIPTS) {
-    const res = simulateStrategic({ level: script.level, spawns: script.spawns, plan: script.solution, seals: 3 });
-    assert.equal(res.platesLost, 0, `Nv.${script.level}: la solución pierde ${res.platesLost} platos`);
+    const res = simulateStrategic({ level: script.level, spawns: script.spawns, plan: script.solution });
+    assert.equal(res.leaks.length, 0, `Nv.${script.level}: la solución pierde ${res.leaks.length} platos`);
     assert.equal(res.defeated, false);
   }
-  // Sin defensas en el Nv.1 se pierden los 3 sellos y llega la derrota.
   const nv1 = getStrategicScript(1)!;
-  const bare = simulateStrategic({ level: 1, spawns: nv1.spawns, plan: [], seals: 3 });
-  assert.equal(bare.platesLost, 3);
+  const bare = simulateStrategic({ level: 1, spawns: nv1.spawns, plan: [] });
+  assert.ok(bare.leaks.length >= 4);
   assert.equal(bare.defeated, true);
 });

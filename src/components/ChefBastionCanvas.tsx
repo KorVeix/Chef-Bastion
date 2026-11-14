@@ -89,7 +89,6 @@ import {
   getBossPuzzleTypeForLevel,
   getBossTierForLevel,
   getGrandBossPhase,
-  nextGrandBossEvadeRail,
   getGrandBossPhaseLabel,
   getLevelForecast,
   GRID_RAILS,
@@ -108,8 +107,10 @@ import {
 } from '../game/rules';
 import {
   ROACH_SHIFT_INTERVAL_SEC,
+  armoredTankDamageMult,
   getScriptPhase,
   getStrategicScript,
+  nextBossEvadeRail,
   stepRoachZigzag,
   takeDueScriptSpawns,
   type StrategicScript,
@@ -4083,6 +4084,7 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
               ? { roachShiftTimer: ROACH_SHIFT_INTERVAL_SEC, roachShiftDir: sp.dir ?? (sp.rail <= 1 ? 1 : -1) }
               : {}),
             ...(sp.type === 'acid_wasp' ? { isFlying: true } : {}),
+            ...(sp.type === 'king_crab' ? { isArmoredTank: true } : {}),
           });
         }
         phase = getScriptPhase(activeScript, scriptCursor);
@@ -4630,7 +4632,7 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
                     hitstopTimer = Math.max(hitstopTimer, HEAVY_IMPACT_HITSTOP_SECONDS);
                     bug.flashTimer = Math.max(bug.flashTimer, ENEMY_WHITE_FLASH_SECONDS);
                   }
-                  bug.hp -= proj.damage;
+                  bug.hp -= proj.damage * armoredTankDamageMult(Boolean(bug.isArmoredTank), isThermalOrExplosive);
                   bug.flashTimer = Math.max(bug.flashTimer, 0.08);
                   if (proj.fromDiagonalFoam) bug.hitByDiagonalFoam = true;
                   if (proj.fromVortex) {
@@ -4935,9 +4937,23 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
               bug.bossEvadeTimer =
                 (bug.bossPhase ?? 1) === 3 ? COMBAT.grandBoss.evadeIntervalP3 : COMBAT.grandBoss.evadeIntervalP2;
               const curR = THREE.MathUtils.clamp(Math.round(bug.rail), 0, GRID_RAILS - 1);
-              const evade = nextGrandBossEvadeRail(curR, bug.bossEvadeDir ?? 1);
-              bug.targetRail = evade.rail;
-              bug.bossEvadeDir = evade.dir;
+              let nextR: number;
+              if (activeScript) {
+                // Jefe de guion: evasión alterna y predecible (sin azar).
+                const ev = nextBossEvadeRail(curR, bug.bossEvadeDir ?? -1);
+                nextR = ev.rail;
+                bug.bossEvadeDir = ev.dir;
+              } else {
+                nextR =
+                  curR === 0
+                    ? 1
+                    : curR === GRID_RAILS - 1
+                    ? GRID_RAILS - 2
+                    : Math.random() < 0.5
+                    ? curR - 1
+                    : curR + 1;
+              }
+              bug.targetRail = nextR;
               projectiles.push({
                 id: `boss-acid-${bug.id}-${Date.now()}`,
                 x: curR,
@@ -5252,7 +5268,8 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
               : bug.isSlidingFromSoap
               ? COMBAT.mop.contactDpsSlipped
               : COMBAT.mop.contactDps;
-            bug.hp -= rawVortexDps * vortexMult * waveSimDt;
+            bug.hp -=
+              rawVortexDps * vortexMult * armoredTankDamageMult(Boolean(bug.isArmoredTank), false) * waveSimDt;
             evaluateGrandBossTransition(bug);
           }
 

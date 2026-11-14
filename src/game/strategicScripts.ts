@@ -34,8 +34,8 @@ export interface StrategicScript {
   failsWithout: { label: string; plan: SimLayoutStep[]; minLeaks?: number };
   /**
    * Niveles de refuerzo/examen: cuántas recolocaciones en caliente exige la solución. Los tests
-   * comprueban que ningún tablero quieto con los combos montados gana y que parar de mover antes
-   * de la última recolocación pierde.
+   * comprueban que ningún tablero quieto con los combos montados limpia el guion sin perder platos
+   * y que parar de mover antes de la última recolocación pierde alguno.
    */
   minMoves?: number;
   /** Filas que se prueban para las armas sueltas al buscar tableros quietos (acota la búsqueda). */
@@ -50,13 +50,13 @@ const miniBoss = (t: number, rail: number, puzzle: BossPuzzleType, hp: number): 
   { t, type: 'king_crab', rail, boss: { tier: 'mini', puzzle, hp } },
 ];
 
-/** Gran Jefe del guion (modelo de cangrejo rey, 3 fases por vida). */
+/** Cucaracha con el sentido de su primer cambio de carril (zigzag). */
+const roach = (t: number, rail: number, dir: 1 | -1): SimSpawn => ({ t, type: 'shift_roach', rail, dir });
+
+/** Gran jefe del guion (3 fases), puzle de coraza UV. */
 const grandBoss = (t: number, rail: number, hp: number): SimSpawn[] => [
   { t, type: 'king_crab', rail, boss: { tier: 'grand', puzzle: 'uv_overheat', hp } },
 ];
-
-/** Cucaracha con el sentido de su primer cambio de carril (zigzag). */
-const roach = (t: number, rail: number, dir: 1 | -1): SimSpawn => ({ t, type: 'shift_roach', rail, dir });
 
 /** Hormiga de conducto: entra por un lateral en la fila `row` y cruza corriendo (×4) hasta el borde contrario. */
 const DUCT_ROW = 4;
@@ -128,70 +128,6 @@ const waspGuard = (gelRail: number): SimLayoutStep['placements'] => [
   { type: 'mop_vortex', rail: 2, row: 2 },
   { type: 'soap_bar', rail: 1, row: 3 },
   { type: 'spray_flus', rail: 1, row: 4 },
-  { type: 'wc_shield', rail: gelRail, row: 2 },
-];
-
-/** Cucarachas por los 4 carriles: base del Nv.8 en espejo. */
-const ROACH_SWARM: SimSpawn[] = [
-  roach(0.5, 2, 1),
-  roach(2, 3, -1),
-  roach(3.5, 1, 1),
-  roach(5, 2, 1),
-  roach(5, 3, -1),
-  roach(5, 0, 1),
-  roach(8, 2, -1),
-  roach(10, 3, -1),
-  roach(10, 1, 1),
-  roach(12, 0, 1),
-  roach(13, 2, 1),
-  roach(15, 3, -1),
-  roach(15, 2, -1),
-  roach(15, 0, 1),
-  roach(18, 1, 1),
-  roach(20, 3, -1),
-  roach(22, 0, 1),
-  roach(24, 1, -1),
-  roach(25, 3, -1),
-  roach(26, 0, 1),
-  roach(26, 2, -1),
-  roach(29, 1, -1),
-  roach(30, 3, -1),
-  roach(31, 0, 1),
-  roach(31, 1, 1),
-  roach(34, 0, 1),
-  roach(35, 3, -1),
-  roach(36, 2, -1),
-  roach(36, 1, -1),
-  roach(40, 0, 1),
-  roach(40, 3, -1),
-  roach(40, 1, -1),
-  roach(40, 2, 1),
-  roach(44, 0, 1),
-  roach(44, 3, -1),
-  roach(44, 1, 1),
-  roach(44, 2, -1),
-];
-
-/** Espejo izquierda↔derecha de un guion (carril r → 3 − r; la cucaracha invierte su zigzag). */
-const mirrorSpawns = (spawns: readonly SimSpawn[]): SimSpawn[] =>
-  spawns.map((sp) => ({
-    ...sp,
-    rail: 3 - sp.rail,
-    ...(sp.dir ? { dir: (sp.dir === 1 ? -1 : 1) as 1 | -1 } : {}),
-  }));
-
-/** Espejo izquierda↔derecha de un tablero. */
-const mirrorLayout = (placements: SimLayoutStep['placements']): SimLayoutStep['placements'] =>
-  placements.map((p) => ({ ...p, rail: 3 - p.rail }));
-
-const foamDeep = (rail: number): SimLayoutStep['placements'] => [
-  { type: 'scourer_nanas', rail, row: 4 },
-  { type: 'spray_flus', rail, row: 6 },
-];
-
-const ratsAndWasps = (side: 'left' | 'right', gelRail: number): SimLayoutStep['placements'] => [
-  ...foamDeep(1),
-  ...bridge(side === 'left' ? 0 : 2, 3),
   { type: 'wc_shield', rail: gelRail, row: 2 },
 ];
 
@@ -290,7 +226,8 @@ export const STRATEGIC_SCRIPTS: readonly StrategicScript[] = [
       ...at(35.5, 'speed_ant', 0, 1, 2),
       // …y 2 ratas blindadas por el carril 4, fuera del abanico.
       ...at(9, 'cap_beetle', 3),
-      ...at(26, 'cap_beetle', 3),
+      // La 2.ª llega cuando la 1.ª ya ha pasado: la ola de lejía de un Sello perdido no la borra.
+      ...at(37, 'cap_beetle', 3),
     ],
     solution: placedLive([...foam(1), ...bridge(2, 2)]),
     failsWithout: {
@@ -420,16 +357,86 @@ export const STRATEGIC_SCRIPTS: readonly StrategicScript[] = [
   },
   {
     level: 7,
+    loadout: ['soap_bar', 'mop_vortex', 'spray_flus'],
+    teaches: 'Más cucarachas y por los 4 carriles: sin el Jabón esquivan y se amontonan.',
+    tutorial: null,
+    spawns: [
+      roach(0.5, 2, 1),
+      roach(2, 3, -1),
+      roach(3.5, 1, 1),
+      roach(5, 2, 1),
+      roach(5, 3, -1),
+      roach(5, 0, 1),
+      roach(8, 2, -1),
+      roach(10, 3, -1),
+      roach(10, 1, 1),
+      roach(12, 0, 1),
+      roach(13, 2, 1),
+      roach(15, 3, -1),
+      roach(15, 2, -1),
+      roach(15, 0, 1),
+      roach(18, 1, 1),
+      roach(20, 3, -1),
+      roach(22, 0, 1),
+      roach(24, 1, -1),
+      roach(25, 3, -1),
+      roach(26, 0, 1),
+      roach(26, 2, -1),
+      roach(29, 1, -1),
+      roach(30, 3, -1),
+      roach(31, 0, 1),
+      roach(31, 1, 1),
+      roach(34, 0, 1),
+      roach(35, 3, -1),
+      roach(36, 2, -1),
+      roach(36, 1, -1),
+      roach(40, 0, 1),
+      roach(40, 3, -1),
+      roach(40, 1, -1),
+      roach(40, 2, 1),
+      roach(44, 0, 1),
+      roach(44, 3, -1),
+      roach(44, 1, 1),
+      roach(44, 2, -1),
+    ],
+    solution: [
+      {
+        t: 0,
+        placements: [
+          { type: 'mop_vortex', rail: 1, row: 2 },
+          { type: 'soap_bar', rail: 2, row: 2 },
+          { type: 'spray_flus', rail: 1, row: 4 },
+        ],
+      },
+    ],
+    failsWithout: {
+      label: 'Sin Jabón',
+      plan: [
+        {
+          t: 0,
+          placements: [
+            { type: 'mop_vortex', rail: 1, row: 2 },
+            { type: 'spray_flus', rail: 1, row: 4 },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    level: 8,
     loadout: ['soap_bar', 'mop_vortex', 'spray_flus', 'wc_shield'],
     teaches:
       'Avispas: vuelan (el Jabón y la Fregona no las tocan) y su ácido pringa tus armas. El Gel WC en su carril les devuelve el ácido; cada tanda entra por otro carril y el Gel tiene que ir detrás.',
     tutorial: null,
     spawns: [
-      // Avispas por tandas en carriles distintos: 1 → 4 → 2 (ventanas para mover el Gel ~18-24 s y ~32-38 s).
+      // Tandas de 3 avispas en carriles distintos: 1 → 4 → 2 (mover el Gel ~18-24 s y ~32-38 s).
+      // Sin Gel se escapan 5: se pierden los 3 Sellos y la partida.
       ...at(5, 'acid_wasp', 0),
       ...at(9, 'acid_wasp', 0),
+      ...at(12, 'acid_wasp', 0),
       ...at(19, 'acid_wasp', 3),
       ...at(23, 'acid_wasp', 3),
+      ...at(26, 'acid_wasp', 3),
       ...at(33, 'acid_wasp', 1),
       ...at(36, 'acid_wasp', 1),
       ...at(39, 'acid_wasp', 1),
@@ -482,120 +489,103 @@ export const STRATEGIC_SCRIPTS: readonly StrategicScript[] = [
     staticSearchRows: { wc_shield: [2, 3], spray_flus: [4, 5, 6] },
   },
   {
-    level: 8,
-    loadout: ['soap_bar', 'mop_vortex', 'spray_flus', 'wc_shield'],
-    teaches:
-      'Refuerzo de avispas: el tablero en espejo, más cucarachas y tandas de 3 avispas por carriles 4 → 1 → 3. El Gel WC sigue a cada tanda.',
-    tutorial: null,
-    spawns: [
-      // Tandas de 3 avispas: 4 → 1 → 3 (ventanas para mover el Gel ~20-24 s y ~34-38 s).
-      ...at(5, 'acid_wasp', 3),
-      ...at(8, 'acid_wasp', 3),
-      ...at(11, 'acid_wasp', 3),
-      ...at(19, 'acid_wasp', 0),
-      ...at(22, 'acid_wasp', 0),
-      ...at(25, 'acid_wasp', 0),
-      ...at(33, 'acid_wasp', 2),
-      ...at(36, 'acid_wasp', 2),
-      ...at(39, 'acid_wasp', 2),
-      // Las cucarachas del antiguo Nv.7, en espejo.
-      ...mirrorSpawns(ROACH_SWARM),
-    ],
-    solution: [
-      { t: 0, placements: mirrorLayout(waspGuard(0)) },
-      ...relocate(22, mirrorLayout(waspGuard(0)), mirrorLayout(waspGuard(3))),
-      ...relocate(36, mirrorLayout(waspGuard(3)), mirrorLayout(waspGuard(1))),
-    ],
-    failsWithout: {
-      label: 'Sin Gel WC',
-      plan: [{ t: 0, placements: mirrorLayout(waspGuard(0)).filter((p) => p.type !== 'wc_shield') }],
-    },
-    minMoves: 2,
-    staticSearchRows: { wc_shield: [2, 3], spray_flus: [4, 5, 6] },
-  },
-  {
     level: 9,
-    loadout: ['scourer_nanas', 'spray_flus', 'aerosol_torch', 'aerosol_torch', 'wc_shield'],
+    loadout: ['scourer_nanas', 'spray_flus', 'wc_shield'],
     teaches:
-      'Ratas blindadas y avispas a la vez (vuelve la rata del Nv.3-5): el puente UV va donde aprietan las ratas y el Gel WC al carril de las avispas, que entran por el lado contrario, fuera del alcance del puente.',
+      'Más avispas y cargando el carril 4, fuera del abanico: el Gel WC bajo en ese carril les devuelve el ácido mientras el abanico limpia los otros 3.',
     tutorial: null,
     spawns: [
-      // Las avispas entran siempre por el lado contrario a las ratas, donde no llega el puente.
-      // Tramo 1: ratas por la izquierda, avispas por el carril 4.
-      ...pressure('cap_beetle', 0.5, 8, 0.9, RATS_LEFT),
-      ...at(3, 'acid_wasp', 3),
-      ...at(5, 'acid_wasp', 3),
-      ...at(7, 'acid_wasp', 3),
-      // Tramo 2: ratas por la derecha, avispas por el carril 1 (mover puente y Gel ~20-26 s).
-      ...pressure('cap_beetle', 16, 8, 0.9, RATS_RIGHT),
-      ...at(17, 'acid_wasp', 0),
-      ...at(19, 'acid_wasp', 0),
-      ...at(21, 'acid_wasp', 0),
-      // Tramo 3: ratas por la izquierda, avispas por el carril 4 (mover ~36-42 s).
+      ...at(0.5, 'acid_wasp', 1),
+      ...at(2, 'acid_wasp', 3),
+      ...at(3.5, 'acid_wasp', 0),
+      ...at(5, 'acid_wasp', 2, 3),
+      ...at(7, 'acid_wasp', 0, 1, 3),
+      ...at(10, 'acid_wasp', 3),
+      ...at(11.5, 'acid_wasp', 1, 2),
+      ...at(13, 'acid_wasp', 3),
+      ...at(15, 'acid_wasp', 0, 2, 3),
+      ...at(18, 'acid_wasp', 3),
+      ...at(19.5, 'acid_wasp', 1),
+      ...at(21, 'acid_wasp', 0, 3),
+      ...at(23, 'acid_wasp', 2, 3),
+      ...at(25, 'acid_wasp', 3),
+      ...at(26.5, 'acid_wasp', 0, 1, 2),
+      ...at(28, 'acid_wasp', 3),
+      ...at(30, 'acid_wasp', 1, 3),
+      ...at(32, 'acid_wasp', 0, 2, 3),
       ...at(35, 'acid_wasp', 3),
-      ...at(37, 'acid_wasp', 3),
-      ...at(39, 'acid_wasp', 3),
-      ...pressure('cap_beetle', 34, 8, 0.9, RATS_LEFT),
+      ...at(36.5, 'acid_wasp', 0, 1, 2, 3),
     ],
-    solution: [
-      { t: 0, placements: ratsAndWasps('left', 3) },
-      ...relocate(23, ratsAndWasps('left', 3), ratsAndWasps('right', 0)),
-      ...relocate(39, ratsAndWasps('right', 0), ratsAndWasps('left', 3)),
-    ],
+    // Gel bajo (F5): arriba se le escapan las avispas que ya lo han rebasado.
+    solution: [{ t: 0, placements: [...foam(1), { type: 'wc_shield', rail: 3, row: 4 }] }],
     failsWithout: {
       label: 'Sin Gel WC',
-      minLeaks: 1,
-      plan: [
-        { t: 0, placements: ratsAndWasps('left', 3).filter((p) => p.type !== 'wc_shield') },
-        ...relocate(
-          23,
-          ratsAndWasps('left', 3).filter((p) => p.type !== 'wc_shield'),
-          ratsAndWasps('right', 0).filter((p) => p.type !== 'wc_shield')
-        ),
-        ...relocate(
-          39,
-          ratsAndWasps('right', 0).filter((p) => p.type !== 'wc_shield'),
-          ratsAndWasps('left', 3).filter((p) => p.type !== 'wc_shield')
-        ),
-      ],
+      plan: [{ t: 0, placements: foam(1) }],
     },
-    minMoves: 2,
-    staticSearchRows: { wc_shield: [2, 3] },
   },
   {
     level: 10,
-    loadout: ['scourer_nanas', 'spray_flus', 'aerosol_torch', 'aerosol_torch'],
+    loadout: [
+      'scourer_nanas',
+      'spray_flus',
+      'aerosol_torch',
+      'aerosol_torch',
+      'soap_bar',
+      'mop_vortex',
+      'wc_shield',
+    ],
     teaches:
-      'Gran Jefe: su coraza solo la funde el calor; hazlo pasar por el puente UV (fase 1), aguanta su esquiva con ácido (fase 2) y su frenesí (fase 3). Mientras, las ratas siguen cambiando de lado: el puente no puede irse hasta que caiga el jefe.',
+      'Examen: Gran Jefe de 3 fases entre avispas. Fase 1 coraza (solo la funde el puente UV), fase 2 esquiva y escupe ácido (Jabón → Fregona lo centrifuga), fase 3 frenesí. El Gel WC para las avispas del carril 4.',
     tutorial: null,
     spawns: [
-      // El jefe entra por el carril 1 mientras las ratas aprietan por la izquierda.
-      ...grandBoss(4, 0, 460),
-      ...pressure('cap_beetle', 0.5, 8, 0.9, RATS_LEFT),
-      // Cuando cae el jefe (~20 s) el puente tiene que ir a la derecha (ventana ~20-24 s)…
-      ...pressure('cap_beetle', 16, 8, 0.9, RATS_RIGHT),
-      // …y volver a la izquierda (~36-42 s).
-      ...pressure('cap_beetle', 32, 8, 0.9, RATS_LEFT),
+      ...at(0.5, 'acid_wasp', 1),
+      ...at(2, 'acid_wasp', 3),
+      ...at(3.5, 'acid_wasp', 0),
+      ...at(5, 'acid_wasp', 2, 3),
+      ...at(7, 'acid_wasp', 0, 1, 3),
+      ...at(10, 'acid_wasp', 3),
+      // Gran jefe (3 fases): coraza → puente UV; evasión con ácido → Jabón + Fregona; frenesí final.
+      ...grandBoss(12, 1, 460),
+      ...at(14, 'acid_wasp', 0, 3),
+      ...at(17, 'acid_wasp', 2, 3),
+      ...at(20, 'acid_wasp', 0, 1),
+      ...at(23, 'acid_wasp', 3),
+      ...at(26, 'acid_wasp', 0, 2, 3),
+      ...at(30, 'acid_wasp', 1, 3),
+      ...at(34, 'acid_wasp', 0, 2, 3),
+      ...at(38, 'acid_wasp', 3),
+      ...at(40, 'acid_wasp', 0, 1, 2, 3),
+      // Refuerzo en el carril 3, el que cubre el puente: sin puente se pierde.
+      ...at(16, 'acid_wasp', 2),
+      ...at(22, 'acid_wasp', 2),
+      ...at(32, 'acid_wasp', 2),
     ],
     solution: [
-      { t: 0, placements: [...foamDeep(1), ...bridge(0, 3)] },
-      ...relocate(22, [...foamDeep(1), ...bridge(0, 3)], [...foamDeep(1), ...bridge(2, 3)]),
-      ...relocate(39, [...foamDeep(1), ...bridge(2, 3)], [...foamDeep(1), ...bridge(0, 3)]),
+      {
+        t: 0,
+        placements: [
+          ...foam(0),
+          ...bridge(1, 2),
+          { type: 'soap_bar', rail: 1, row: 4 },
+          { type: 'mop_vortex', rail: 2, row: 4 },
+          { type: 'wc_shield', rail: 3, row: 4 },
+        ],
+      },
     ],
     failsWithout: {
-      label: 'Aerosoles separados (sin puente)',
+      label: 'Sin puente UV (la coraza del jefe aguanta)',
       plan: [
         {
           t: 0,
           placements: [
-            ...foamDeep(1),
-            { type: 'aerosol_torch', rail: 0, row: 3 },
-            { type: 'aerosol_torch', rail: 0, row: 5 },
+            ...foam(0),
+            { type: 'soap_bar', rail: 1, row: 4 },
+            { type: 'mop_vortex', rail: 2, row: 4 },
+            { type: 'wc_shield', rail: 3, row: 4 },
           ],
         },
       ],
     },
-    minMoves: 2,
   },
   {
     level: 11,
@@ -784,6 +774,80 @@ export const STRATEGIC_SCRIPTS: readonly StrategicScript[] = [
       ],
     },
   },
+  {
+    level: 14,
+    loadout: ['scourer_nanas', 'bleach_cannon', 'spray_flus'],
+    teaches:
+      'Cangrejo rey: tanque acorazado. El agua y la espuma normal solo le hacen un 35 %. La Lejía detrás del Estropajo dispara Súper Espuma Corrosiva (térmica) que lo funde.',
+    tutorial: null,
+    spawns: [
+      ...at(0.5, 'king_crab', 1),
+      ...at(3, 'king_crab', 0),
+      ...at(5, 'king_crab', 2),
+      ...at(7, 'king_crab', 0, 1, 2),
+      ...at(12, 'king_crab', 1),
+      ...at(14.5, 'king_crab', 0, 2),
+      ...at(18, 'king_crab', 1),
+      ...at(20.5, 'king_crab', 0, 2),
+      ...at(25, 'king_crab', 1),
+      ...at(27.5, 'king_crab', 0, 1),
+      ...at(31, 'king_crab', 2),
+      ...at(33.5, 'king_crab', 0, 1, 2),
+      ...at(39, 'king_crab', 1, 2),
+    ],
+    solution: [
+      {
+        t: 0,
+        placements: [
+          { type: 'scourer_nanas', rail: 1, row: 3 },
+          { type: 'bleach_cannon', rail: 1, row: 5 },
+          { type: 'spray_flus', rail: 2, row: 5 },
+        ],
+      },
+    ],
+    failsWithout: {
+      label: 'Sin Lejía (abanico normal de Flus-Flus)',
+      plan: [{ t: 0, placements: foam(1) }],
+    },
+  },
+  {
+    level: 15,
+    loadout: ['scourer_nanas', 'bleach_cannon', 'spray_flus', 'aerosol_torch', 'aerosol_torch'],
+    teaches:
+      'Examen: cangrejos acorazados y un mini-jefe. La Súper Espuma Corrosiva de la Lejía funde corazas; el puente UV aturde al jefe y sujeta el carril 1.',
+    tutorial: null,
+    spawns: [
+      ...at(0.5, 'king_crab', 1),
+      ...at(3, 'king_crab', 2),
+      ...at(5, 'king_crab', 0),
+      ...at(7, 'king_crab', 0, 1, 2),
+      ...at(11, 'king_crab', 2),
+      ...at(13, 'king_crab', 0, 1),
+      // Mini-jefe acorazado por el carril 2 mientras los cangrejos aprietan.
+      ...miniBoss(16, 1, 'uv_overheat', 330),
+      ...at(18, 'king_crab', 2),
+      ...at(21, 'king_crab', 0),
+      ...at(24, 'king_crab', 1, 2),
+      ...at(28, 'king_crab', 0, 2),
+      ...at(31, 'king_crab', 1),
+      ...at(34, 'king_crab', 0, 1, 2),
+    ],
+    solution: [
+      {
+        t: 0,
+        placements: [
+          { type: 'scourer_nanas', rail: 1, row: 3 },
+          { type: 'bleach_cannon', rail: 1, row: 5 },
+          { type: 'spray_flus', rail: 2, row: 5 },
+          ...bridge(0, 2),
+        ],
+      },
+    ],
+    failsWithout: {
+      label: 'Sin Lejía (abanico normal + puente)',
+      plan: [{ t: 0, placements: [...foam(1), ...bridge(0, 2)] }],
+    },
+  },
 ];
 
 /** La cucaracha cambia de carril cada 2,4 s en zigzag; resbalar en el Jabón la deja clavada. */
@@ -813,6 +877,16 @@ export function stepRoachZigzag(
 export function nextBossEvadeRail(curRail: number, dir: 1 | -1, railCount = 4): { rail: number; dir: 1 | -1 } {
   const rail = curRail <= 0 ? 1 : curRail >= railCount - 1 ? railCount - 2 : curRail + dir;
   return { rail, dir: (dir === 1 ? -1 : 1) as 1 | -1 };
+}
+
+/**
+ * Cangrejo rey de guion (no jefe): tanque acorazado. Lo que no es térmico/corrosivo (agua, espuma normal,
+ * Fregona) solo le hace el 35 %; la Lejía, el puente UV y el ácido devuelto le hacen daño completo.
+ */
+export const ARMORED_TANK_NON_THERMAL_MULT = 0.35;
+
+export function armoredTankDamageMult(isArmoredTank: boolean, isThermalOrExplosive: boolean): number {
+  return isArmoredTank && !isThermalOrExplosive ? ARMORED_TANK_NON_THERMAL_MULT : 1;
 }
 
 export function getStrategicScript(level: number): StrategicScript | null {

@@ -1017,7 +1017,7 @@ export function buildKnifeRoombaMesh(): THREE.Group {
 // 4. PLAGAS 3D SUAVIZADAS CON CONTORNO DE TINTA LIMPIO (ESCALA 0.75)
 // ============================================================================
 
-// Plantilla por variante de bicho: las geometrías y materiales base se crean una sola vez y cada
+// Plantilla por tipo de bicho: las geometrías y materiales base se crean una sola vez y cada
 // bicho es un clon que los comparte. El Canvas clona los materiales toon por instancia (destello
 // blanco) y solo esos clones se liberan al retirar el bicho (`disposeBugInstance`).
 const bugTemplateCache = new Map<string, THREE.Group>();
@@ -1026,7 +1026,7 @@ const bugTemplateCache = new Map<string, THREE.Group>();
  * @param variant `'duct'`: hormiga de conducto (Estratégico con guion): mismo modelo con caparazón verde azulado.
  */
 export function buildBugMesh(type: BugType, variant?: 'duct'): THREE.Group {
-  const key = `${type}:${variant ?? 'default'}`;
+  const key = `${type}:${variant ?? ''}`;
   let template = bugTemplateCache.get(key);
   if (!template) {
     template = buildBugMeshTemplate(type, variant);
@@ -1921,3 +1921,4 @@ export function buildWardrobeSpecialShowcaseMesh(specialId: SpecialWeaponId): TH
   root.add(hydroGroup);
   return root;
 }
+

@@ -110,7 +110,6 @@ export interface BugEnemy {
   bossPhase?: 1 | 2 | 3;       // Real-time 100-67% (1), 66-34% (2), 33-0% (3) for Grand Bosses
   bossArmorBroken?: boolean;   // True when UV/explosive melts Phase 1 heavy carapace
   bossEvadeTimer?: number;     // Rail-shift / sabotage timer in Phase 2+
-  bossEvadeDir?: 1 | -1;       // Sentido del barrido de esquiva (sin azar: rebota en los bordes)
   bossFrenzyTriggered?: boolean; // Escort/lateral ambush trigger in Phase 3
   bossPhaseFlashTimer?: number;  // 300ms visual flash on phase break
   bossStunTimer?: number;      // > 0 when boss mechanic is countered
@@ -121,8 +120,10 @@ export interface BugEnemy {
   roachShiftTimer?: number;    // Cucaracha de guion: segundos hasta el próximo cambio de carril
   roachShiftDir?: 1 | -1;      // Cucaracha de guion: sentido del próximo cambio (zigzag)
   isFlying?: boolean;          // Avispa de guion: vuela, Jabón y Fregona no la tocan
+  bossEvadeDir?: 1 | -1;       // Gran Jefe de guion: sentido de la próxima evasión (sin azar)
   lateralSpeedMult?: number;   // Invasión lateral de guion: velocidad al cruzar (0,92 por defecto)
   variant?: 'duct';           // Hormiga de conducto (guion): mismo bicho, otro color y entrada lateral rápida
+  isArmoredTank?: boolean;     // Cangrejo de guion: 35 % de daño de lo no térmico (Lejía/UV completos)
   chainArcCooldown?: number;   // Cooldown between conductive UV chain zaps
   thermalShockCooldown?: number; // Cooldown between Thermal Shock shrapnel bursts
   chefStunTimer?: number;      // 1.0s stun from Chef's active "Trapazo de cocina"
@@ -334,3 +335,4 @@ export interface BoardPartnerHighlight {
   row: number;
   kind: 'merge' | 'evolve' | 'synergy';
 }
+
