@@ -11,7 +11,8 @@
  * Avispa (de guion, vuela): Jabón y Fregona no la tocan; ácido cada ~2,2 s entre las filas 0,5 y 3,6 que pringa armas 3,5 s; el Gel WC lo devuelve (45).
  * Gran Jefe de guion: 3 fases por vida (66 % / 33 %), evasión alterna con ácido en fase 2+ y +30 % de
  * velocidad en fase 3. Sin escoltas (las del motor solo salen desde el Nv.30).
- * No modela (todavía): Lejía ni invasión lateral.
+ * Invasión lateral: cruza en horizontal (×0,92) bajando ×0,22; la Escuadra la endereza por su carril.
+ * No modela (todavía): Lejía.
  * Un guion que los use debe ampliar antes este simulador (ver `SIM_SUPPORTED_BUGS`).
  */
 import type { BossPuzzleType, BossTier, BugEnemy, BugType, UtensilPiece, UtensilType } from './types';
@@ -56,6 +57,11 @@ export interface SimSpawn {
   rail: number;
   /** Cucaracha: sentido del primer cambio de carril (por defecto, hacia el centro). */
   dir?: 1 | -1;
+  /** Entrada lateral (conducto): cruza en horizontal por la fila `row` hasta el borde contrario. */
+  entry?: 'left' | 'right';
+  row?: number;
+  /** Multiplicador de la velocidad al cruzar en horizontal (motor: 0,92; hormiga de conducto: más). */
+  lateralSpeed?: number;
   /** Jefe del guion (siempre con modelo de cangrejo rey en el motor). */
   boss?: { tier: BossTier; puzzle: BossPuzzleType; hp: number };
 }
@@ -102,6 +108,8 @@ interface SimBug {
   evadeTimer: number;
   evadeDir: 1 | -1;
   attackWindup: number;
+  lateralDir: 0 | 1 | -1;
+  lateralSpeed: number;
   roachTimer: number | null;
   roachDir: 1 | -1;
 }
@@ -304,9 +312,11 @@ export function simulateStrategic(opts: {
       bugs.push({
         id: nextBugId++,
         type: sp.type,
-        rail: sp.rail,
-        targetRail: sp.rail,
-        y: SPAWN_ROW,
+        rail: sp.entry === 'left' ? -0.75 : sp.entry === 'right' ? 3.75 : sp.rail,
+        targetRail: sp.entry === 'left' ? -0.75 : sp.entry === 'right' ? 3.75 : sp.rail,
+        y: sp.entry ? sp.row ?? 2 : SPAWN_ROW,
+        lateralDir: sp.entry === 'left' ? 1 : sp.entry === 'right' ? -1 : 0,
+        lateralSpeed: sp.lateralSpeed ?? 0.92,
         hp: sp.boss ? sp.boss.hp : STRATEGIC_BUG_BASE_HP[sp.type],
         hasShield: sp.boss ? true : SHIELDED_BUGS.has(sp.type),
         slowTimer: 0,
@@ -466,8 +476,24 @@ export function simulateStrategic(opts: {
         bug.roachDir = z.dir;
         if (z.shiftTo !== null) bug.targetRail = z.shiftTo;
       }
-      bug.rail = damp(bug.rail, bug.targetRail, 9, dt);
-      bug.y += speed * dt;
+      if (bug.lateralDir !== 0) {
+        // Invasión lateral (motor): avanza en horizontal y apenas baja; al llegar al borde contrario baja recto.
+        bug.rail += bug.lateralDir * speed * bug.lateralSpeed * dt;
+        bug.targetRail = bug.rail;
+        bug.y += speed * 0.22 * dt;
+        if (bug.lateralDir === 1 && bug.rail >= GRID_RAILS - 1) {
+          bug.rail = GRID_RAILS - 1;
+          bug.targetRail = GRID_RAILS - 1;
+          bug.lateralDir = 0;
+        } else if (bug.lateralDir === -1 && bug.rail <= 0) {
+          bug.rail = 0;
+          bug.targetRail = 0;
+          bug.lateralDir = 0;
+        }
+      } else {
+        bug.rail = damp(bug.rail, bug.targetRail, 9, dt);
+        bug.y += speed * dt;
+      }
 
       if (bug.bossTier === 'grand' && bug.bossPhase >= 2 && bug.y > 0.2 && bug.y < 4.6 && bug.stunTimer <= 0) {
         bug.evadeTimer -= dt * (bug.slowTimer > 0 ? 0.45 : 1.0);
@@ -519,10 +545,13 @@ export function simulateStrategic(opts: {
       const square = pieceAt('corner_square', railInt, rowInt);
       if (
         square &&
-        !bug.redirectedBySquare &&
+        (bug.lateralDir !== 0 || !bug.redirectedBySquare) &&
         Math.abs(bug.rail - railInt) < 0.44 &&
         Math.abs(bug.y - rowInt) < 0.44
       ) {
+        bug.lateralDir = 0;
+        bug.rail = railInt;
+        bug.targetRail = railInt;
         bug.redirectedBySquare = true;
         bug.hasShield = false;
         bug.armorBroken = true;

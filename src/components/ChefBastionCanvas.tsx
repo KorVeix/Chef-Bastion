@@ -4027,12 +4027,13 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
             continue;
           }
           const maxHp = STRATEGIC_BUG_BASE_HP[sp.type];
+          const lateralStart = sp.entry === 'left' ? -0.75 : sp.entry === 'right' ? 3.75 : null;
           bugs.push({
             id: `bug-s${stateRef.current.level}-${scriptCursor}-${Date.now()}-${Math.random()}`,
             type: sp.type,
-            rail: sp.rail,
-            targetRail: sp.rail,
-            yProgress: -0.35,
+            rail: lateralStart ?? sp.rail,
+            targetRail: lateralStart ?? sp.rail,
+            yProgress: sp.entry ? sp.row ?? 2 : -0.35,
             hp: maxHp,
             maxHp,
             hasShield: sp.type === 'cap_beetle' || sp.type === 'king_crab',
@@ -4045,9 +4046,10 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
             attackWindup: 0,
             koTimer: 0,
             koStar: 1,
-            isLateralInvasion: false,
-            lateralDir: 0,
+            isLateralInvasion: Boolean(sp.entry),
+            lateralDir: sp.entry === 'left' ? 1 : sp.entry === 'right' ? -1 : 0,
             redirectedBySquare: false,
+            ...(sp.entry ? { lateralSpeedMult: sp.lateralSpeed ?? 0.92 } : {}),
             ...(sp.type === 'shift_roach'
               ? { roachShiftTimer: ROACH_SHIFT_INTERVAL_SEC, roachShiftDir: sp.dir ?? (sp.rail <= 1 ? 1 : -1) }
               : {}),
@@ -4862,7 +4864,7 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
               controlSlowFactor;
 
           if (bug.isLateralInvasion && bug.lateralDir) {
-            bug.rail += bug.lateralDir * effectiveSpeed * 0.92 * waveSimDt;
+            bug.rail += bug.lateralDir * effectiveSpeed * (bug.lateralSpeedMult ?? 0.92) * waveSimDt;
             bug.targetRail = bug.rail;
             bug.yProgress += effectiveSpeed * 0.22 * waveSimDt;
             if (bug.lateralDir === 1 && bug.rail >= 3.0) {

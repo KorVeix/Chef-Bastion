@@ -22,7 +22,7 @@ export interface StrategicScript {
   /** Qué enseña o exige el nivel (para la ficha previa). */
   teaches: string;
   /** Tutorial guiado a mostrar (claves de `getTutorialGuideForLevel`), si lo hay. */
-  tutorial: 'line_foam' | 'bridge_uv' | 'slip_vortex' | 'corner_square' | null;
+  tutorial: 'line_foam' | 'bridge_uv' | 'slip_vortex' | 'corner_square' | 'duct_square' | null;
   spawns: SimSpawn[];
   /** Solución de referencia: debe limpiar el guion sin perder ningún plato. */
   solution: SimLayoutStep[];
@@ -45,6 +45,17 @@ const roach = (t: number, rail: number, dir: 1 | -1): SimSpawn => ({ t, type: 's
 const grandBoss = (t: number, rail: number, hp: number): SimSpawn[] => [
   { t, type: 'king_crab', rail, boss: { tier: 'grand', puzzle: 'uv_overheat', hp } },
 ];
+
+/** Hormiga de conducto: entra por un lateral en la fila `row` y cruza corriendo (×4) hasta el borde contrario. */
+const DUCT_ROW = 4;
+const duct = (t: number, side: 'left' | 'right'): SimSpawn => ({
+  t,
+  type: 'speed_ant',
+  rail: side === 'left' ? 0 : 3,
+  entry: side,
+  row: DUCT_ROW,
+  lateralSpeed: 4,
+});
 
 const foam = (rail: number, scourerRow = 3, sprayRow = 5) => [
   { type: 'scourer_nanas' as const, rail, row: scourerRow },
@@ -506,6 +517,54 @@ export const STRATEGIC_SCRIPTS: readonly StrategicScript[] = [
           ],
         },
       ],
+    },
+  },
+  {
+    level: 11,
+    loadout: ['corner_square', 'aerosol_torch', 'aerosol_torch', 'spray_flus'],
+    teaches:
+      'Hormigas de conducto: entran por los laterales en la fila 5 y cruzan corriendo, sin darte tiempo a disparar. La Escuadra en esa fila las frena y las manda por su carril hacia un puente UV justo debajo.',
+    tutorial: 'duct_square',
+    spawns: [
+      duct(0.5, 'left'),
+      duct(2, 'right'),
+      duct(3.5, 'left'),
+      duct(5, 'right'),
+      duct(5.6, 'left'),
+      duct(6.2, 'right'),
+      duct(9, 'left'),
+      duct(10.5, 'right'),
+      duct(12, 'left'),
+      duct(12.6, 'right'),
+      duct(13.2, 'left'),
+      duct(16, 'right'),
+      duct(17.5, 'left'),
+      duct(19, 'right'),
+      duct(19.6, 'left'),
+      duct(20.2, 'right'),
+      duct(23, 'left'),
+      duct(24, 'right'),
+      duct(25, 'left'),
+      duct(26, 'right'),
+      duct(29, 'left'),
+      duct(30, 'right'),
+      duct(31, 'left'),
+      duct(31.6, 'right'),
+      duct(32.2, 'left'),
+    ],
+    solution: [
+      {
+        t: 0,
+        placements: [
+          { type: 'corner_square', rail: 1, row: 4 },
+          ...bridge(1, 5),
+          { type: 'spray_flus', rail: 1, row: 6 },
+        ],
+      },
+    ],
+    failsWithout: {
+      label: 'Sin Escuadra (salen por los dos bordes)',
+      plan: [{ t: 0, placements: [...bridge(1, 5), { type: 'spray_flus', rail: 1, row: 6 }] }],
     },
   },
 ];
