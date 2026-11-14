@@ -2060,6 +2060,37 @@ export const DEFAULT_KITCHEN_UPGRADES: KitchenUpgrades = {
   ultBaseCharge: 0,
 };
 
+/**
+ * Nota de un nivel del Estratégico por los sellos perdidos (cada fuga arruina un plato):
+ * 0 → 3 estrellas, 1 → 2, 2 o 3 → 1. Pasar sin recolocar es posible perdiendo platos;
+ * la nota perfecta exige el guion bien jugado.
+ */
+export function computeLevelStars(sealsLost: number): 1 | 2 | 3 {
+  const lost = Math.max(0, Math.floor(Number.isFinite(sealsLost) ? sealsLost : 3));
+  return lost === 0 ? 3 : lost === 1 ? 2 : 1;
+}
+
+/** Guarda la mejor nota de cada nivel (nunca baja). */
+export function mergeBestLevelStars(
+  prev: Record<number, 1 | 2 | 3> | undefined,
+  level: number,
+  stars: 1 | 2 | 3
+): Record<number, 1 | 2 | 3> {
+  const current = prev?.[level] ?? 0;
+  return { ...(prev ?? {}), [level]: (Math.max(current, stars) as 1 | 2 | 3) };
+}
+
+/** Limpia las notas guardadas (partida local o código de copia): niveles ≥ 1 y notas 1-3. */
+export function sanitizeLevelStars(raw: unknown): Record<number, 1 | 2 | 3> {
+  const out: Record<number, 1 | 2 | 3> = {};
+  if (!raw || typeof raw !== 'object') return out;
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+    const level = Number(k);
+    if (Number.isInteger(level) && level >= 1 && (v === 1 || v === 2 || v === 3)) out[level] = v;
+  }
+  return out;
+}
+
 export const DEFAULT_PROGRESS: PlayerProgress = {
   currentLevel: 1,
   highestLevel: 1,
@@ -3024,6 +3055,7 @@ export function importProgressFromBase64(
     kitchenUpgrades: normalizeKitchenUpgrades(
       rawProg.kitchenUpgrades as Partial<KitchenUpgrades> | undefined
     ),
+    levelStars: sanitizeLevelStars(rawProg.levelStars),
   };
 
   let validatedSettings: GameSettings | undefined;

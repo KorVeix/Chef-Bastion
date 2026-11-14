@@ -292,6 +292,8 @@ export interface PlayerProgress {
   bestRushSeconds?: number;
   unlockedRushMilestones?: string[];
   kitchenUpgrades?: KitchenUpgrades;
+  /** Mejor nota por nivel del Estratégico (1-3 estrellas según los platos perdidos). */
+  levelStars?: Record<number, 1 | 2 | 3>;
 }
 
 export interface GameSettings {

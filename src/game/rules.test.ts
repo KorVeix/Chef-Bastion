@@ -1085,3 +1085,18 @@ test('Marcas registradas: ningún texto visible dice Kärcher ni Roomba', async 
     });
   }
 });
+
+test('Nota del nivel: 3★ sin platos perdidos, 2★ con uno, 1★ con dos o más; la mejor nunca baja', async () => {
+  const { computeLevelStars, mergeBestLevelStars, sanitizeLevelStars } = await import('./rules');
+  assert.equal(computeLevelStars(0), 3);
+  assert.equal(computeLevelStars(1), 2);
+  assert.equal(computeLevelStars(2), 1);
+  assert.equal(computeLevelStars(3), 1);
+  let best = mergeBestLevelStars(undefined, 4, 2);
+  best = mergeBestLevelStars(best, 4, 1);
+  assert.equal(best[4], 2);
+  best = mergeBestLevelStars(best, 4, 3);
+  assert.equal(best[4], 3);
+  assert.deepEqual(sanitizeLevelStars({ 1: 3, 2: 5, x: 2, 0: 1, 7: 2 }), { 1: 3, 7: 2 });
+  assert.deepEqual(sanitizeLevelStars(null), {});
+});
