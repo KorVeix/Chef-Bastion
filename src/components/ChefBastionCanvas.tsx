@@ -105,6 +105,7 @@ import {
   ROACH_SHIFT_INTERVAL_SEC,
   getScriptPhase,
   getStrategicScript,
+  nextBossEvadeRail,
   stepRoachZigzag,
   takeDueScriptSpawns,
   type StrategicScript,
@@ -4908,14 +4909,22 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
             if (bug.bossEvadeTimer <= 0) {
               bug.bossEvadeTimer = (bug.bossPhase ?? 1) === 3 ? 2.4 : 3.0;
               const curR = THREE.MathUtils.clamp(Math.round(bug.rail), 0, GRID_RAILS - 1);
-              const nextR =
-                curR === 0
-                  ? 1
-                  : curR === GRID_RAILS - 1
-                  ? GRID_RAILS - 2
-                  : Math.random() < 0.5
-                  ? curR - 1
-                  : curR + 1;
+              let nextR: number;
+              if (activeScript) {
+                // Jefe de guion: evasión alterna y predecible (sin azar).
+                const ev = nextBossEvadeRail(curR, bug.bossEvadeDir ?? -1);
+                nextR = ev.rail;
+                bug.bossEvadeDir = ev.dir;
+              } else {
+                nextR =
+                  curR === 0
+                    ? 1
+                    : curR === GRID_RAILS - 1
+                    ? GRID_RAILS - 2
+                    : Math.random() < 0.5
+                    ? curR - 1
+                    : curR + 1;
+              }
               bug.targetRail = nextR;
               projectiles.push({
                 id: `boss-acid-${bug.id}-${Date.now()}`,

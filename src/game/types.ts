@@ -120,6 +120,7 @@ export interface BugEnemy {
   roachShiftTimer?: number;    // Cucaracha de guion: segundos hasta el próximo cambio de carril
   roachShiftDir?: 1 | -1;      // Cucaracha de guion: sentido del próximo cambio (zigzag)
   isFlying?: boolean;          // Avispa de guion: vuela, Jabón y Fregona no la tocan
+  bossEvadeDir?: 1 | -1;       // Gran Jefe de guion: sentido de la próxima evasión (sin azar)
   chainArcCooldown?: number;   // Cooldown between conductive UV chain zaps
   thermalShockCooldown?: number; // Cooldown between Thermal Shock shrapnel bursts
   chefStunTimer?: number;      // 1.0s stun from Chef's active "Trapazo de cocina"

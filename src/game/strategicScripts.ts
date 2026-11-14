@@ -41,6 +41,11 @@ const miniBoss = (t: number, rail: number, puzzle: BossPuzzleType, hp: number): 
 /** Cucaracha con el sentido de su primer cambio de carril (zigzag). */
 const roach = (t: number, rail: number, dir: 1 | -1): SimSpawn => ({ t, type: 'shift_roach', rail, dir });
 
+/** Gran jefe del guion (3 fases), puzle de coraza UV. */
+const grandBoss = (t: number, rail: number, hp: number): SimSpawn[] => [
+  { t, type: 'king_crab', rail, boss: { tier: 'grand', puzzle: 'uv_overheat', hp } },
+];
+
 const foam = (rail: number, scourerRow = 3, sprayRow = 5) => [
   { type: 'scourer_nanas' as const, rail, row: scourerRow },
   { type: 'spray_flus' as const, rail, row: sprayRow },
@@ -443,6 +448,66 @@ export const STRATEGIC_SCRIPTS: readonly StrategicScript[] = [
       plan: [{ t: 0, placements: foam(1) }],
     },
   },
+  {
+    level: 10,
+    loadout: [
+      'scourer_nanas',
+      'spray_flus',
+      'aerosol_torch',
+      'aerosol_torch',
+      'soap_bar',
+      'mop_vortex',
+      'wc_shield',
+    ],
+    teaches:
+      'Examen: Gran Jefe de 3 fases entre avispas. Fase 1 coraza (solo la funde el puente UV), fase 2 esquiva y escupe ácido (Jabón → Fregona lo centrifuga), fase 3 frenesí. El Gel WC para las avispas del carril 4.',
+    tutorial: null,
+    spawns: [
+      ...at(0.5, 'acid_wasp', 1),
+      ...at(2, 'acid_wasp', 3),
+      ...at(3.5, 'acid_wasp', 0),
+      ...at(5, 'acid_wasp', 2, 3),
+      ...at(7, 'acid_wasp', 0, 1, 3),
+      ...at(10, 'acid_wasp', 3),
+      // Gran jefe (3 fases): coraza → puente UV; evasión con ácido → Jabón + Fregona; frenesí final.
+      ...grandBoss(12, 1, 460),
+      ...at(14, 'acid_wasp', 0, 3),
+      ...at(17, 'acid_wasp', 2, 3),
+      ...at(20, 'acid_wasp', 0, 1),
+      ...at(23, 'acid_wasp', 3),
+      ...at(26, 'acid_wasp', 0, 2, 3),
+      ...at(30, 'acid_wasp', 1, 3),
+      ...at(34, 'acid_wasp', 0, 2, 3),
+      ...at(38, 'acid_wasp', 3),
+      ...at(40, 'acid_wasp', 0, 1, 2, 3),
+    ],
+    solution: [
+      {
+        t: 0,
+        placements: [
+          ...foam(0),
+          ...bridge(1, 2),
+          { type: 'soap_bar', rail: 1, row: 4 },
+          { type: 'mop_vortex', rail: 2, row: 4 },
+          { type: 'wc_shield', rail: 3, row: 4 },
+        ],
+      },
+    ],
+    failsWithout: {
+      label: 'Sin puente UV (la coraza del jefe aguanta)',
+      plan: [
+        {
+          t: 0,
+          placements: [
+            ...foam(0),
+            { type: 'soap_bar', rail: 1, row: 4 },
+            { type: 'mop_vortex', rail: 2, row: 4 },
+            { type: 'wc_shield', rail: 3, row: 4 },
+          ],
+        },
+      ],
+    },
+  },
 ];
 
 /** La cucaracha cambia de carril cada 2,4 s en zigzag; resbalar en el Jabón la deja clavada. */
@@ -463,6 +528,15 @@ export function stepRoachZigzag(
     next = state.railInt + dir;
   }
   return { timer: ROACH_SHIFT_INTERVAL_SEC, dir: (dir === 1 ? -1 : 1) as 1 | -1, shiftTo: next };
+}
+
+/**
+ * Evasión del Gran Jefe de guion (fase 2+): cambia de carril alternando el sentido, sin azar.
+ * En los bordes vuelve hacia dentro.
+ */
+export function nextBossEvadeRail(curRail: number, dir: 1 | -1, railCount = 4): { rail: number; dir: 1 | -1 } {
+  const rail = curRail <= 0 ? 1 : curRail >= railCount - 1 ? railCount - 2 : curRail + dir;
+  return { rail, dir: (dir === 1 ? -1 : 1) as 1 | -1 };
 }
 
 export function getStrategicScript(level: number): StrategicScript | null {
