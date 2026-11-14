@@ -46,6 +46,11 @@ const miniBoss = (t: number, rail: number, puzzle: BossPuzzleType, hp: number): 
   { t, type: 'king_crab', rail, boss: { tier: 'mini', puzzle, hp } },
 ];
 
+/** Gran Jefe del guion (modelo de cangrejo rey, 3 fases por vida). */
+const grandBoss = (t: number, rail: number, hp: number): SimSpawn[] => [
+  { t, type: 'king_crab', rail, boss: { tier: 'grand', puzzle: 'uv_overheat', hp } },
+];
+
 /** Cucaracha con el sentido de su primer cambio de carril (zigzag). */
 const roach = (t: number, rail: number, dir: 1 | -1): SimSpawn => ({ t, type: 'shift_roach', rail, dir });
 
@@ -164,9 +169,13 @@ const mirrorLayout = (placements: SimLayoutStep['placements']): SimLayoutStep['p
  * Nv.9: abanico fijo en el carril 2 (filas 5 y 7), puente UV en la fila 4 del lado que aprietan
  * las ratas y Gel WC (fila 3) en el carril de las avispas.
  */
+const foamDeep = (rail: number): SimLayoutStep['placements'] => [
+  { type: 'scourer_nanas', rail, row: 4 },
+  { type: 'spray_flus', rail, row: 6 },
+];
+
 const ratsAndWasps = (side: 'left' | 'right', gelRail: number): SimLayoutStep['placements'] => [
-  { type: 'scourer_nanas', rail: 1, row: 4 },
-  { type: 'spray_flus', rail: 1, row: 6 },
+  ...foamDeep(1),
   ...bridge(side === 'left' ? 0 : 2, 3),
   { type: 'wc_shield', rail: gelRail, row: 2 },
 ];
@@ -525,6 +534,41 @@ export const STRATEGIC_SCRIPTS: readonly StrategicScript[] = [
     },
     minMoves: 2,
     staticSearchRows: { wc_shield: [2, 3] },
+  },
+  {
+    level: 10,
+    loadout: ['scourer_nanas', 'spray_flus', 'aerosol_torch', 'aerosol_torch'],
+    teaches:
+      'Gran Jefe: su coraza solo la funde el calor; hazlo pasar por el puente UV (fase 1), aguanta su esquiva con ácido (fase 2) y su frenesí (fase 3). Mientras, las ratas siguen cambiando de lado: el puente no puede irse hasta que caiga el jefe.',
+    tutorial: null,
+    spawns: [
+      // El jefe entra por el carril 1 mientras las ratas aprietan por la izquierda.
+      ...grandBoss(4, 0, 460),
+      ...pressure('cap_beetle', 0.5, 8, 0.9, RATS_LEFT),
+      // Cuando cae el jefe (~20 s) el puente tiene que ir a la derecha (ventana ~20-24 s)…
+      ...pressure('cap_beetle', 16, 8, 0.9, RATS_RIGHT),
+      // …y volver a la izquierda (~36-42 s).
+      ...pressure('cap_beetle', 32, 8, 0.9, RATS_LEFT),
+    ],
+    solution: [
+      { t: 0, placements: [...foamDeep(1), ...bridge(0, 3)] },
+      ...relocate(22, [...foamDeep(1), ...bridge(0, 3)], [...foamDeep(1), ...bridge(2, 3)]),
+      ...relocate(39, [...foamDeep(1), ...bridge(2, 3)], [...foamDeep(1), ...bridge(0, 3)]),
+    ],
+    failsWithout: {
+      label: 'Aerosoles separados (sin puente)',
+      plan: [
+        {
+          t: 0,
+          placements: [
+            ...foamDeep(1),
+            { type: 'aerosol_torch', rail: 0, row: 3 },
+            { type: 'aerosol_torch', rail: 0, row: 5 },
+          ],
+        },
+      ],
+    },
+    minMoves: 2,
   },
 ];
 
