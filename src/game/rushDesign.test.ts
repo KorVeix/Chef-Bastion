@@ -187,7 +187,8 @@ test('Oleadas: la variedad crece con el tiempo y cada patrón pide una respuesta
 //   (2 aerosoles en carriles vecinos y la misma fila). Al cruzarlo pierde el escudo para siempre y
 //   recibe 48 de daño/s mientras está en contacto; esa baja paga como quemadura de puente.
 // - Los aerosoles gastan 0,45 cargas/s con el puente activo y 0,85 más por cada bicho en contacto.
-// - Flus-Flus + Estropajo en un carril (abanico): daña a todos los bichos del carril y la baja es 2★.
+// - Flus-Flus + Estropajo en un carril (abanico): el Flus-Flus dispara cada 0,6 s en vez de 1,05 s,
+//   daña a todos los bichos del carril y la baja es 2★.
 // - Cualquier otra arma solo daña al bicho más adelantado de su carril (baja 1★).
 
 interface SimTower {
@@ -206,6 +207,7 @@ interface SimBug {
 const SIM_BUG_HP: Record<BugType, number> = { speed_ant: 38, cap_beetle: 78, acid_wasp: 60, shift_roach: 56, king_crab: 145 };
 const SIM_BUG_SPEED: Record<BugType, number> = { speed_ant: 0.68, cap_beetle: 0.48, acid_wasp: 0.52, shift_roach: 0.55, king_crab: 0.4 };
 const SIM_DPS: Record<number, number> = { 1: 13.5, 2: 19.5, 3: 27 };
+const SIM_FLUS_COMBO_RATE_MULT = 1.05 / 0.6;
 const SIM_SHOOTERS: ReadonlySet<UtensilType> = new Set<UtensilType>(['spray_flus', 'mop_vortex', 'aerosol_torch']);
 
 type Bot = {
@@ -346,7 +348,13 @@ function simulateRush(seed: number, bot: Bot, maxSeconds = 180, log?: (msg: stri
       // Only shooters deal damage (as in the engine): Estropajo and Jabón shape shots/bugs but never fire.
       const dps = onRail
         .filter((tw) => SIM_SHOOTERS.has(tw.piece.type))
-        .reduce((acc, tw) => acc + SIM_DPS[Math.min(3, tw.piece.level)], 0);
+        .reduce(
+          (acc, tw) =>
+            acc +
+            SIM_DPS[Math.min(3, tw.piece.level)] *
+              (fan && tw.piece.type === 'spray_flus' ? SIM_FLUS_COMBO_RATE_MULT : 1),
+          0
+        );
       const hittable = bugs
         .filter((b) => Math.round(b.rail) === rail && b.y >= 0 && b.hp > 0 && !b.shielded)
         .sort((a, b) => b.y - a.y);
