@@ -34,3 +34,6 @@ Thumbs.db
 .env*
 !.env.example
 
+
+# El proyecto usa Bun (bun.lock); npm no debe generar su propio lockfile.
+package-lock.json

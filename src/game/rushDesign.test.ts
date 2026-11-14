@@ -13,6 +13,9 @@ import {
   getRushWearFraction,
   getRushWearSeconds,
   planRushWave,
+  capRushSpeedMultiplier,
+  drainPendingSpawnsWithinCap,
+  RUSH_PINCER_FROM_SEC,
   RUSH_EVOLUTION_WEAR_SECONDS,
   RUSH_INITIAL_SUPPLY,
   RUSH_MAX_BUG_SPEED_MULT,
@@ -166,16 +169,34 @@ test('Oleadas: la variedad crece con el tiempo y cada patrón pide una respuesta
   const early = new Set<string>();
   const late = new Set<string>();
   for (let i = 0; i < 300; i++) {
-    early.add(planRushWave(25, rng).pattern);
-    late.add(planRushWave(140, rng).pattern);
+    early.add(planRushWave(25, rng, i).pattern);
+    late.add(planRushWave(140, rng, i).pattern);
   }
   assert.deepEqual([...early].sort(), ['ant_trickle', 'armored_column']);
   for (const p of ['ant_swarm', 'armored_column', 'pincer', 'roach_cross', 'wasp_raid']) {
     assert.ok(late.has(p), `late game should include ${p}`);
   }
-  const pincer = planRushWave(140, () => 0.5);
+  const pincer = planRushWave(140, () => 0.5, 0);
   assert.equal(pincer.pattern, 'pincer');
   assert.equal(pincer.hotRails.length, 2);
+});
+
+test('Guion por tramos: una sola respuesta por oleada hasta que cabe la pinza, y la pinza en carriles vecinos', () => {
+  const rng = seededRng(7);
+  for (let t = 15; t < 300; t += 5) {
+    for (let i = 0; i < 12; i++) {
+      const plan = planRushWave(t, rng, i);
+      if (t < RUSH_PINCER_FROM_SEC) {
+        assert.notEqual(plan.pattern, 'pincer', `pinza a los ${t} s`);
+        assert.equal(plan.hotRails.length, 1, `${plan.pattern} a los ${t} s pide más de un carril`);
+      }
+      if (plan.pattern === 'pincer') {
+        assert.equal(plan.hotRails[1] - plan.hotRails[0], 1, 'la pinza debe ir en carriles vecinos');
+      }
+    }
+  }
+  // Mismo índice de oleada y mismo tramo → mismo patrón: el azar solo elige carril.
+  assert.equal(planRushWave(50, () => 0.1, 3).pattern, planRushWave(50, () => 0.9, 3).pattern);
 });
 
 // ---------------------------------------------------------------------------
@@ -527,4 +548,15 @@ test('Orquestación: nunca más de 4 bichos a la vez y velocidad con techo, sea 
     }
   }
   assert.equal(computeRushDirectorParams(10, 0).maxConcurrentBugs, 3);
+});
+
+test('Orquestación: el techo de velocidad vale tras mundo, bioma y pactos; las apariciones especiales respetan el cupo', () => {
+  // Mundo Nevera (×1,15) + pacto de frenesí (×1,2) sobre el techo del director: sigue en ×1,3.
+  assert.equal(capRushSpeedMultiplier(RUSH_MAX_BUG_SPEED_MULT, 1.2, 1.15, 1.06), RUSH_MAX_BUG_SPEED_MULT);
+  assert.ok(capRushSpeedMultiplier(0.8, 1, 1, 1) < RUSH_MAX_BUG_SPEED_MULT);
+  // Hora Punta con 3 vivos y tope 4: sale 1 y esperan 3.
+  const drained = drainPendingSpawnsWithinCap(['a', 'b', 'c', 'd'], 3, RUSH_MAX_CONCURRENT_BUGS);
+  assert.deepEqual(drained.spawnNow, ['a']);
+  assert.deepEqual(drained.remaining, ['b', 'c', 'd']);
+  assert.equal(drainPendingSpawnsWithinCap(['a'], 5, RUSH_MAX_CONCURRENT_BUGS).spawnNow.length, 0);
 });

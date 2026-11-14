@@ -49,6 +49,8 @@ import {
   RUSH_SUPPLY_BASE_PER_SEC,
   RUSH_MAX_SPRAY_FLUS_ON_BOARD,
   RUSH_WAVE_WARNING_SECONDS,
+  capRushSpeedMultiplier,
+  drainPendingSpawnsWithinCap,
   RushWaveDirectorState,
   RushWavePlan,
   RushWaveTick,
@@ -105,6 +107,7 @@ import {
 } from '../game/rules';
 import {
   ROACH_SHIFT_INTERVAL_SEC,
+  armoredTankDamageMult,
   getScriptPhase,
   getStrategicScript,
   nextBossEvadeRail,
@@ -1164,6 +1167,8 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
     let rushElapsedSec = 0;
     let rushSupply = RUSH_INITIAL_SUPPLY;
     let rushWaves: RushWaveDirectorState = createRushWaveDirector();
+    // Apariciones especiales en cola: salen cuando hay hueco bajo el tope de bichos a la vez.
+    let rushPendingSpawns: BugEnemy[] = [];
     let rushWaveWarning: RushWaveTick['warning'] = null;
     let rushCapFlashTimer = 0;
     let rushXp = 0;
@@ -1745,6 +1750,7 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
       rushElapsedSec = 0;
       rushSupply = RUSH_INITIAL_SUPPLY;
       rushWaves = createRushWaveDirector();
+      rushPendingSpawns = [];
       rushWaveWarning = null;
       rushCapFlashTimer = 0;
       rushXp = 0;
@@ -3306,7 +3312,7 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
             if (evt.id === 'rush_hour') {
               // Min 1:00 "Hora Punta": fast XP piñata swarm!
               for (let i = 0; i < 4; i++) {
-                bugs.push({
+                rushPendingSpawns.push({
                   id: `rush-pinata-${Date.now()}-${i}`,
                   type: 'speed_ant',
                   rail: i % GRID_RAILS,
@@ -3330,7 +3336,7 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
               // Min 2:00 "Fuga Lateral": 2 immediate lateral conduit invaders!
               [-1, 1].forEach((dirSide, lIdx) => {
                 const fromLeft = dirSide < 0;
-                bugs.push({
+                rushPendingSpawns.push({
                   id: `rush-lat-${Date.now()}-${lIdx}`,
                   type: 'shift_roach',
                   rail: fromLeft ? -0.75 : 3.75,
@@ -3355,7 +3361,7 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
               });
             } else if (evt.id === 'boss_invasion') {
               // Min 3:00 "Invasión de Jefe": Grand Boss WITHOUT stopping regular spawns!
-              bugs.push({
+              rushPendingSpawns.push({
                 id: `rush-grandboss-3m-${Date.now()}`,
                 type: 'king_crab',
                 rail: 1,
@@ -4018,6 +4024,15 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
         : waveQuotaCompleted || (stateRef.current.level >= 5 && !activeScript && levelTimer <= 0);
       if (waveSimDt > 0 && !gameEndedLock && isRushMode) {
         // Supervivencia: oleadas concentradas en 1-2 carriles y avisadas 3 s antes (no carriles al azar).
+        if (rushPendingSpawns.length > 0) {
+          const drained = drainPendingSpawnsWithinCap(
+            rushPendingSpawns,
+            bugs.length,
+            rushDirector.maxConcurrentBugs
+          );
+          bugs.push(...drained.spawnNow);
+          rushPendingSpawns = drained.remaining;
+        }
         const waveTick = tickRushWaveDirector(rushWaves, waveSimDt, rushElapsedSec, {
           canSpawn: bugs.length < rushDirector.maxConcurrentBugs,
           paceMult: rushDirector.spawnIntervalSec / 2.5,
@@ -4069,6 +4084,7 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
               ? { roachShiftTimer: ROACH_SHIFT_INTERVAL_SEC, roachShiftDir: sp.dir ?? (sp.rail <= 1 ? 1 : -1) }
               : {}),
             ...(sp.type === 'acid_wasp' ? { isFlying: true } : {}),
+            ...(sp.type === 'king_crab' ? { isArmoredTank: true } : {}),
           });
         }
         phase = getScriptPhase(activeScript, scriptCursor);
@@ -4616,7 +4632,7 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
                     hitstopTimer = Math.max(hitstopTimer, HEAVY_IMPACT_HITSTOP_SECONDS);
                     bug.flashTimer = Math.max(bug.flashTimer, ENEMY_WHITE_FLASH_SECONDS);
                   }
-                  bug.hp -= proj.damage;
+                  bug.hp -= proj.damage * armoredTankDamageMult(Boolean(bug.isArmoredTank), isThermalOrExplosive);
                   bug.flashTimer = Math.max(bug.flashTimer, 0.08);
                   if (proj.fromDiagonalFoam) bug.hitByDiagonalFoam = true;
                   if (proj.fromVortex) {
@@ -4842,9 +4858,15 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
 
           const speedMap = BUG_BASE_SPEED;
           const worldMult = WORLDS_CATALOG[stateRef.current.worldId].speedMult;
-          const levelMult = isRushMode
-            ? rushDirector.speedMultiplier * rushModifiers.chaosSpeedMult
-            : getLevelSpeedMultiplier(stateRef.current.level);
+          // Supervivencia: el techo de velocidad se aplica a la velocidad compuesta (director × caos × mundo × bioma).
+          const envSpeedMult = isRushMode
+            ? capRushSpeedMultiplier(
+                rushDirector.speedMultiplier,
+                rushModifiers.chaosSpeedMult,
+                worldMult,
+                biomeFrictionSpeedFactor
+              )
+            : getLevelSpeedMultiplier(stateRef.current.level) * worldMult * biomeFrictionSpeedFactor;
           // Level 1 Wave 1 ONLY (Strategic Mode): 35% slower (0.65x) so live dynamic onboarding feels calm!
           const lvl1Wave1Factor =
             !isRushMode && !activeScript && stateRef.current.level === 1 && phase === 1 ? 0.65 : 1.0;
@@ -4859,9 +4881,7 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
             : isStunnedBoss
             ? COMBAT.grandBoss.stunnedSpeed
             : speedMap[bug.type] *
-              worldMult *
-              levelMult *
-              biomeFrictionSpeedFactor *
+              envSpeedMult *
               lvl1Wave1Factor *
               bossFrenzyFactor *
               controlSlowFactor;
@@ -5248,7 +5268,8 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
               : bug.isSlidingFromSoap
               ? COMBAT.mop.contactDpsSlipped
               : COMBAT.mop.contactDps;
-            bug.hp -= rawVortexDps * vortexMult * waveSimDt;
+            bug.hp -=
+              rawVortexDps * vortexMult * armoredTankDamageMult(Boolean(bug.isArmoredTank), false) * waveSimDt;
             evaluateGrandBossTransition(bug);
           }
 

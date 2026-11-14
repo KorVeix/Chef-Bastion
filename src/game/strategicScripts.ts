@@ -26,12 +26,16 @@ export interface StrategicScript {
   spawns: SimSpawn[];
   /** Solución de referencia: debe limpiar el guion sin perder ningún plato. */
   solution: SimLayoutStep[];
-  /** Plan sin el combo que enseña el nivel: debe dejar pasar al menos un bicho. */
-  failsWithout: { label: string; plan: SimLayoutStep[] };
+  /**
+   * Plan sin el combo que enseña el nivel: debe perder de verdad (4.ª fuga, tras los 3 Sellos).
+   * `minLeaks` solo en niveles de presentación con «2 bichos nuevos» (regla del autor): ahí basta con que
+   * se escapen todos los nuevos.
+   */
+  failsWithout: { label: string; plan: SimLayoutStep[]; minLeaks?: number };
   /**
    * Niveles de refuerzo/examen: cuántas recolocaciones en caliente exige la solución. Los tests
-   * comprueban que ningún tablero quieto con los combos montados gana y que parar de mover antes
-   * de la última recolocación pierde.
+   * comprueban que ningún tablero quieto con los combos montados limpia el guion sin perder platos
+   * y que parar de mover antes de la última recolocación pierde alguno.
    */
   minMoves?: number;
   /** Filas que se prueban para las armas sueltas al buscar tableros quietos (acota la búsqueda). */
@@ -222,11 +226,14 @@ export const STRATEGIC_SCRIPTS: readonly StrategicScript[] = [
       ...at(35.5, 'speed_ant', 0, 1, 2),
       // …y 2 ratas blindadas por el carril 4, fuera del abanico.
       ...at(9, 'cap_beetle', 3),
-      ...at(26, 'cap_beetle', 3),
+      // La 2.ª llega cuando la 1.ª ya ha pasado: la ola de lejía de un Sello perdido no la borra.
+      ...at(37, 'cap_beetle', 3),
     ],
     solution: placedLive([...foam(1), ...bridge(2, 2)]),
     failsWithout: {
       label: 'Aerosoles separados (sin puente)',
+      // Presentación de la rata blindada: «salen 2 nuevos» (regla del autor). Sin puente pasan las 2.
+      minLeaks: 2,
       plan: placedLive([
         ...foam(1),
         { type: 'aerosol_torch', rail: 3, row: 2 },
@@ -314,6 +321,15 @@ export const STRATEGIC_SCRIPTS: readonly StrategicScript[] = [
       roach(37, 0, 1),
       roach(37, 1, -1),
       roach(37, 2, 1),
+      // Presión extra en el lado del Jabón y la Fregona: sin Jabón se pierde (4.ª fuga).
+      roach(9.5, 3, -1),
+      roach(17.5, 2, -1),
+      roach(25.5, 3, -1),
+      roach(30, 2, 1),
+      roach(33, 3, -1),
+      roach(39, 2, -1),
+      roach(39, 3, -1),
+      roach(41, 1, 1),
     ],
     // Disposición del tutorial: Fregona [R2,F3], Jabón al lado [R3,F3], Flus-Flus [R2,F5].
     solution: [
@@ -413,11 +429,14 @@ export const STRATEGIC_SCRIPTS: readonly StrategicScript[] = [
       'Avispas: vuelan (el Jabón y la Fregona no las tocan) y su ácido pringa tus armas. El Gel WC en su carril les devuelve el ácido; cada tanda entra por otro carril y el Gel tiene que ir detrás.',
     tutorial: null,
     spawns: [
-      // Avispas por tandas en carriles distintos: 1 → 4 → 2 (ventanas para mover el Gel ~18-24 s y ~32-38 s).
+      // Tandas de 3 avispas en carriles distintos: 1 → 4 → 2 (mover el Gel ~18-24 s y ~32-38 s).
+      // Sin Gel se escapan 5: se pierden los 3 Sellos y la partida.
       ...at(5, 'acid_wasp', 0),
       ...at(9, 'acid_wasp', 0),
+      ...at(12, 'acid_wasp', 0),
       ...at(19, 'acid_wasp', 3),
       ...at(23, 'acid_wasp', 3),
+      ...at(26, 'acid_wasp', 3),
       ...at(33, 'acid_wasp', 1),
       ...at(36, 'acid_wasp', 1),
       ...at(39, 'acid_wasp', 1),
@@ -536,6 +555,10 @@ export const STRATEGIC_SCRIPTS: readonly StrategicScript[] = [
       ...at(34, 'acid_wasp', 0, 2, 3),
       ...at(38, 'acid_wasp', 3),
       ...at(40, 'acid_wasp', 0, 1, 2, 3),
+      // Refuerzo en el carril 3, el que cubre el puente: sin puente se pierde.
+      ...at(16, 'acid_wasp', 2),
+      ...at(22, 'acid_wasp', 2),
+      ...at(32, 'acid_wasp', 2),
     ],
     solution: [
       {
@@ -751,6 +774,80 @@ export const STRATEGIC_SCRIPTS: readonly StrategicScript[] = [
       ],
     },
   },
+  {
+    level: 14,
+    loadout: ['scourer_nanas', 'bleach_cannon', 'spray_flus'],
+    teaches:
+      'Cangrejo rey: tanque acorazado. El agua y la espuma normal solo le hacen un 35 %. La Lejía detrás del Estropajo dispara Súper Espuma Corrosiva (térmica) que lo funde.',
+    tutorial: null,
+    spawns: [
+      ...at(0.5, 'king_crab', 1),
+      ...at(3, 'king_crab', 0),
+      ...at(5, 'king_crab', 2),
+      ...at(7, 'king_crab', 0, 1, 2),
+      ...at(12, 'king_crab', 1),
+      ...at(14.5, 'king_crab', 0, 2),
+      ...at(18, 'king_crab', 1),
+      ...at(20.5, 'king_crab', 0, 2),
+      ...at(25, 'king_crab', 1),
+      ...at(27.5, 'king_crab', 0, 1),
+      ...at(31, 'king_crab', 2),
+      ...at(33.5, 'king_crab', 0, 1, 2),
+      ...at(39, 'king_crab', 1, 2),
+    ],
+    solution: [
+      {
+        t: 0,
+        placements: [
+          { type: 'scourer_nanas', rail: 1, row: 3 },
+          { type: 'bleach_cannon', rail: 1, row: 5 },
+          { type: 'spray_flus', rail: 2, row: 5 },
+        ],
+      },
+    ],
+    failsWithout: {
+      label: 'Sin Lejía (abanico normal de Flus-Flus)',
+      plan: [{ t: 0, placements: foam(1) }],
+    },
+  },
+  {
+    level: 15,
+    loadout: ['scourer_nanas', 'bleach_cannon', 'spray_flus', 'aerosol_torch', 'aerosol_torch'],
+    teaches:
+      'Examen: cangrejos acorazados y un mini-jefe. La Súper Espuma Corrosiva de la Lejía funde corazas; el puente UV aturde al jefe y sujeta el carril 1.',
+    tutorial: null,
+    spawns: [
+      ...at(0.5, 'king_crab', 1),
+      ...at(3, 'king_crab', 2),
+      ...at(5, 'king_crab', 0),
+      ...at(7, 'king_crab', 0, 1, 2),
+      ...at(11, 'king_crab', 2),
+      ...at(13, 'king_crab', 0, 1),
+      // Mini-jefe acorazado por el carril 2 mientras los cangrejos aprietan.
+      ...miniBoss(16, 1, 'uv_overheat', 330),
+      ...at(18, 'king_crab', 2),
+      ...at(21, 'king_crab', 0),
+      ...at(24, 'king_crab', 1, 2),
+      ...at(28, 'king_crab', 0, 2),
+      ...at(31, 'king_crab', 1),
+      ...at(34, 'king_crab', 0, 1, 2),
+    ],
+    solution: [
+      {
+        t: 0,
+        placements: [
+          { type: 'scourer_nanas', rail: 1, row: 3 },
+          { type: 'bleach_cannon', rail: 1, row: 5 },
+          { type: 'spray_flus', rail: 2, row: 5 },
+          ...bridge(0, 2),
+        ],
+      },
+    ],
+    failsWithout: {
+      label: 'Sin Lejía (abanico normal + puente)',
+      plan: [{ t: 0, placements: [...foam(1), ...bridge(0, 2)] }],
+    },
+  },
 ];
 
 /** La cucaracha cambia de carril cada 2,4 s en zigzag; resbalar en el Jabón la deja clavada. */
@@ -780,6 +877,16 @@ export function stepRoachZigzag(
 export function nextBossEvadeRail(curRail: number, dir: 1 | -1, railCount = 4): { rail: number; dir: 1 | -1 } {
   const rail = curRail <= 0 ? 1 : curRail >= railCount - 1 ? railCount - 2 : curRail + dir;
   return { rail, dir: (dir === 1 ? -1 : 1) as 1 | -1 };
+}
+
+/**
+ * Cangrejo rey de guion (no jefe): tanque acorazado. Lo que no es térmico/corrosivo (agua, espuma normal,
+ * Fregona) solo le hace el 35 %; la Lejía, el puente UV y el ácido devuelto le hacen daño completo.
+ */
+export const ARMORED_TANK_NON_THERMAL_MULT = 0.35;
+
+export function armoredTankDamageMult(isArmoredTank: boolean, isThermalOrExplosive: boolean): number {
+  return isArmoredTank && !isThermalOrExplosive ? ARMORED_TANK_NON_THERMAL_MULT : 1;
 }
 
 export function getStrategicScript(level: number): StrategicScript | null {
