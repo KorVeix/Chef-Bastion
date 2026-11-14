@@ -2060,6 +2060,17 @@ export const DEFAULT_KITCHEN_UPGRADES: KitchenUpgrades = {
   ultBaseCharge: 0,
 };
 
+/** Usos de la Ultimate por nivel en el Estratégico (decisión del autor). En Supervivencia no hay límite. */
+export const STRATEGIC_ULTIMATE_USES_PER_LEVEL = 1;
+
+/**
+ * ¿Puede la Ultimate cargarse o dispararse? En el Estratégico, una vez gastada en el nivel
+ * deja de cargarse hasta el nivel siguiente, para que no se salte el combo que enseña el guion.
+ */
+export function canUseUltimate(gameMode: 'rush' | 'strategic', usesThisLevel: number): boolean {
+  return gameMode === 'rush' || usesThisLevel < STRATEGIC_ULTIMATE_USES_PER_LEVEL;
+}
+
 /**
  * Nota de un nivel del Estratégico por los sellos perdidos (cada fuga arruina un plato):
  * 0 → 3 estrellas, 1 → 2, 2 o 3 → 1. Pasar sin recolocar es posible perdiendo platos;
