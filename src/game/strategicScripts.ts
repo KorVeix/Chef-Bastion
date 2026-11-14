@@ -111,6 +111,55 @@ const waspGuard = (gelRail: number): SimLayoutStep['placements'] => [
   { type: 'wc_shield', rail: gelRail, row: 2 },
 ];
 
+/** 37 cucarachas por los 4 carriles (antiguo Nv.7): base del Nv.8 en espejo. */
+const ROACH_SWARM: SimSpawn[] = [
+      roach(0.5, 2, 1),
+      roach(2, 3, -1),
+      roach(3.5, 1, 1),
+      roach(5, 2, 1),
+      roach(5, 3, -1),
+      roach(5, 0, 1),
+      roach(8, 2, -1),
+      roach(10, 3, -1),
+      roach(10, 1, 1),
+      roach(12, 0, 1),
+      roach(13, 2, 1),
+      roach(15, 3, -1),
+      roach(15, 2, -1),
+      roach(15, 0, 1),
+      roach(18, 1, 1),
+      roach(20, 3, -1),
+      roach(22, 0, 1),
+      roach(24, 1, -1),
+      roach(25, 3, -1),
+      roach(26, 0, 1),
+      roach(26, 2, -1),
+      roach(29, 1, -1),
+      roach(30, 3, -1),
+      roach(31, 0, 1),
+      roach(31, 1, 1),
+      roach(34, 0, 1),
+      roach(35, 3, -1),
+      roach(36, 2, -1),
+      roach(36, 1, -1),
+      roach(40, 0, 1),
+      roach(40, 3, -1),
+      roach(40, 1, -1),
+      roach(40, 2, 1),
+      roach(44, 0, 1),
+      roach(44, 3, -1),
+      roach(44, 1, 1),
+      roach(44, 2, -1),
+];
+
+/** Espejo izquierda↔derecha de un guion (carril r → 3 − r; la cucaracha invierte su zigzag). */
+const mirrorSpawns = (spawns: readonly SimSpawn[]): SimSpawn[] =>
+  spawns.map((sp) => ({ ...sp, rail: 3 - sp.rail, ...(sp.dir ? { dir: (sp.dir === 1 ? -1 : 1) as 1 | -1 } : {}) }));
+
+/** Espejo izquierda↔derecha de un tablero. */
+const mirrorLayout = (placements: SimLayoutStep['placements']): SimLayoutStep['placements'] =>
+  placements.map((p) => ({ ...p, rail: 3 - p.rail }));
+
 /** Colocación en vivo (niveles sin fase de colocación): una pieza cada 1,5 s desde el segundo 1,5. */
 const placedLive = (pieces: SimLayoutStep['placements']): SimLayoutStep[] =>
   pieces.map((_, i) => ({ t: 1.5 * (i + 1), placements: pieces.slice(0, i + 1) }));
@@ -325,73 +374,6 @@ export const STRATEGIC_SCRIPTS: readonly StrategicScript[] = [
   },
   {
     level: 7,
-    loadout: ['soap_bar', 'mop_vortex', 'spray_flus'],
-    teaches: 'Más cucarachas y por los 4 carriles: sin el Jabón esquivan y se amontonan.',
-    tutorial: null,
-    spawns: [
-      roach(0.5, 2, 1),
-      roach(2, 3, -1),
-      roach(3.5, 1, 1),
-      roach(5, 2, 1),
-      roach(5, 3, -1),
-      roach(5, 0, 1),
-      roach(8, 2, -1),
-      roach(10, 3, -1),
-      roach(10, 1, 1),
-      roach(12, 0, 1),
-      roach(13, 2, 1),
-      roach(15, 3, -1),
-      roach(15, 2, -1),
-      roach(15, 0, 1),
-      roach(18, 1, 1),
-      roach(20, 3, -1),
-      roach(22, 0, 1),
-      roach(24, 1, -1),
-      roach(25, 3, -1),
-      roach(26, 0, 1),
-      roach(26, 2, -1),
-      roach(29, 1, -1),
-      roach(30, 3, -1),
-      roach(31, 0, 1),
-      roach(31, 1, 1),
-      roach(34, 0, 1),
-      roach(35, 3, -1),
-      roach(36, 2, -1),
-      roach(36, 1, -1),
-      roach(40, 0, 1),
-      roach(40, 3, -1),
-      roach(40, 1, -1),
-      roach(40, 2, 1),
-      roach(44, 0, 1),
-      roach(44, 3, -1),
-      roach(44, 1, 1),
-      roach(44, 2, -1),
-    ],
-    solution: [
-      {
-        t: 0,
-        placements: [
-          { type: 'mop_vortex', rail: 1, row: 2 },
-          { type: 'soap_bar', rail: 2, row: 2 },
-          { type: 'spray_flus', rail: 1, row: 4 },
-        ],
-      },
-    ],
-    failsWithout: {
-      label: 'Sin Jabón',
-      plan: [
-        {
-          t: 0,
-          placements: [
-            { type: 'mop_vortex', rail: 1, row: 2 },
-            { type: 'spray_flus', rail: 1, row: 4 },
-          ],
-        },
-      ],
-    },
-  },
-  {
-    level: 8,
     loadout: ['soap_bar', 'mop_vortex', 'spray_flus', 'wc_shield'],
     teaches:
       'Avispas: vuelan (el Jabón y la Fregona no las tocan) y su ácido pringa tus armas. El Gel WC en su carril les devuelve el ácido; cada tanda entra por otro carril y el Gel tiene que ir detrás.',
@@ -449,6 +431,38 @@ export const STRATEGIC_SCRIPTS: readonly StrategicScript[] = [
     failsWithout: {
       label: 'Sin Gel WC',
       plan: [{ t: 0, placements: waspGuard(0).filter((p) => p.type !== 'wc_shield') }],
+    },
+    minMoves: 2,
+    staticSearchRows: { wc_shield: [2, 3], spray_flus: [4, 5, 6] },
+  },
+  {
+    level: 8,
+    loadout: ['soap_bar', 'mop_vortex', 'spray_flus', 'wc_shield'],
+    teaches:
+      'Refuerzo de avispas: el tablero en espejo, más cucarachas y tandas de 3 avispas por carriles 4 → 1 → 3. El Gel WC sigue a cada tanda.',
+    tutorial: null,
+    spawns: [
+      // Tandas de 3 avispas: 4 → 1 → 3 (ventanas para mover el Gel ~20-24 s y ~34-38 s).
+      ...at(5, 'acid_wasp', 3),
+      ...at(8, 'acid_wasp', 3),
+      ...at(11, 'acid_wasp', 3),
+      ...at(19, 'acid_wasp', 0),
+      ...at(22, 'acid_wasp', 0),
+      ...at(25, 'acid_wasp', 0),
+      ...at(33, 'acid_wasp', 2),
+      ...at(36, 'acid_wasp', 2),
+      ...at(39, 'acid_wasp', 2),
+      // Las cucarachas del antiguo Nv.7, en espejo.
+      ...mirrorSpawns(ROACH_SWARM),
+    ],
+    solution: [
+      { t: 0, placements: mirrorLayout(waspGuard(0)) },
+      ...relocate(22, mirrorLayout(waspGuard(0)), mirrorLayout(waspGuard(3))),
+      ...relocate(36, mirrorLayout(waspGuard(3)), mirrorLayout(waspGuard(1))),
+    ],
+    failsWithout: {
+      label: 'Sin Gel WC',
+      plan: [{ t: 0, placements: mirrorLayout(waspGuard(0)).filter((p) => p.type !== 'wc_shield') }],
     },
     minMoves: 2,
     staticSearchRows: { wc_shield: [2, 3], spray_flus: [4, 5, 6] },
