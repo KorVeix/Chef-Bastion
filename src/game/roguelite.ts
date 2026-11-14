@@ -1057,7 +1057,7 @@ export function getChaosDirectorEventForMinute(minuteMark: number): ChaosDirecto
       id: 'boss_invasion',
       minuteMark: 3,
       title: '👑 MIN 3:00 · ¡INVASIÓN DE JEFE!',
-      subtitle: '¡Abátelo para desplegar la Roomba con Cuchillos!',
+      subtitle: '¡Abátelo para desplegar el Robot Aspirador con Cuchillos!',
       color: 'pink',
     };
   }
@@ -1260,7 +1260,7 @@ export const COMANDAS_POOL: readonly Omit<ComandaTicket, 'id'>[] = [
     effectId: 'deploy_roomba',
     color: 'blue',
     icon: '🔪',
-    title: 'Roomba Con Cuchillos',
+    title: 'Robot Aspirador con Cuchillos',
   },
   {
     effectId: 'supply_boost',
@@ -1413,10 +1413,10 @@ export const RUSH_ADRENALINE_MILESTONES: readonly RushAdrenalineMilestone[] = [
   {
     id: 'rush_boss_3min',
     title: '👑 ¡HITO: JEFE MIN 3:00 ABATIDO!',
-    subtitle: 'Roomba Kamikaze + Traje EPI permanentes + 200 🪙',
+    subtitle: 'Robot Kamikaze + Traje EPI permanentes + 200 🪙',
     coinsBonus: 200,
     unlockArmor: 'hazmat_epi',
-    unlockSpecial: 'knife_roomba',
+    unlockSpecial: 'knife_robot',
   },
   {
     id: 'rush_overdrive_4min',

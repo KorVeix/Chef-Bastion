@@ -1056,15 +1056,16 @@ test('Comprehension & Anti-Overlap Polish: 0.08x Inspector, 0.20x Comanda Slow-M
 
 
 
-test('Ultimate renombrada: las partidas con el id antiguo cargan la Hidrolimpiadora', async () => {
+test('Ultimates renombradas (Kärcher, Roomba): las partidas con el id antiguo cargan la nueva', async () => {
   const { migrateLegacyProgressIds, SPECIAL_WEAPONS_CATALOG } = await import('./rules');
   const migrated = migrateLegacyProgressIds({
     equippedSpecial: 'karcher_blast',
-    unlockedSpecials: ['karcher_blast', 'baking_volcano', 'hydro_blast'],
+    unlockedSpecials: ['karcher_blast', 'baking_volcano', 'hydro_blast', 'knife_roomba'],
   });
   assert.equal(migrated.equippedSpecial, 'hydro_blast');
-  assert.deepEqual(migrated.unlockedSpecials, ['hydro_blast', 'baking_volcano']);
+  assert.deepEqual(migrated.unlockedSpecials, ['hydro_blast', 'baking_volcano', 'knife_robot']);
+  assert.equal(migrateLegacyProgressIds({ equippedSpecial: 'knife_roomba' }).equippedSpecial, 'knife_robot');
   for (const spec of Object.values(SPECIAL_WEAPONS_CATALOG)) {
-    assert.ok(!/k[aä]rcher/i.test(spec.name + spec.desc), `marca registrada en «${spec.name}»`);
+    assert.ok(!/k[aä]rcher|roomba/i.test(spec.name + spec.desc), `marca registrada en «${spec.name}»`);
   }
 });

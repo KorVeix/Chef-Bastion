@@ -953,7 +953,7 @@ export function buildGhostUtensilMesh(
 }
 
 /**
- * Builds the 3D "Roomba Kamikaze con Cuchillos" autonomous horizontal patrol bot
+ * Builds the 3D "Robot Aspirador Kamikaze con Cuchillos" autonomous horizontal patrol bot
  * deployed in front of the 4 plates when defeating the Min 3:00 Rush Boss or picking its Comanda!
  */
 export function buildKnifeRoombaMesh(): THREE.Group {
@@ -1857,7 +1857,7 @@ export function buildWardrobeSpecialShowcaseMesh(specialId: SpecialWeaponId): TH
   goldRim.position.y = 0.14;
   root.add(pedestal, goldRim);
 
-  if (specialId === 'knife_roomba') {
+  if (specialId === 'knife_robot') {
     const roomba = buildKnifeRoombaMesh();
     roomba.position.y = 0.16;
     roomba.scale.setScalar(0.95);

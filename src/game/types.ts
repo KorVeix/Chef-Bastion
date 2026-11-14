@@ -54,7 +54,7 @@ export type KillStarRating = 1 | 2 | 3;
 
 export type HatId = 'classic_toque' | 'duck_shower_cap' | 'bucket_helmet' | 'tp_gasmask';
 export type ArmorId = 'white_apron' | 'hazmat_epi' | 'golden_scourer_mail';
-export type SpecialWeaponId = 'hydro_blast' | 'baking_volcano' | 'knife_roomba';
+export type SpecialWeaponId = 'hydro_blast' | 'baking_volcano' | 'knife_robot';
 
 export type SupremeEvolutionId =
   | 'centrifuge_vortex'   // Jabón 45° (Nv.3) + Fregona (Nv.3)

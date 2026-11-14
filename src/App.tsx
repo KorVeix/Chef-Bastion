@@ -1556,7 +1556,7 @@ export default function App() {
                   )}
                   {isRush && rushHud?.roombaActive && (
                     <span
-                      title="Roomba Kamikaze con Cuchillos patrullando frente a los platos"
+                      title="Robot Aspirador Kamikaze con Cuchillos patrullando frente a los platos"
                       className="text-[9px] font-black text-rose-300 ml-0.5"
                     >
                       · 🔪 Roomba

@@ -1119,7 +1119,7 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
     }
     worldGroup.add(towelWhipGroup);
 
-    // 3D Autonomous "Roomba Kamikaze con Cuchillos" patrolling horizontally in front of the 4 gourmet plates!
+    // 3D Autonomous "Robot Aspirador Kamikaze con Cuchillos" patrolling horizontally in front of the 4 gourmet plates!
     const knifeRoombaMesh = buildKnifeRoombaMesh();
     knifeRoombaMesh.visible = false;
     knifeRoombaMesh.position.set(0, 0.04, 3.55);
@@ -2648,8 +2648,8 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
         stateRef.current.onComicPop({
           id: `ult-${Date.now()}`,
           title:
-            specId === 'knife_roomba'
-              ? '¡ROOMBA KAMIKAZE!'
+            specId === 'knife_robot'
+              ? '¡ROBOT KAMIKAZE!'
               : specId === 'baking_volcano'
               ? '¡VOLCÁN QUÍMICO!'
               : '¡KÄRCHER A PRESIÓN!',
@@ -3519,7 +3519,7 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
           }
         }
 
-        // Autonomous Horizontal Patrol: "Roomba Kamikaze con Cuchillos" right in front of the 4 gourmet plates!
+        // Autonomous Horizontal Patrol: "Robot Aspirador Kamikaze con Cuchillos" right in front of the 4 gourmet plates!
         knifeRoombaMesh.visible = patrolRoombaActive;
         if (patrolRoombaActive && waveSimDt > 0) {
           patrolRoombaX += patrolRoombaDir * 3.4 * waveSimDt;
@@ -5415,8 +5415,8 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
                 lastKillComicPopAt = nowMs;
                 stateRef.current.onComicPop({
                   id: `kill-${bug.id}`,
-                  title: '👑 ¡ROOMBA DESPLEGADA!',
-                  subtitle: 'Roomba Kamikaze patrullando frente a los 4 platos',
+                  title: '👑 ¡ROBOT DESPLEGADO!',
+                  subtitle: 'Robot Aspirador Kamikaze patrullando frente a los 4 platos',
                   stars: elim.stars,
                   color: 'cyan',
                   createdAt: nowMs,

@@ -451,8 +451,8 @@ export const ACHIEVEMENTS_CATALOG: AchievementDef[] = [
     recipeIcons: ['🧼', '➔', '🌪️', '💥', '👑'],
     description: 'Haz patinar a la Rata Blindada en la Pastilla de Jabón directo hacia la Fregona Turbo-Spin.',
     rewardType: 'special_weapon',
-    rewardId: 'knife_roomba',
-    rewardLabel: 'Roomba Kamikaze con Cuchillos',
+    rewardId: 'knife_robot',
+    rewardLabel: 'Robot Aspirador Kamikaze con Cuchillos',
     unlockCostCoins: 350,
   },
   {
@@ -560,8 +560,8 @@ export const SPECIAL_WEAPONS_CATALOG: Record<
     icon: '🌋',
     desc: 'Inunda el tablero de espuma ácida que funde todas las chapas.',
   },
-  knife_roomba: {
-    name: 'Roomba Kamikaze con Cuchillos',
+  knife_robot: {
+    name: 'Robot Aspirador Kamikaze con Cuchillos',
     icon: '🔪',
     desc: 'Cruza los 4 raíles rebotando a toda pastilla y triturando todo a su paso.',
   },
@@ -737,9 +737,9 @@ export function getTacticalOnboardingCard(level: number): TacticalOnboardingCard
         },
       ],
       flowArrowLabel: '🪳 pisa 🧼 en R3 ➔ deja de esquivar y patina hacia 🌪️ en R2 ➔ ¡Centrifugado 3★!',
-      rewardTitle: '🎁 Recompensa 3★: Roomba Kamikaze con Cuchillos',
+      rewardTitle: '🎁 Recompensa 3★: Robot Aspirador Kamikaze con Cuchillos',
       rewardExplanation:
-        'Las bajas 3★ cargan al máximo el Manómetro Ultimate y desbloquean la Roomba Kamikaze en el Álbum.',
+        'Las bajas 3★ cargan al máximo el Manómetro Ultimate y desbloquean el Robot Aspirador Kamikaze en el Álbum.',
     };
   }
 
@@ -2782,6 +2782,7 @@ const VALID_ARMORS: readonly ArmorId[] = [
 /** Ids de Ultimate retirados → id actual (partidas guardadas y códigos de copia antiguos). */
 const LEGACY_SPECIAL_IDS: Record<string, SpecialWeaponId> = {
   karcher_blast: 'hydro_blast',
+  knife_roomba: 'knife_robot',
 };
 
 /** Traduce un id de Ultimate antiguo al actual; deja igual cualquier otro valor. */
@@ -2805,7 +2806,7 @@ export function migrateLegacyProgressIds<T extends { equippedSpecial?: unknown; 
 export const VALID_SPECIALS: readonly SpecialWeaponId[] = [
   'hydro_blast',
   'baking_volcano',
-  'knife_roomba',
+  'knife_robot',
 ];
 
 /**
