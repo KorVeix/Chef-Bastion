@@ -204,7 +204,7 @@ interface SimBug {
 }
 
 const SIM_BUG_HP: Record<BugType, number> = { speed_ant: 38, cap_beetle: 78, acid_wasp: 60, shift_roach: 56, king_crab: 145 };
-const SIM_BUG_SPEED: Record<BugType, number> = { speed_ant: 0.68, cap_beetle: 0.48, acid_wasp: 0.52, shift_roach: 0.55, king_crab: 0.4 };
+const SIM_BUG_SPEED: Record<BugType, number> = { speed_ant: 0.68, cap_beetle: 0.48, acid_wasp: 0.44, shift_roach: 0.6, king_crab: 0.36 };
 const SIM_DPS: Record<number, number> = { 1: 13.5, 2: 19.5, 3: 27 };
 const SIM_SHOOTERS: ReadonlySet<UtensilType> = new Set<UtensilType>(['spray_flus', 'mop_vortex', 'aerosol_torch']);
 
