@@ -2470,7 +2470,9 @@ export default function App() {
                         }}
                         className={`w-12 h-12 sm:w-14 sm:h-14 rounded-full border-[2.5px] flex flex-col items-center justify-center shrink-0 transition shadow-[0_3px_0_#0f172a] cursor-pointer ${
                           activeInspectionTarget?.kind === 'ultimate'
-                            ? 'border-cyan-300 bg-gradient-to-b from-yellow-300 via-amber-400 to-amber-500 scale-105'
+                            ? hud.ultimateSpent
+                              ? 'border-cyan-300 bg-gradient-to-b from-slate-400 via-slate-500 to-slate-600 scale-105'
+                              : 'border-cyan-300 bg-gradient-to-b from-yellow-300 via-amber-400 to-amber-500 scale-105'
                             : hud.ultimateSpent
                             ? 'border-slate-950 bg-gradient-to-b from-slate-400 via-slate-500 to-slate-600 opacity-70'
                             : hud.pressurePct >= 100
@@ -2478,7 +2480,13 @@ export default function App() {
                             : 'border-slate-950 bg-gradient-to-b from-amber-300 via-yellow-400 to-amber-600'
                         }`}
                       >
-                        <div className="w-9.5 h-9.5 sm:w-11 sm:h-11 rounded-full border-2 border-amber-700/70 bg-gradient-to-b from-yellow-300 to-amber-500 flex flex-col items-center justify-center px-0.5">
+                        <div
+                          className={`w-9.5 h-9.5 sm:w-11 sm:h-11 rounded-full border-2 flex flex-col items-center justify-center px-0.5 ${
+                            hud.ultimateSpent
+                              ? 'border-slate-700/70 bg-gradient-to-b from-slate-400 to-slate-600'
+                              : 'border-amber-700/70 bg-gradient-to-b from-yellow-300 to-amber-500'
+                          }`}
+                        >
                           <span className="text-[8px] sm:text-[9px] font-black text-white leading-none drop-shadow-[0_1.5px_0_#0f172a]">
                             Ultimate
                           </span>
