@@ -121,17 +121,17 @@ function moveMoments(script: (typeof STRATEGIC_SCRIPTS)[number]): number[] {
 }
 
 for (const script of STRATEGIC_SCRIPTS.filter((s) => s.minMoves)) {
-  test(`Guion Nv.${script.level}: exige ${script.minMoves} recolocaciones; parar antes pierde algún plato`, () => {
+  test(`Guion Nv.${script.level}: exige ${script.minMoves} recolocaciones; parar antes acaba en derrota`, () => {
     const moments = moveMoments(script);
     assert.ok(moments.length >= script.minMoves!, `solo ${moments.length} recolocaciones`);
     for (const cut of moments) {
       const plan = script.solution.filter((s) => s.t < cut);
       const res = simulateStrategic({ level: script.level, spawns: script.spawns, plan });
-      assert.ok(res.leaks.length >= 1, `dejar de mover en el segundo ${cut} también gana`);
+      assert.ok(res.defeated, `dejar de mover en el segundo ${cut} no provoca derrota`);
     }
   });
 
-  test(`Guion Nv.${script.level}: ningún tablero quieto con los combos montados gana sin perder platos${FULL_SEARCH ? '' : ' (muestra)'}`, () => {
+  test(`Guion Nv.${script.level}: ningún tablero quieto con los combos montados evita la derrota${FULL_SEARCH ? '' : ' (muestra)'}`, () => {
     const all = enumerateComboLayouts(script.loadout, { looseRows: script.staticSearchRows });
     assert.ok(all.length > 0);
     // `bun run test` recorre una muestra fija (como mucho SAMPLE_LIMIT tableros repartidos por toda la
@@ -144,8 +144,7 @@ for (const script of STRATEGIC_SCRIPTS.filter((s) => s.minMoves)) {
           level: script.level,
           spawns: script.spawns,
           plan: [{ t: 0, placements }],
-          stopOnFirstLeak: true,
-        }).leaks.length === 0
+        }).defeated
     );
     const show = winners
       .slice(0, 3)
