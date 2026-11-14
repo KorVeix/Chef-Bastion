@@ -2653,7 +2653,7 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
               ? '¡ROBOT KAMIKAZE!'
               : specId === 'baking_volcano'
               ? '¡VOLCÁN QUÍMICO!'
-              : '¡KÄRCHER A PRESIÓN!',
+              : '¡HIDROLIMPIADORA A PRESIÓN!',
           subtitle:
             specId === 'baking_volcano'
               ? '¡Fuego Químico Funde-Corazas en los 4 Raíles!'
