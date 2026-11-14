@@ -499,7 +499,13 @@ export function simulateStrategic(opts: {
           if (bug.bossTier) {
             const control =
               proj.fromDiagonalFoam || proj.fromVortex || bug.isSlidingFromSoap || bug.redirectedBySquare;
-            bug.hp -= proj.damage * bossMult(bug, { thermal: Boolean(proj.thermal), control });
+            const mult = bossMult(bug, { thermal: Boolean(proj.thermal), control });
+            // Motor: un impacto térmico/explosivo rompe la coraza del jefe (tras calcular el multiplicador).
+            if (proj.thermal && !bug.armorBroken) {
+              bug.armorBroken = true;
+              bug.hasShield = false;
+            }
+            bug.hp -= proj.damage * mult;
             if (proj.fromVortex) bug.slowTimer = Math.max(bug.slowTimer, 1.8 * buffs.controlDurationMult);
             evaluateGrandPhase(bug);
           } else if (bug.hasShield && !proj.pierce && !proj.thermal) {

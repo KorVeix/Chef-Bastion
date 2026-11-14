@@ -760,6 +760,44 @@ export const STRATEGIC_SCRIPTS: readonly StrategicScript[] = [
       plan: [{ t: 0, placements: foam(1) }],
     },
   },
+  {
+    level: 15,
+    loadout: ['scourer_nanas', 'bleach_cannon', 'spray_flus', 'aerosol_torch', 'aerosol_torch'],
+    teaches:
+      'Examen: cangrejos acorazados y un mini-jefe. La Súper Espuma Corrosiva de la Lejía funde corazas; el puente UV aturde al jefe y sujeta el carril 1.',
+    tutorial: null,
+    spawns: [
+      ...at(0.5, 'king_crab', 1),
+      ...at(3, 'king_crab', 2),
+      ...at(5, 'king_crab', 0),
+      ...at(7, 'king_crab', 0, 1, 2),
+      ...at(11, 'king_crab', 2),
+      ...at(13, 'king_crab', 0, 1),
+      // Mini-jefe acorazado por el carril 2 mientras los cangrejos aprietan.
+      ...miniBoss(16, 1, 'uv_overheat', 330),
+      ...at(18, 'king_crab', 2),
+      ...at(21, 'king_crab', 0),
+      ...at(24, 'king_crab', 1, 2),
+      ...at(28, 'king_crab', 0, 2),
+      ...at(31, 'king_crab', 1),
+      ...at(34, 'king_crab', 0, 1, 2),
+    ],
+    solution: [
+      {
+        t: 0,
+        placements: [
+          { type: 'scourer_nanas', rail: 1, row: 3 },
+          { type: 'bleach_cannon', rail: 1, row: 5 },
+          { type: 'spray_flus', rail: 2, row: 5 },
+          ...bridge(0, 2),
+        ],
+      },
+    ],
+    failsWithout: {
+      label: 'Sin Lejía (abanico normal + puente)',
+      plan: [{ t: 0, placements: [...foam(1), ...bridge(0, 2)] }],
+    },
+  },
 ];
 
 /** La cucaracha cambia de carril cada 2,4 s en zigzag; resbalar en el Jabón la deja clavada. */
