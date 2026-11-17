@@ -1017,19 +1017,25 @@ export function buildKnifeRoombaMesh(): THREE.Group {
 // 4. PLAGAS 3D SUAVIZADAS CON CONTORNO DE TINTA LIMPIO (ESCALA 0.75)
 // ============================================================================
 
+export type BugMeshVariant = 'duct' | 'boss';
+
 // Plantilla por tipo de bicho: las geometrías y materiales base se crean una sola vez y cada
 // bicho es un clon que los comparte. El Canvas clona los materiales toon por instancia (destello
 // blanco) y solo esos clones se liberan al retirar el bicho (`disposeBugInstance`).
 const bugTemplateCache = new Map<string, THREE.Group>();
 
 /**
- * @param variant `'duct'`: hormiga de conducto (Estratégico con guion): mismo modelo con caparazón verde azulado.
+ * @param variant `'duct'`: hormiga de conducto (`speed_ant`). `'boss'`: cangrejo rey jefe con corona (`king_crab`).
  */
-export function buildBugMesh(type: BugType, variant?: 'duct'): THREE.Group {
-  const key = `${type}:${variant ?? ''}`;
+export function buildBugMesh(type: BugType, variant?: BugMeshVariant): THREE.Group {
+  const validVariant =
+    (type === 'speed_ant' && variant === 'duct') || (type === 'king_crab' && variant === 'boss')
+      ? variant
+      : undefined;
+  const key = `${type}:${validVariant ?? ''}`;
   let template = bugTemplateCache.get(key);
   if (!template) {
-    template = buildBugMeshTemplate(type, variant);
+    template = buildBugMeshTemplate(type, validVariant);
     bugTemplateCache.set(key, template);
   }
   return template.clone(true);
@@ -1061,11 +1067,11 @@ export function disposeObjectTree(root: THREE.Object3D): void {
   materials.forEach((m) => m.dispose());
 }
 
-function buildBugMeshTemplate(type: BugType, variant?: 'duct'): THREE.Group {
+function buildBugMeshTemplate(type: BugType, variant?: BugMeshVariant): THREE.Group {
   const root = new THREE.Group();
   root.scale.setScalar(0.75);
-  const isBoss = type === 'king_crab';
-  root.add(createComicContactShadow(isBoss ? 0.62 : 0.46, isBoss ? 0.62 : 0.5, 0.06));
+  const isCrab = type === 'king_crab';
+  root.add(createComicContactShadow(isCrab ? 0.62 : 0.46, 0.5, 0.06));
 
   const group = new THREE.Group();
   group.rotation.x = -THREE.MathUtils.degToRad(12);
@@ -1074,14 +1080,10 @@ function buildBugMeshTemplate(type: BugType, variant?: 'duct'): THREE.Group {
   const eyeWhiteMat = createToonMaterial(0xffffff);
   const pupilMat = new THREE.MeshBasicMaterial({ color: INK_COLOR_HEX });
 
-  if (type === 'speed_ant' || type === 'shift_roach') {
-    const isDuct = variant === 'duct' && type === 'speed_ant';
-    const darkShellMat = createToonMaterial(
-      type === 'shift_roach' ? 0x9a3412 : isDuct ? 0x0f766e : 0xb45309
-    );
-    const wingCaseMat = createToonMaterial(
-      type === 'shift_roach' ? 0xfbbf24 : isDuct ? 0x2dd4bf : 0xf59e0b
-    );
+  if (type === 'speed_ant') {
+    const isDuct = variant === 'duct';
+    const darkShellMat = createToonMaterial(isDuct ? 0x0f766e : 0xb45309);
+    const wingCaseMat = createToonMaterial(isDuct ? 0x2dd4bf : 0xf59e0b);
     const blackLegMat = createToonMaterial(0x1c1917);
 
     const abdomen = new THREE.Mesh(new THREE.SphereGeometry(0.36, 32, 28), darkShellMat);
@@ -1134,48 +1136,148 @@ function buildBugMeshTemplate(type: BugType, variant?: 'duct'): THREE.Group {
       });
     });
     group.add(legsGroup);
-  } else if (type === 'cap_beetle' || type === 'king_crab') {
-    const scale = isBoss ? 1.22 : 1.0;
-    const furMat = createToonMaterial(isBoss ? 0x475569 : 0x64748b);
+  } else if (type === 'shift_roach') {
+    const ventralMat = createToonMaterial(0x7c2d12);
+    const elytraMat = createToonMaterial(0x9a3412);
+    const pronotumRimMat = createToonMaterial(0xfbbf24);
+    const chitinBlackMat = createToonMaterial(0x1c1917);
+
+    // Óvalo largo y muy plano pegado al suelo
+    const ventralBody = new THREE.Mesh(new THREE.SphereGeometry(0.33, 10, 8), ventralMat);
+    ventralBody.scale.set(0.84, 0.28, 1.38);
+    ventralBody.position.set(0, 0.14, -0.04);
+    group.add(ventralBody);
+
+    // Élitros cerrados encima del abdomen con la sutura central marcada
+    const elytronGeo = new THREE.SphereGeometry(0.23, 10, 8);
+    [-1, 1].forEach((side) => {
+      const elytron = new THREE.Mesh(elytronGeo, elytraMat);
+      elytron.scale.set(0.72, 0.3, 1.76);
+      elytron.position.set(side * 0.085, 0.19, -0.1);
+      elytron.rotation.y = side * -0.06;
+      group.add(elytron);
+    });
+
+    const elytraSeam = new THREE.Mesh(
+      new THREE.BoxGeometry(0.032, 0.03, 0.72),
+      chitinBlackMat
+    );
+    elytraSeam.position.set(0, 0.252, -0.1);
+    elytraSeam.userData.skipOutline = true;
+    group.add(elytraSeam);
+
+    // Pronoto plano y redondeado con borde claro tapando la cabeza por delante
+    const pronotumRim = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.25, 0.28, 0.055, 8),
+      pronotumRimMat
+    );
+    pronotumRim.scale.set(1.06, 1, 0.86);
+    pronotumRim.position.set(0, 0.215, 0.26);
+    pronotumRim.rotation.x = 0.18;
+    group.add(pronotumRim);
+
+    const pronotumCenter = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.19, 0.21, 0.062, 8),
+      elytraMat
+    );
+    pronotumCenter.scale.set(1.04, 1, 0.82);
+    pronotumCenter.position.set(0, 0.22, 0.255);
+    pronotumCenter.rotation.x = 0.18;
+    pronotumCenter.userData.skipOutline = true;
+    group.add(pronotumCenter);
+
+    // Ojos bajos asomando bajo el borde frontal del pronoto
+    const roachEyeGeo = new THREE.SphereGeometry(0.058, 8, 6);
+    const roachPupilGeo = new THREE.SphereGeometry(0.032, 8, 6);
+    [-1, 1].forEach((side) => {
+      const eye = new THREE.Mesh(roachEyeGeo, eyeWhiteMat);
+      eye.position.set(side * 0.13, 0.175, 0.42);
+      const pupil = new THREE.Mesh(roachPupilGeo, pupilMat);
+      pupil.position.set(side * 0.14, 0.18, 0.468);
+      pupil.userData.skipOutline = true;
+      group.add(eye, pupil);
+    });
+
+    // Antenas larguísimas en arco hacia delante y abiertas (más largas que el cuerpo)
+    const antSeg1Geo = new THREE.CylinderGeometry(0.022, 0.028, 0.44, 6);
+    const antSeg2Geo = new THREE.CylinderGeometry(0.013, 0.022, 0.48, 6);
+    [-1, 1].forEach((side) => {
+      const antRoot = new THREE.Group();
+      antRoot.position.set(side * 0.08, 0.19, 0.39);
+      antRoot.rotation.y = side * 0.36;
+
+      const seg1 = new THREE.Mesh(antSeg1Geo, chitinBlackMat);
+      seg1.rotation.x = Math.PI / 2 - 0.22;
+      seg1.position.set(0, 0.048, 0.215);
+      antRoot.add(seg1);
+
+      const seg2Pivot = new THREE.Group();
+      seg2Pivot.position.set(0, 0.096, 0.43);
+      seg2Pivot.rotation.y = side * 0.32;
+      seg2Pivot.rotation.x = 0.14;
+
+      const seg2 = new THREE.Mesh(antSeg2Geo, chitinBlackMat);
+      seg2.rotation.x = Math.PI / 2 - 0.22;
+      seg2.position.set(0, 0.052, 0.234);
+      seg2Pivot.add(seg2);
+
+      antRoot.add(seg2Pivot);
+      group.add(antRoot);
+    });
+
+    // 6 patas finas y abiertas hacia los lados
+    const legsGroup = new THREE.Group();
+    legsGroup.name = 'anim_legs';
+    const roachLegGeo = new THREE.CylinderGeometry(0.025, 0.017, 0.42, 6);
+    [-0.24, -0.02, 0.2].forEach((lz, idx) => {
+      [-1, 1].forEach((side) => {
+        const leg = new THREE.Mesh(roachLegGeo, chitinBlackMat);
+        leg.position.set(side * 0.3, 0.11, lz);
+        if (idx === 0) leg.scale.y = 1.15;
+        leg.rotation.z = side * (Math.PI / 2 - 0.28);
+        leg.rotation.y = -side * (idx - 1) * 0.36;
+        legsGroup.add(leg);
+      });
+    });
+    group.add(legsGroup);
+  } else if (type === 'cap_beetle') {
+    const furMat = createToonMaterial(0x64748b);
     const bellyMat = createToonMaterial(0xcbd5e1);
     const pinkMat = createToonMaterial(0xf472b6);
 
-    const body = new THREE.Mesh(new THREE.SphereGeometry(0.4 * scale, 32, 28), furMat);
+    const body = new THREE.Mesh(new THREE.SphereGeometry(0.4, 32, 28), furMat);
     body.scale.set(0.95, 0.86, 1.18);
-    body.position.set(0, 0.38 * scale, -0.04 * scale);
+    body.position.set(0, 0.38, -0.04);
     group.add(body);
 
-    const belly = new THREE.Mesh(new THREE.SphereGeometry(0.32 * scale, 28, 24), bellyMat);
+    const belly = new THREE.Mesh(new THREE.SphereGeometry(0.32, 28, 24), bellyMat);
     belly.scale.set(0.85, 0.6, 1.05);
-    belly.position.set(0, 0.26 * scale, 0.06 * scale);
+    belly.position.set(0, 0.26, 0.06);
     belly.userData.skipOutline = true;
     group.add(belly);
 
-    const snout = new THREE.Mesh(
-      new THREE.ConeGeometry(0.26 * scale, 0.5 * scale, 32),
-      furMat
-    );
+    const snout = new THREE.Mesh(new THREE.ConeGeometry(0.26, 0.5, 32), furMat);
     snout.rotation.x = Math.PI / 2;
-    snout.position.set(0, 0.42 * scale, 0.42 * scale);
+    snout.position.set(0, 0.42, 0.42);
     group.add(snout);
 
-    const nose = new THREE.Mesh(new THREE.SphereGeometry(0.08 * scale, 28, 28), pinkMat);
-    nose.position.set(0, 0.44 * scale, 0.68 * scale);
+    const nose = new THREE.Mesh(new THREE.SphereGeometry(0.08, 28, 28), pinkMat);
+    nose.position.set(0, 0.44, 0.68);
     group.add(nose);
 
-    [-0.28 * scale, 0.28 * scale].forEach((ex) => {
+    [-0.28, 0.28].forEach((ex) => {
       const earGroup = new THREE.Group();
-      earGroup.position.set(ex, 0.74 * scale, 0.2 * scale);
+      earGroup.position.set(ex, 0.74, 0.2);
       earGroup.rotation.z = ex > 0 ? -0.2 : 0.2;
 
       const outerEar = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.2 * scale, 0.2 * scale, 0.07 * scale, 32),
+        new THREE.CylinderGeometry(0.2, 0.2, 0.07, 32),
         furMat
       );
       outerEar.rotation.x = Math.PI / 2;
 
       const innerEar = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.13 * scale, 0.13 * scale, 0.085 * scale, 32),
+        new THREE.CylinderGeometry(0.13, 0.13, 0.085, 32),
         pinkMat
       );
       innerEar.rotation.x = Math.PI / 2;
@@ -1186,33 +1288,24 @@ function buildBugMeshTemplate(type: BugType, variant?: 'duct'): THREE.Group {
       group.add(earGroup);
     });
 
-    [-0.12 * scale, 0.12 * scale].forEach((ex) => {
-      const eye = new THREE.Mesh(new THREE.SphereGeometry(0.085 * scale, 28, 28), eyeWhiteMat);
-      eye.position.set(ex, 0.56 * scale, 0.44 * scale);
+    [-0.12, 0.12].forEach((ex) => {
+      const eye = new THREE.Mesh(new THREE.SphereGeometry(0.085, 28, 28), eyeWhiteMat);
+      eye.position.set(ex, 0.56, 0.44);
       const pupil = new THREE.Mesh(new THREE.SphereGeometry(0.048, 20, 20), pupilMat);
-      pupil.position.set(ex, 0.56 * scale, 0.51 * scale);
+      pupil.position.set(ex, 0.56, 0.51);
       pupil.userData.skipOutline = true;
       group.add(eye, pupil);
     });
 
-    if (isBoss) {
-      const crown = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.22, 0.16, 0.24, 28),
-        createToonMaterial(0xfacc15)
-      );
-      crown.position.set(0, 0.98, 0.24);
-      group.add(crown);
-    }
-
     const tailGroup = new THREE.Group();
     tailGroup.name = 'anim_tail';
-    tailGroup.position.set(0, 0.3 * scale, -0.46 * scale);
+    tailGroup.position.set(0, 0.3, -0.46);
     const seg1 = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.04 * scale, 0.065 * scale, 0.46 * scale, 24),
+      new THREE.CylinderGeometry(0.04, 0.065, 0.46, 24),
       pinkMat
     );
     seg1.rotation.x = Math.PI / 2.4;
-    seg1.position.set(-0.08, 0.08, -0.18 * scale);
+    seg1.position.set(-0.08, 0.08, -0.18);
     tailGroup.add(seg1);
     group.add(tailGroup);
 
@@ -1220,19 +1313,141 @@ function buildBugMeshTemplate(type: BugType, variant?: 'duct'): THREE.Group {
     const capShield = new THREE.Group();
     capShield.name = 'bottle_cap_shield';
     const outerShield = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.38 * scale, 0.28 * scale, 0.1, 32),
+      new THREE.CylinderGeometry(0.38, 0.28, 0.1, 32),
       createToonMaterial(0xcbd5e1)
     );
     outerShield.rotation.x = Math.PI / 2;
     const innerRedShield = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.31 * scale, 0.22 * scale, 0.12, 32),
-      createToonMaterial(isBoss ? 0xfacc15 : 0xdc2626)
+      new THREE.CylinderGeometry(0.31, 0.22, 0.12, 32),
+      createToonMaterial(0xdc2626)
     );
     innerRedShield.rotation.x = Math.PI / 2;
     innerRedShield.userData.skipOutline = true;
     capShield.add(outerShield, innerRedShield);
-    capShield.position.set(0.34 * scale, 0.36 * scale, 0.36 * scale);
+    capShield.position.set(0.34, 0.36, 0.36);
     capShield.rotation.y = -0.35;
+    group.add(capShield);
+  } else if (type === 'king_crab') {
+    const isCrabBoss = variant === 'boss';
+    const carapaceMat = createToonMaterial(0x9f1239);
+    const armorPlumMat = createToonMaterial(0x581c87);
+
+    // Caparazón ancho y plano (más ancho que largo)
+    const carapace = new THREE.Mesh(new THREE.SphereGeometry(0.45, 10, 8), carapaceMat);
+    carapace.scale.set(1.28, 0.52, 0.86);
+    carapace.position.set(0, 0.3, -0.04);
+    group.add(carapace);
+
+    // Placa dorsal acorazada morado oscuro
+    const dorsalPlate = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.31, 0.39, 0.1, 8),
+      armorPlumMat
+    );
+    dorsalPlate.scale.set(1.2, 1, 0.8);
+    dorsalPlate.position.set(0, 0.43, -0.05);
+    dorsalPlate.userData.skipOutline = true;
+    group.add(dorsalPlate);
+
+    // Pinchos laterales en el borde del caparazón
+    const spikeGeo = new THREE.ConeGeometry(0.08, 0.24, 6);
+    [-1, 1].forEach((side) => {
+      const spike = new THREE.Mesh(spikeGeo, armorPlumMat);
+      spike.position.set(side * 0.57, 0.32, 0.02);
+      spike.rotation.z = -side * (Math.PI / 2 - 0.24);
+      group.add(spike);
+    });
+
+    // Ojos en pedúnculos elevados
+    const stalkGeo = new THREE.CylinderGeometry(0.032, 0.04, 0.22, 6);
+    const crabEyeGeo = new THREE.SphereGeometry(0.078, 8, 6);
+    const crabPupilGeo = new THREE.SphereGeometry(0.044, 8, 6);
+    [-1, 1].forEach((side) => {
+      const stalk = new THREE.Mesh(stalkGeo, carapaceMat);
+      stalk.position.set(side * 0.16, 0.47, 0.25);
+      stalk.rotation.x = 0.22;
+      stalk.rotation.z = -side * 0.16;
+
+      const eye = new THREE.Mesh(crabEyeGeo, eyeWhiteMat);
+      eye.position.set(side * 0.19, 0.58, 0.29);
+
+      const pupil = new THREE.Mesh(crabPupilGeo, pupilMat);
+      pupil.position.set(side * 0.195, 0.585, 0.355);
+      pupil.userData.skipOutline = true;
+
+      group.add(stalk, eye, pupil);
+    });
+
+    // Dos pinzas grandes delante, la izquierda notablemente mayor que la derecha
+    const clawArmGeo = new THREE.CylinderGeometry(0.052, 0.062, 0.26, 6);
+    const clawPalmGeo = new THREE.SphereGeometry(0.17, 10, 8);
+    const clawThumbGeo = new THREE.ConeGeometry(0.062, 0.25, 6);
+    [-1, 1].forEach((side) => {
+      const clawScale = side === -1 ? 1.18 : 0.9;
+      const clawGroup = new THREE.Group();
+      clawGroup.position.set(side * 0.36, 0.25, 0.22);
+      clawGroup.scale.setScalar(clawScale);
+
+      const arm = new THREE.Mesh(clawArmGeo, armorPlumMat);
+      arm.rotation.x = Math.PI / 2;
+      arm.rotation.z = -side * 0.32;
+      arm.position.set(side * 0.05, 0, 0.11);
+
+      const palm = new THREE.Mesh(clawPalmGeo, carapaceMat);
+      palm.scale.set(0.86, 0.68, 1.38);
+      palm.position.set(side * 0.08, 0.02, 0.28);
+      palm.rotation.y = -side * 0.36;
+
+      const thumb = new THREE.Mesh(clawThumbGeo, armorPlumMat);
+      thumb.rotation.x = Math.PI / 2;
+      thumb.rotation.z = side * 0.28;
+      thumb.position.set(-side * 0.04, 0.01, 0.38);
+
+      clawGroup.add(arm, palm, thumb);
+      group.add(clawGroup);
+    });
+
+    // 6 patas abiertas hacia los lados
+    const legsGroup = new THREE.Group();
+    legsGroup.name = 'anim_legs';
+    const crabLegGeo = new THREE.CylinderGeometry(0.038, 0.022, 0.42, 6);
+    [-0.22, 0, 0.2].forEach((lz, idx) => {
+      [-1, 1].forEach((side) => {
+        const leg = new THREE.Mesh(crabLegGeo, armorPlumMat);
+        leg.position.set(side * 0.42, 0.17, lz);
+        leg.rotation.z = side * (Math.PI / 2 - 0.42);
+        leg.rotation.y = -side * (idx - 1) * 0.28;
+        legsGroup.add(leg);
+      });
+    });
+    group.add(legsGroup);
+
+    // Corona exclusiva para los jefes ('boss')
+    if (isCrabBoss) {
+      const crown = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.22, 0.15, 0.22, 8),
+        createToonMaterial(0xfacc15)
+      );
+      crown.position.set(0, 0.58, -0.04);
+      group.add(crown);
+    }
+
+    // Chapa / tapa metálica de coraza sujeta delante de la pinza derecha
+    const capShield = new THREE.Group();
+    capShield.name = 'bottle_cap_shield';
+    const outerShield = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.34, 0.26, 0.09, 8),
+      createToonMaterial(0xcbd5e1)
+    );
+    outerShield.rotation.x = Math.PI / 2;
+    const innerShield = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.27, 0.2, 0.11, 8),
+      createToonMaterial(isCrabBoss ? 0xfacc15 : 0xdc2626)
+    );
+    innerShield.rotation.x = Math.PI / 2;
+    innerShield.userData.skipOutline = true;
+    capShield.add(outerShield, innerShield);
+    capShield.position.set(0.35, 0.33, 0.48);
+    capShield.rotation.y = -0.32;
     group.add(capShield);
   } else {
     const darkMat = createToonMaterial(0x1e293b);
