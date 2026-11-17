@@ -2,6 +2,7 @@ import React, { useEffect, useRef } from 'react';
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { soundEngine } from '../game/audio';
+import { chefTakesPointerDown } from '../game/pointerPriority';
 import {
   addInkOutline,
   buildBugMesh,
@@ -2334,8 +2335,19 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
       lastPointerClientX = e.clientX;
       lastPointerClientY = e.clientY;
 
-      // Active Chef ("Trapazo de cocina"): tapping Chef or starting a swipe from Chef toward a plate
-      if (!selectedPieceIdRef.current && isPointerOverChef(e.clientX, e.clientY)) {
+      // Active Chef ("Trapazo de cocina"): tapping Chef or starting a swipe from Chef toward a plate.
+      // Las armas tienen prioridad: el cilindro del Chef tapa casi toda la casilla F7 de su carril.
+      const downCell = getCellUnderPointer(e.clientX, e.clientY, false);
+      const downCellHasPiece = downCell
+        ? piecesRef.current.some((p) => p.rail === downCell.rail && p.row === downCell.row)
+        : false;
+      if (
+        chefTakesPointerDown({
+          overChef: isPointerOverChef(e.clientX, e.clientY),
+          hasSelectedPiece: Boolean(selectedPieceIdRef.current),
+          cellHasPiece: downCellHasPiece,
+        })
+      ) {
         if (tryTriggerChefTowelWhip(null)) {
           isSwipingFromChef = false;
           return;
@@ -2371,7 +2383,7 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
         }
       }
 
-      const cell = getCellUnderPointer(e.clientX, e.clientY, false);
+      const cell = downCell;
       if (!cell) {
         if (!selectedPieceIdRef.current && stateRef.current.inspectionTargetRef?.current) {
           setInspectionTarget(null);
