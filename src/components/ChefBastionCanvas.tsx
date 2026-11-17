@@ -2,6 +2,7 @@ import React, { useEffect, useRef } from 'react';
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { soundEngine } from '../game/audio';
+import { chefTakesPointerDown, resolveBoardPointerUp } from '../game/pointerPriority';
 import {
   addInkOutline,
   buildBugMesh,
@@ -1254,6 +1255,10 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
     let chefTargetX = 0;
     let chefCelebrateTimer = 0;
     let isDraggingOnCanvas = false;
+    // Origen del toque en el tablero: distingue un toque (no mueve el arma) de un arrastre.
+    let boardPointerDownX = 0;
+    let boardPointerDownY = 0;
+    let boardDownOnAlreadySelected = false;
     let lastPointerClientX = 0;
     let lastPointerClientY = 0;
     let hoveredCell: { rail: number; row: number } | null = null;
@@ -2333,9 +2338,23 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
       }
       lastPointerClientX = e.clientX;
       lastPointerClientY = e.clientY;
+      boardPointerDownX = e.clientX;
+      boardPointerDownY = e.clientY;
+      boardDownOnAlreadySelected = false;
 
-      // Active Chef ("Trapazo de cocina"): tapping Chef or starting a swipe from Chef toward a plate
-      if (!selectedPieceIdRef.current && isPointerOverChef(e.clientX, e.clientY)) {
+      // Active Chef ("Trapazo de cocina"): tapping Chef or starting a swipe from Chef toward a plate.
+      // Las armas tienen prioridad: el cilindro del Chef tapa casi toda la casilla F7 de su carril.
+      const downCell = getCellUnderPointer(e.clientX, e.clientY, false);
+      const downCellHasPiece = downCell
+        ? piecesRef.current.some((p) => p.rail === downCell.rail && p.row === downCell.row)
+        : false;
+      if (
+        chefTakesPointerDown({
+          overChef: isPointerOverChef(e.clientX, e.clientY),
+          hasSelectedPiece: Boolean(selectedPieceIdRef.current),
+          cellHasPiece: downCellHasPiece,
+        })
+      ) {
         if (tryTriggerChefTowelWhip(null)) {
           isSwipingFromChef = false;
           return;
@@ -2371,7 +2390,7 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
         }
       }
 
-      const cell = getCellUnderPointer(e.clientX, e.clientY, false);
+      const cell = downCell;
       if (!cell) {
         if (!selectedPieceIdRef.current && stateRef.current.inspectionTargetRef?.current) {
           setInspectionTarget(null);
@@ -2396,6 +2415,7 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
       if (currentSelected) {
         if (occupant && occupant.id === currentSelected) {
           isDraggingOnCanvas = true;
+          boardDownOnAlreadySelected = true;
           setInspectionTarget({
             kind: 'piece',
             pieceId: occupant.id,
@@ -2488,6 +2508,18 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
       }
       hudEmitTimer = 1.0;
       if (!selectedId) return;
+
+      const upAction = resolveBoardPointerUp({
+        movedPx: Math.hypot(e.clientX - boardPointerDownX, e.clientY - boardPointerDownY),
+        fromTray: wasTrayDragging,
+        downOnAlreadySelected: boardDownOnAlreadySelected,
+      });
+      if (upAction === 'keep') return;
+      if (upAction === 'release') {
+        selectedPieceIdRef.current = null;
+        setInspectionTarget(null);
+        return;
+      }
 
       const cell = getCellUnderPointer(e.clientX, e.clientY, true);
       const origin = piecesRef.current.find((p) => p.id === selectedId);
