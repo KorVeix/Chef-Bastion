@@ -2197,7 +2197,7 @@ export default function App() {
                         className="flex-1 flex items-center gap-1 min-w-0"
                       >
                         {trayGroups.length === 0 ? (
-                          <div className="flex-1 h-[62px] sm:h-[68px] rounded-xl border border-slate-700/80 bg-slate-900/70 px-3 flex items-center justify-center text-[11px] font-extrabold text-slate-300 text-center">
+                          <div className="flex-1 h-[86px] sm:h-[92px] rounded-xl border border-slate-700/80 bg-slate-900/70 px-3 flex items-center justify-center text-[11px] font-extrabold text-slate-300 text-center">
                             ✓ Arsenal en mesa · Arrastra en la encimera para mover
                           </div>
                         ) : (
@@ -2254,6 +2254,7 @@ export default function App() {
                                 key={group.groupKey}
                                 type="button"
                                 data-testid="tray-weapon-slot"
+                                aria-label={`${compactLabel}: ${roleTag}`}
                                 data-level={piece.level}
                                 data-count={group.count}
                                 onPointerDown={(e) => {
@@ -2322,7 +2323,7 @@ export default function App() {
                                   }));
                                   soundEngine.playSlowMoEnter();
                                 }}
-                                className={`touch-none relative flex-1 min-w-0 h-[62px] sm:h-[68px] rounded-xl border-2 flex flex-col items-center justify-between py-1 px-0.5 transition cursor-pointer ${
+                                className={`touch-none relative flex-1 min-w-0 h-[86px] sm:h-[92px] rounded-xl border-2 flex flex-col items-center justify-center gap-1 py-1 px-0.5 transition cursor-pointer ${
                                   isSelected
                                     ? 'bg-slate-700 border-cyan-400 scale-[1.03] shadow-[0_0_10px_#22d3ee]'
                                     : isGunked
@@ -2376,7 +2377,7 @@ export default function App() {
                                 )}
 
                                 {/* Bespoke SVG Illustration matching the 3D Weapon */}
-                                <div className="w-6 h-6 sm:w-7 sm:h-7 flex items-center justify-center shrink-0">
+                                <div className="w-12 h-12 sm:w-14 sm:h-14 flex items-center justify-center shrink-0">
                                   {piece.type === 'aerosol_torch' ? (
                                     <svg viewBox="0 0 40 48" className="w-full h-full drop-shadow">
                                       <rect x="9" y="13" width="22" height="30" rx="3" fill="#7c3aed" stroke="#0f172a" strokeWidth="2.5" />
@@ -2427,17 +2428,9 @@ export default function App() {
                                   )}
                                 </div>
 
-                                <div className="flex flex-col items-center leading-none gap-0.5 max-w-full">
-                                  <span className="text-[9.5px] sm:text-[10.5px] font-black text-white whitespace-nowrap leading-none drop-shadow-[0_1.5px_0_#0f172a]">
-                                    {isGunked ? '🤢 Limpiar' : compactLabel}
-                                  </span>
-                                  <span
-                                    data-testid="tray-role-tag"
-                                    className="text-[8px] sm:text-[8.5px] font-extrabold text-cyan-300 whitespace-nowrap leading-none"
-                                  >
-                                    {roleTag}
-                                  </span>
-                                </div>
+                                <span className="max-w-full truncate text-[11px] sm:text-xs font-black text-white whitespace-nowrap leading-none drop-shadow-[0_1.5px_0_#0f172a]">
+                                  {isGunked ? '🤢 Limpiar' : compactLabel}
+                                </span>
                               </button>
                             );
                           })
