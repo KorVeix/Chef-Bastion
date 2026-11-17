@@ -5756,7 +5756,7 @@ export const ChefBastionCanvas: React.FC<ChefBastionCanvasProps> = ({
 
         let mesh = bugMeshes.get(bug.id);
         if (!mesh) {
-          mesh = buildBugMesh(bug.type, bug.variant);
+          mesh = buildBugMesh(bug.type, bug.bossTier ? 'boss' : bug.variant);
           const toonMats: { mat: THREE.MeshToonMaterial; origHex: number }[] = [];
           mesh.traverse((child) => {
             if ((child as THREE.Mesh).isMesh && !child.userData?.isInkOutline) {
