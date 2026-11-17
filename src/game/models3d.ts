@@ -2137,3 +2137,1349 @@ export function buildWardrobeSpecialShowcaseMesh(specialId: SpecialWeaponId): TH
   return root;
 }
 
+
+// ============================================================================
+// 7. MODELOS 3D DE LOS 15 BICHOS NUEVOS · MODO ESTRATÉGICO (NV. 17–59)
+// ============================================================================
+
+export type NewBugModelId =
+  | 'rice_weevil'      // Gorgojo del Arroz
+  | 'spittle_bug'      // Cigarrita Espumosa
+  | 'silverfish'       // Lepisma (Pececillo de Plata)
+  | 'popcorn_kernel'   // Palomita Rebelde
+  | 'pill_bug'         // Cochinilla Bola
+  | 'pot_snail'        // Caracol Cazuelo
+  | 'oil_slick'        // Mancha de Aceite
+  | 'ink_squid'        // Chipirón en su Tinta
+  | 'bluebottle'       // Moscardón Verde
+  | 'moldy_cloth'      // Bayeta Mohosa
+  | 'mutant_aphid'     // Pulgón Mutante
+  | 'hermit_can'       // Ermitaño de Lata
+  | 'harlequin_bug'    // Chinche Arlequín
+  | 'pressure_beetle'  // Escarabajo Olla Exprés
+  | 'hood_cricket';    // Grillo del Extractor
+
+export type NewBugVariant = 'buried' | 'curled' | 'popped';
+
+export const NEW_BUG_MODEL_IDS: readonly NewBugModelId[] = [
+  'rice_weevil',
+  'spittle_bug',
+  'silverfish',
+  'popcorn_kernel',
+  'pill_bug',
+  'pot_snail',
+  'oil_slick',
+  'ink_squid',
+  'bluebottle',
+  'moldy_cloth',
+  'mutant_aphid',
+  'hermit_can',
+  'harlequin_bug',
+  'pressure_beetle',
+  'hood_cricket',
+];
+
+const newBugTemplateCache = new Map<string, THREE.Group>();
+const NEW_BUG_UP_AXIS = new THREE.Vector3(0, 1, 0);
+
+function orientNewBugLimb(
+  mesh: THREE.Mesh,
+  x1: number,
+  y1: number,
+  z1: number,
+  x2: number,
+  y2: number,
+  z2: number
+): void {
+  mesh.position.set((x1 + x2) * 0.5, (y1 + y2) * 0.5, (z1 + z2) * 0.5);
+  const dir = new THREE.Vector3(x2 - x1, y2 - y1, z2 - z1).normalize();
+  mesh.quaternion.setFromUnitVectors(NEW_BUG_UP_AXIS, dir);
+}
+
+export function buildNewBugMesh(id: NewBugModelId, variant?: NewBugVariant): THREE.Group {
+  const validVariant: NewBugVariant | undefined =
+    (id === 'rice_weevil' && variant === 'buried') ||
+    (id === 'pill_bug' && variant === 'curled') ||
+    (id === 'popcorn_kernel' && variant === 'popped')
+      ? variant
+      : undefined;
+
+  const key = `${id}:${validVariant ?? ''}`;
+  let template = newBugTemplateCache.get(key);
+  if (!template) {
+    template = buildNewBugMeshTemplate(id, validVariant);
+    newBugTemplateCache.set(key, template);
+  }
+  return template.clone(true);
+}
+
+function buildNewBugMeshTemplate(id: NewBugModelId, variant?: NewBugVariant): THREE.Group {
+  const root = new THREE.Group();
+  root.scale.setScalar(0.75);
+
+  let shadowRx = 0.48;
+  let shadowRz = 0.48;
+  if (id === 'bluebottle') {
+    shadowRx = 0.34;
+    shadowRz = 0.34;
+  } else if (id === 'spittle_bug' || id === 'pressure_beetle') {
+    shadowRx = 0.56;
+    shadowRz = 0.54;
+  } else if (id === 'popcorn_kernel' && variant === 'popped') {
+    shadowRx = 0.38;
+    shadowRz = 0.38;
+  } else if (id === 'pill_bug' && variant === 'curled') {
+    shadowRx = 0.42;
+    shadowRz = 0.42;
+  }
+  root.add(createComicContactShadow(shadowRx, shadowRz, 0.06));
+
+  const group = new THREE.Group();
+  group.rotation.x = -THREE.MathUtils.degToRad(12);
+  root.add(group);
+
+  const eyeWhiteMat = createToonMaterial(0xffffff);
+  const pupilMat = new THREE.MeshBasicMaterial({ color: INK_COLOR_HEX });
+  const sharedEyeGeo = new THREE.SphereGeometry(0.082, 8, 6);
+  const sharedPupilGeo = new THREE.SphereGeometry(0.045, 8, 6);
+
+  switch (id) {
+    case 'rice_weevil': {
+      if (variant === 'buried') {
+        const moundMat = createToonMaterial(0xe6dec8);
+        const grainMat = createToonMaterial(0xf5f0e1);
+
+        const mound = new THREE.Mesh(new THREE.SphereGeometry(0.42, 10, 8), moundMat);
+        mound.scale.set(1.04, 0.34, 1.14);
+        mound.position.set(0, 0.1, 0);
+        group.add(mound);
+
+        const grainGeo = new THREE.SphereGeometry(0.11, 8, 6);
+        const grainLayout: [number, number, number, number, number][] = [
+          [0, 0.24, 0.04, 0.15, 0.2],
+          [-0.18, 0.2, 0.14, -0.2, 0.55],
+          [0.19, 0.2, 0.12, 0.18, -0.48],
+          [-0.16, 0.19, -0.16, 0.22, -0.35],
+          [0.17, 0.19, -0.15, -0.18, 0.42],
+          [0, 0.17, 0.28, 0.32, 0.08],
+          [0.02, 0.17, -0.29, -0.28, 0.72],
+        ];
+        grainLayout.forEach(([gx, gy, gz, rx, ry]) => {
+          const grain = new THREE.Mesh(grainGeo, grainMat);
+          grain.scale.set(0.62, 0.55, 1.85);
+          grain.position.set(gx, gy, gz);
+          grain.rotation.set(rx, ry, 0);
+          group.add(grain);
+        });
+      } else {
+        const shellMat = createToonMaterial(0x2b2b2b);
+        const thoraxMat = createToonMaterial(0x3a3a3a);
+        const legMat = createToonMaterial(0x1c1917);
+
+        const abdomen = new THREE.Mesh(new THREE.SphereGeometry(0.32, 10, 8), shellMat);
+        abdomen.scale.set(0.88, 0.74, 1.26);
+        abdomen.position.set(0, 0.28, -0.14);
+        group.add(abdomen);
+
+        const thorax = new THREE.Mesh(new THREE.SphereGeometry(0.22, 10, 8), thoraxMat);
+        thorax.scale.set(0.9, 0.82, 0.96);
+        thorax.position.set(0, 0.3, 0.18);
+        group.add(thorax);
+
+        const head = new THREE.Mesh(new THREE.SphereGeometry(0.16, 8, 6), shellMat);
+        head.position.set(0, 0.33, 0.36);
+        group.add(head);
+
+        // Trompa curva muy larga hacia delante y abajo (+z / -y)
+        const snoutArch = new THREE.Mesh(
+          new THREE.TorusGeometry(0.28, 0.044, 6, 12, Math.PI * 0.55),
+          shellMat
+        );
+        snoutArch.position.set(0, 0.08, 0.44);
+        snoutArch.rotation.y = -Math.PI / 2;
+        group.add(snoutArch);
+
+        const snoutTip = new THREE.Mesh(new THREE.SphereGeometry(0.055, 8, 6), thoraxMat);
+        snoutTip.position.set(0, 0.08, 0.72);
+        group.add(snoutTip);
+
+        // Antenas acodadas naciendo a mitad de la trompa
+        const scapeGeo = new THREE.CylinderGeometry(0.018, 0.022, 0.2, 6);
+        const clubGeo = new THREE.CylinderGeometry(0.028, 0.016, 0.18, 6);
+        [-1, 1].forEach((side) => {
+          const scape = new THREE.Mesh(scapeGeo, legMat);
+          orientNewBugLimb(scape, side * 0.03, 0.27, 0.62, side * 0.19, 0.35, 0.66);
+          const club = new THREE.Mesh(clubGeo, legMat);
+          orientNewBugLimb(club, side * 0.19, 0.35, 0.66, side * 0.25, 0.28, 0.81);
+          group.add(scape, club);
+        });
+
+        [-1, 1].forEach((side) => {
+          const eye = new THREE.Mesh(sharedEyeGeo, eyeWhiteMat);
+          eye.scale.setScalar(0.82);
+          eye.position.set(side * 0.11, 0.39, 0.43);
+          const pupil = new THREE.Mesh(sharedPupilGeo, pupilMat);
+          pupil.scale.setScalar(0.82);
+          pupil.position.set(side * 0.12, 0.4, 0.49);
+          pupil.userData.skipOutline = true;
+          group.add(eye, pupil);
+        });
+
+        const legsGroup = new THREE.Group();
+        legsGroup.name = 'anim_legs';
+        const legGeo = new THREE.CylinderGeometry(0.028, 0.02, 0.36, 6);
+        [-0.22, 0, 0.2].forEach((lz, idx) => {
+          [-1, 1].forEach((side) => {
+            const leg = new THREE.Mesh(legGeo, legMat);
+            leg.position.set(side * 0.31, 0.15, lz);
+            leg.rotation.z = side * (Math.PI / 2 - 0.42);
+            leg.rotation.y = -side * (idx - 1) * 0.26;
+            legsGroup.add(leg);
+          });
+        });
+        group.add(legsGroup);
+      }
+      break;
+    }
+
+    case 'spittle_bug': {
+      const limeMat = createToonMaterial(0xa3e635);
+      const darkLimeMat = createToonMaterial(0x4d7c0f);
+      const redEyeMat = createToonMaterial(0xef4444);
+      const foamWhiteMat = createToonMaterial(0xffffff);
+      const foamTintMat = createToonMaterial(0xe0f2fe);
+
+      // Cuerpo interior lima por si la lógica oculta `foam_coat`
+      const innerBody = new THREE.Mesh(new THREE.SphereGeometry(0.28, 10, 8), limeMat);
+      innerBody.scale.set(0.92, 0.85, 1.22);
+      innerBody.position.set(0, 0.28, -0.02);
+      group.add(innerBody);
+
+      // Cabecita lima asomando por delante de la bola de espuma
+      const head = new THREE.Mesh(new THREE.SphereGeometry(0.21, 10, 8), limeMat);
+      head.scale.set(1.06, 0.9, 0.95);
+      head.position.set(0, 0.28, 0.42);
+      group.add(head);
+
+      const spittleEyeGeo = new THREE.SphereGeometry(0.088, 8, 6);
+      [-1, 1].forEach((side) => {
+        const eye = new THREE.Mesh(spittleEyeGeo, redEyeMat);
+        eye.position.set(side * 0.13, 0.34, 0.54);
+        const pupil = new THREE.Mesh(sharedPupilGeo, pupilMat);
+        pupil.position.set(side * 0.14, 0.35, 0.61);
+        pupil.userData.skipOutline = true;
+        group.add(eye, pupil);
+      });
+
+      const legsGroup = new THREE.Group();
+      legsGroup.name = 'anim_legs';
+      const legGeo = new THREE.CylinderGeometry(0.026, 0.02, 0.32, 6);
+      [-0.2, 0.02, 0.22].forEach((lz, idx) => {
+        [-1, 1].forEach((side) => {
+          const leg = new THREE.Mesh(legGeo, darkLimeMat);
+          leg.position.set(side * 0.32, 0.13, lz);
+          leg.rotation.z = side * (Math.PI / 2 - 0.45);
+          leg.rotation.y = -side * (idx - 1) * 0.25;
+          legsGroup.add(leg);
+        });
+      });
+      group.add(legsGroup);
+
+      // Bola grumosa de espuma blanca (5 esferas solapadas)
+      const foamCoat = new THREE.Group();
+      foamCoat.name = 'foam_coat';
+      const foamSpheres: [number, number, number, number, boolean][] = [
+        [0, 0.42, -0.08, 0.39, false],
+        [-0.22, 0.37, 0.06, 0.29, true],
+        [0.23, 0.38, 0.05, 0.29, false],
+        [-0.12, 0.54, -0.18, 0.27, false],
+        [0.14, 0.35, -0.3, 0.28, true],
+      ];
+      foamSpheres.forEach(([fx, fy, fz, fr, useTint]) => {
+        const bubble = new THREE.Mesh(
+          new THREE.SphereGeometry(fr, 10, 8),
+          useTint ? foamTintMat : foamWhiteMat
+        );
+        bubble.position.set(fx, fy, fz);
+        foamCoat.add(bubble);
+      });
+      group.add(foamCoat);
+      break;
+    }
+
+    case 'silverfish': {
+      // Se crea con opacity: 1 para generar contornos en addInkOutline; luego pasa a 0.45 y contornos ocultos
+      const silverMainMat = createToonMaterial(0xa9c1d9, { transparent: true, opacity: 1 });
+      const silverMidMat = createToonMaterial(0x93b0cc, { transparent: true, opacity: 1 });
+      const silverDarkMat = createToonMaterial(0x64748b, { transparent: true, opacity: 1 });
+      const sfEyeMat = createToonMaterial(0xffffff, { transparent: true, opacity: 1 });
+      const sfPupilMat = new THREE.MeshBasicMaterial({
+        color: INK_COLOR_HEX,
+        transparent: true,
+        opacity: 1,
+      });
+
+      const sfBody = new THREE.Group();
+      sfBody.name = 'silverfish_body';
+
+      // Lágrima aplanada: ancha delante (+z) y afilada detrás (-z)
+      const frontSeg = new THREE.Mesh(new THREE.SphereGeometry(0.3, 10, 8), silverMainMat);
+      frontSeg.scale.set(1.12, 0.34, 0.95);
+      frontSeg.position.set(0, 0.16, 0.22);
+
+      const midSeg = new THREE.Mesh(new THREE.SphereGeometry(0.24, 10, 8), silverMidMat);
+      midSeg.scale.set(0.92, 0.32, 1.05);
+      midSeg.position.set(0, 0.15, -0.05);
+
+      const rearCone = new THREE.Mesh(new THREE.ConeGeometry(0.19, 0.44, 8), silverMainMat);
+      rearCone.rotation.x = -Math.PI / 2;
+      rearCone.scale.set(1, 1, 0.45);
+      rearCone.position.set(0, 0.14, -0.32);
+
+      sfBody.add(frontSeg, midSeg, rearCone);
+
+      [-1, 1].forEach((side) => {
+        const eye = new THREE.Mesh(sharedEyeGeo, sfEyeMat);
+        eye.scale.setScalar(0.75);
+        eye.position.set(side * 0.18, 0.2, 0.39);
+        const pupil = new THREE.Mesh(sharedPupilGeo, sfPupilMat);
+        pupil.scale.setScalar(0.75);
+        pupil.position.set(side * 0.2, 0.21, 0.44);
+        pupil.userData.skipOutline = true;
+        sfBody.add(eye, pupil);
+      });
+
+      // 2 antenas largas hacia delante
+      const antGeo = new THREE.CylinderGeometry(0.014, 0.022, 0.56, 6);
+      [-1, 1].forEach((side) => {
+        const ant = new THREE.Mesh(antGeo, silverDarkMat);
+        orientNewBugLimb(ant, side * 0.11, 0.18, 0.44, side * 0.36, 0.22, 0.92);
+        sfBody.add(ant);
+      });
+
+      // 3 colas finas detrás (anim_tail)
+      const tailGroup = new THREE.Group();
+      tailGroup.name = 'anim_tail';
+      tailGroup.position.set(0, 0.14, -0.48);
+      const cerciGeo = new THREE.CylinderGeometry(0.012, 0.022, 0.48, 6);
+      [-1, 0, 1].forEach((dir) => {
+        const tail = new THREE.Mesh(cerciGeo, silverDarkMat);
+        orientNewBugLimb(tail, 0, 0, 0, dir * 0.24, 0.03, -0.42);
+        tailGroup.add(tail);
+      });
+      sfBody.add(tailGroup);
+
+      const legsGroup = new THREE.Group();
+      legsGroup.name = 'anim_legs';
+      const legGeo = new THREE.CylinderGeometry(0.02, 0.015, 0.32, 6);
+      [-0.2, 0.02, 0.22].forEach((lz, idx) => {
+        [-1, 1].forEach((side) => {
+          const leg = new THREE.Mesh(legGeo, silverDarkMat);
+          leg.position.set(side * 0.28, 0.1, lz);
+          leg.rotation.z = side * (Math.PI / 2 - 0.32);
+          leg.rotation.y = -side * (idx - 1) * 0.28;
+          legsGroup.add(leg);
+        });
+      });
+      sfBody.add(legsGroup);
+
+      group.add(sfBody);
+      break;
+    }
+
+    case 'popcorn_kernel': {
+      const legMat = createToonMaterial(0xb45309);
+
+      if (variant === 'popped') {
+        const whitePuffMat = createToonMaterial(0xffffff);
+        const creamMat = createToonMaterial(0xfef08a);
+        const hullMat = createToonMaterial(0xd97706);
+
+        const puffs: [number, number, number, number][] = [
+          [0, 0.3, 0.04, 0.2],
+          [-0.15, 0.27, -0.05, 0.18],
+          [0.15, 0.28, -0.04, 0.18],
+          [0, 0.41, -0.06, 0.17],
+        ];
+        puffs.forEach(([px, py, pz, pr]) => {
+          const puff = new THREE.Mesh(new THREE.SphereGeometry(pr, 10, 8), whitePuffMat);
+          puff.position.set(px, py, pz);
+          group.add(puff);
+        });
+
+        const creamCore = new THREE.Mesh(new THREE.SphereGeometry(0.14, 8, 6), creamMat);
+        creamCore.position.set(0.04, 0.34, 0.12);
+        creamCore.userData.skipOutline = true;
+        const hullFlake = new THREE.Mesh(new THREE.SphereGeometry(0.1, 8, 6), hullMat);
+        hullFlake.scale.set(1.2, 0.5, 1.1);
+        hullFlake.position.set(0, 0.17, -0.14);
+        group.add(creamCore, hullFlake);
+
+        [-1, 1].forEach((side) => {
+          const eye = new THREE.Mesh(sharedEyeGeo, eyeWhiteMat);
+          eye.scale.setScalar(0.75);
+          eye.position.set(side * 0.09, 0.31, 0.21);
+          const pupil = new THREE.Mesh(sharedPupilGeo, pupilMat);
+          pupil.scale.setScalar(0.78);
+          pupil.position.set(side * 0.095, 0.315, 0.265);
+          pupil.userData.skipOutline = true;
+          group.add(eye, pupil);
+        });
+
+        const legsGroup = new THREE.Group();
+        legsGroup.name = 'anim_legs';
+        const legGeo = new THREE.CylinderGeometry(0.024, 0.018, 0.22, 6);
+        [-0.08, 0.08].forEach((lz) => {
+          [-1, 1].forEach((side) => {
+            const leg = new THREE.Mesh(legGeo, legMat);
+            leg.position.set(side * 0.16, 0.1, lz);
+            leg.rotation.z = side * 0.42;
+            legsGroup.add(leg);
+          });
+        });
+        group.add(legsGroup);
+      } else {
+        const yellowMat = createToonMaterial(0xfde047);
+        const amberGlossMat = createToonMaterial(0xf59e0b);
+        const whiteTipMat = createToonMaterial(0xffffff);
+        const browMat = createToonMaterial(INK_COLOR_HEX);
+
+        const kernelBody = new THREE.Mesh(new THREE.SphereGeometry(0.34, 10, 8), yellowMat);
+        kernelBody.scale.set(0.95, 0.96, 0.92);
+        kernelBody.position.set(0, 0.35, -0.02);
+        group.add(kernelBody);
+
+        const amberBack = new THREE.Mesh(new THREE.SphereGeometry(0.24, 8, 6), amberGlossMat);
+        amberBack.scale.set(0.9, 0.85, 0.75);
+        amberBack.position.set(0, 0.38, -0.14);
+        amberBack.userData.skipOutline = true;
+        group.add(amberBack);
+
+        // Punta blanca cónica del grano de maíz arriba/delante
+        const whiteTip = new THREE.Mesh(new THREE.ConeGeometry(0.19, 0.28, 8), whiteTipMat);
+        whiteTip.position.set(0, 0.64, 0.05);
+        whiteTip.rotation.x = 0.28;
+        group.add(whiteTip);
+
+        const browGeo = new THREE.BoxGeometry(0.12, 0.035, 0.04);
+        [-1, 1].forEach((side) => {
+          const eye = new THREE.Mesh(sharedEyeGeo, eyeWhiteMat);
+          eye.position.set(side * 0.12, 0.39, 0.28);
+          const pupil = new THREE.Mesh(sharedPupilGeo, pupilMat);
+          pupil.position.set(side * 0.125, 0.395, 0.35);
+          pupil.userData.skipOutline = true;
+
+          const brow = new THREE.Mesh(browGeo, browMat);
+          brow.position.set(side * 0.12, 0.48, 0.29);
+          brow.rotation.z = side * 0.28;
+          brow.userData.skipOutline = true;
+          group.add(eye, pupil, brow);
+        });
+
+        const legsGroup = new THREE.Group();
+        legsGroup.name = 'anim_legs';
+        const legGeo = new THREE.CylinderGeometry(0.03, 0.022, 0.26, 6);
+        [-0.1, 0.1].forEach((lz) => {
+          [-1, 1].forEach((side) => {
+            const leg = new THREE.Mesh(legGeo, legMat);
+            leg.position.set(side * 0.2, 0.11, lz);
+            leg.rotation.z = side * 0.45;
+            legsGroup.add(leg);
+          });
+        });
+        group.add(legsGroup);
+      }
+      break;
+    }
+
+    case 'pill_bug': {
+      const indigoDarkMat = createToonMaterial(0x4338ca);
+      const indigoLightMat = createToonMaterial(0x6366f1);
+      const indigoDeepMat = createToonMaterial(0x312e81);
+
+      if (variant === 'curled') {
+        // Bola añil a rayas, sin patas
+        const sphere = new THREE.Mesh(new THREE.SphereGeometry(0.36, 10, 8), indigoDarkMat);
+        sphere.position.set(0, 0.36, 0);
+        group.add(sphere);
+
+        const centerBand = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.366, 0.366, 0.13, 8),
+          indigoLightMat
+        );
+        centerBand.rotation.x = Math.PI / 2;
+        centerBand.position.set(0, 0.36, 0);
+        centerBand.userData.skipOutline = true;
+        group.add(centerBand);
+
+        [-1, 1].forEach((dir) => {
+          const sideBand = new THREE.Mesh(
+            new THREE.CylinderGeometry(0.26, 0.32, 0.1, 8),
+            indigoLightMat
+          );
+          sideBand.rotation.x = dir === 1 ? Math.PI / 2 : -Math.PI / 2;
+          sideBand.position.set(0, 0.36, dir * 0.21);
+          sideBand.userData.skipOutline = true;
+          group.add(sideBand);
+        });
+
+        const seam = new THREE.Mesh(new THREE.BoxGeometry(0.52, 0.045, 0.08), indigoDeepMat);
+        seam.position.set(0, 0.26, 0.31);
+        seam.userData.skipOutline = true;
+        group.add(seam);
+      } else {
+        // Cúpula alargada segmentada a franjas añil alternas
+        const segGeo = new THREE.SphereGeometry(0.32, 10, 8);
+        const segZs = [-0.28, -0.14, 0, 0.14, 0.28];
+        const segWidths = [0.82, 0.96, 1.02, 0.96, 0.84];
+        segZs.forEach((sz, idx) => {
+          const seg = new THREE.Mesh(
+            segGeo,
+            idx % 2 === 0 ? indigoDarkMat : indigoLightMat
+          );
+          seg.scale.set(segWidths[idx], 0.78, 0.44);
+          seg.position.set(0, 0.24, sz);
+          group.add(seg);
+        });
+
+        const head = new THREE.Mesh(new THREE.SphereGeometry(0.18, 8, 6), indigoDeepMat);
+        head.scale.set(1.05, 0.72, 0.85);
+        head.position.set(0, 0.19, 0.39);
+        group.add(head);
+
+        const antGeo = new THREE.CylinderGeometry(0.016, 0.022, 0.22, 6);
+        [-1, 1].forEach((side) => {
+          const eye = new THREE.Mesh(sharedEyeGeo, eyeWhiteMat);
+          eye.scale.setScalar(0.75);
+          eye.position.set(side * 0.12, 0.24, 0.48);
+          const pupil = new THREE.Mesh(sharedPupilGeo, pupilMat);
+          pupil.scale.setScalar(0.75);
+          pupil.position.set(side * 0.13, 0.245, 0.535);
+          pupil.userData.skipOutline = true;
+
+          const ant = new THREE.Mesh(antGeo, indigoDeepMat);
+          orientNewBugLimb(ant, side * 0.09, 0.2, 0.48, side * 0.22, 0.26, 0.64);
+          group.add(eye, pupil, ant);
+        });
+
+        const legsGroup = new THREE.Group();
+        legsGroup.name = 'anim_legs';
+        const legGeo = new THREE.CylinderGeometry(0.025, 0.018, 0.28, 6);
+        [-0.22, 0, 0.22].forEach((lz, idx) => {
+          [-1, 1].forEach((side) => {
+            const leg = new THREE.Mesh(legGeo, indigoDeepMat);
+            leg.position.set(side * 0.29, 0.11, lz);
+            leg.rotation.z = side * (Math.PI / 2 - 0.48);
+            leg.rotation.y = -side * (idx - 1) * 0.24;
+            legsGroup.add(leg);
+          });
+        });
+        group.add(legsGroup);
+      }
+      break;
+    }
+
+    case 'pot_snail': {
+      const snailMat = createToonMaterial(0xa3b18a);
+      const copperMat = createToonMaterial(0xc2410c);
+      const copperRimMat = createToonMaterial(0xea580c);
+      const steelBottomMat = createToonMaterial(0x94a3b8);
+      const handleBlackMat = createToonMaterial(0x1c1917);
+
+      const foot = new THREE.Mesh(new THREE.SphereGeometry(0.34, 10, 8), snailMat);
+      foot.scale.set(0.76, 0.28, 1.48);
+      foot.position.set(0, 0.1, 0.04);
+      group.add(foot);
+
+      const neck = new THREE.Mesh(new THREE.SphereGeometry(0.2, 10, 8), snailMat);
+      neck.scale.set(0.84, 1.05, 0.95);
+      neck.position.set(0, 0.25, 0.38);
+      group.add(neck);
+
+      const stalkGeo = new THREE.CylinderGeometry(0.024, 0.034, 0.24, 6);
+      [-1, 1].forEach((side) => {
+        const stalk = new THREE.Mesh(stalkGeo, snailMat);
+        orientNewBugLimb(stalk, side * 0.08, 0.38, 0.41, side * 0.16, 0.59, 0.48);
+        const eye = new THREE.Mesh(sharedEyeGeo, eyeWhiteMat);
+        eye.scale.setScalar(0.92);
+        eye.position.set(side * 0.165, 0.61, 0.49);
+        const pupil = new THREE.Mesh(sharedPupilGeo, pupilMat);
+        pupil.scale.setScalar(0.92);
+        pupil.position.set(side * 0.17, 0.615, 0.555);
+        pupil.userData.skipOutline = true;
+        group.add(stalk, eye, pupil);
+      });
+
+      const tailGroup = new THREE.Group();
+      tailGroup.name = 'anim_tail';
+      tailGroup.position.set(0, 0.09, -0.4);
+      const tailTip = new THREE.Mesh(new THREE.ConeGeometry(0.14, 0.24, 6), snailMat);
+      tailTip.rotation.x = -Math.PI / 2;
+      tailTip.scale.set(1, 1, 0.55);
+      tailTip.position.set(0, 0, -0.1);
+      tailGroup.add(tailTip);
+      group.add(tailGroup);
+
+      // Concha de cazo de cobre invertido + mango negro lateral (pot_shell)
+      const potShell = new THREE.Group();
+      potShell.name = 'pot_shell';
+      potShell.position.set(0, 0.36, -0.08);
+      potShell.rotation.x = -0.14;
+
+      const potBody = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.31, 0.35, 0.36, 8),
+        copperMat
+      );
+      const potRim = new THREE.Mesh(
+        new THREE.TorusGeometry(0.34, 0.044, 6, 14),
+        copperRimMat
+      );
+      potRim.rotation.x = Math.PI / 2;
+      potRim.position.y = -0.17;
+
+      const potBaseDisc = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.25, 0.25, 0.025, 8),
+        steelBottomMat
+      );
+      potBaseDisc.position.y = 0.18;
+      potBaseDisc.userData.skipOutline = true;
+
+      const ferrule = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.04, 0.045, 0.1, 6),
+        copperRimMat
+      );
+      ferrule.rotation.z = -Math.PI / 2;
+      ferrule.position.set(0.36, 0.02, 0);
+
+      const handle = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.046, 0.036, 0.38, 6),
+        handleBlackMat
+      );
+      orientNewBugLimb(handle, 0.39, 0.02, 0, 0.75, 0.1, 0.02);
+
+      potShell.add(potBody, potRim, potBaseDisc, ferrule, handle);
+      group.add(potShell);
+      break;
+    }
+
+    case 'oil_slick': {
+      const oilMat = createToonMaterial(0xa3a635);
+      const oilDarkMat = createToonMaterial(0x848824);
+      const shineMat = createToonMaterial(0xffffff);
+
+      const mainDisc = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.41, 0.43, 0.055, 8),
+        oilMat
+      );
+      mainDisc.position.set(0, 0.038, 0);
+      group.add(mainDisc);
+
+      const innerSwirl = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.27, 0.29, 0.062, 8),
+        oilDarkMat
+      );
+      innerSwirl.position.set(-0.04, 0.042, -0.02);
+      innerSwirl.userData.skipOutline = true;
+      group.add(innerSwirl);
+
+      // Brillo blanco plano sobre el aceite
+      const shineArc = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.11, 0.11, 0.068, 8),
+        shineMat
+      );
+      shineArc.scale.set(1.5, 1, 0.55);
+      shineArc.rotation.y = 0.5;
+      shineArc.position.set(-0.14, 0.046, -0.14);
+      shineArc.userData.skipOutline = true;
+
+      const shineDot = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.045, 0.045, 0.068, 6),
+        shineMat
+      );
+      shineDot.position.set(-0.24, 0.046, 0.01);
+      shineDot.userData.skipOutline = true;
+      group.add(shineArc, shineDot);
+
+      // 4 lóbulos irregulares en el borde para que ondule con `anim_legs`
+      const lobesGroup = new THREE.Group();
+      lobesGroup.name = 'anim_legs';
+      const lobeGeo = new THREE.CylinderGeometry(0.19, 0.2, 0.05, 8);
+      const lobeCoords: [number, number, number, number][] = [
+        [0.31, 0.18, 1.15, 0.9],
+        [-0.33, 0.14, 0.95, 1.2],
+        [0.25, -0.27, 1.1, 1.0],
+        [-0.23, -0.29, 1.2, 0.85],
+      ];
+      lobeCoords.forEach(([lx, lz, sx, sz]) => {
+        const lobe = new THREE.Mesh(lobeGeo, oilMat);
+        lobe.scale.set(sx, 1, sz);
+        lobe.position.set(lx, 0.034, lz);
+        lobesGroup.add(lobe);
+      });
+      group.add(lobesGroup);
+
+      [-1, 1].forEach((side) => {
+        const eye = new THREE.Mesh(sharedEyeGeo, eyeWhiteMat);
+        eye.scale.setScalar(1.12);
+        eye.position.set(side * 0.13, 0.11, 0.22);
+        const pupil = new THREE.Mesh(sharedPupilGeo, pupilMat);
+        pupil.scale.setScalar(1.12);
+        pupil.position.set(side * 0.135, 0.13, 0.3);
+        pupil.userData.skipOutline = true;
+        group.add(eye, pupil);
+      });
+      break;
+    }
+
+    case 'ink_squid': {
+      const squidPinkMat = createToonMaterial(0xfbcfe8);
+      const squidAccentMat = createToonMaterial(0xf472b6);
+      const inkSpotMat = createToonMaterial(INK_COLOR_HEX);
+
+      // Cono rosa claro con la punta hacia arriba
+      const mantleCone = new THREE.Mesh(
+        new THREE.ConeGeometry(0.32, 0.68, 8),
+        squidPinkMat
+      );
+      mantleCone.position.set(0, 0.54, 0);
+      group.add(mantleCone);
+
+      // Aletas superiores del chipirón
+      const finGeo = new THREE.ConeGeometry(0.14, 0.24, 6);
+      [-1, 1].forEach((side) => {
+        const fin = new THREE.Mesh(finGeo, squidAccentMat);
+        fin.scale.set(1, 1, 0.36);
+        fin.position.set(side * 0.14, 0.72, -0.02);
+        fin.rotation.z = -side * 0.95;
+        group.add(fin);
+      });
+
+      const collar = new THREE.Mesh(
+        new THREE.TorusGeometry(0.29, 0.042, 6, 14),
+        squidAccentMat
+      );
+      collar.rotation.x = Math.PI / 2;
+      collar.position.set(0, 0.21, 0);
+      group.add(collar);
+
+      // Manchas planas de tinta negra sobre el manto
+      const spotGeo = new THREE.SphereGeometry(0.085, 8, 6);
+      const spots: [number, number, number][] = [
+        [-0.14, 0.56, 0.14],
+        [0.16, 0.46, 0.15],
+        [0.03, 0.67, 0.09],
+      ];
+      spots.forEach(([sx, sy, sz]) => {
+        const spot = new THREE.Mesh(spotGeo, inkSpotMat);
+        spot.scale.set(1.1, 0.9, 0.38);
+        spot.position.set(sx, sy, sz);
+        spot.userData.skipOutline = true;
+        group.add(spot);
+      });
+
+      [-1, 1].forEach((side) => {
+        const eye = new THREE.Mesh(sharedEyeGeo, eyeWhiteMat);
+        eye.scale.setScalar(1.1);
+        eye.position.set(side * 0.14, 0.33, 0.24);
+        const pupil = new THREE.Mesh(sharedPupilGeo, pupilMat);
+        pupil.scale.setScalar(1.1);
+        pupil.position.set(side * 0.145, 0.335, 0.32);
+        pupil.userData.skipOutline = true;
+        group.add(eye, pupil);
+      });
+
+      // 6 tentáculos cortos abajo en `anim_legs`
+      const tentaclesGroup = new THREE.Group();
+      tentaclesGroup.name = 'anim_legs';
+      const tentGeo = new THREE.ConeGeometry(0.068, 0.26, 6);
+      for (let i = 0; i < 6; i++) {
+        const ang = (i / 6) * Math.PI * 2 + Math.PI / 6;
+        const tx = Math.cos(ang) * 0.22;
+        const tz = Math.sin(ang) * 0.22;
+        const tent = new THREE.Mesh(
+          tentGeo,
+          i % 2 === 0 ? squidPinkMat : squidAccentMat
+        );
+        orientNewBugLimb(tent, tx, 0.21, tz, tx * 1.55, 0.03, tz * 1.55);
+        tentaclesGroup.add(tent);
+      }
+      group.add(tentaclesGroup);
+      break;
+    }
+
+    case 'bluebottle': {
+      const emeraldMat = createToonMaterial(0x16a34a, {
+        emissive: 0x22c55e,
+        emissiveIntensity: 0.2,
+      });
+      const thoraxGreenMat = createToonMaterial(0x15803d, {
+        emissive: 0x16a34a,
+        emissiveIntensity: 0.2,
+      });
+      const redEyeMat = createToonMaterial(0xef4444);
+      const darkLegMat = createToonMaterial(0x1c1917);
+      const wingMat = createToonMaterial(0xe0f2fe, { transparent: true, opacity: 0.86 });
+
+      // Vuela mucho más alto que la avispa (~0.95)
+      const abdomen = new THREE.Mesh(new THREE.SphereGeometry(0.34, 10, 8), emeraldMat);
+      abdomen.scale.set(1.06, 0.95, 1.18);
+      abdomen.position.set(0, 0.93, -0.18);
+
+      const thorax = new THREE.Mesh(new THREE.SphereGeometry(0.28, 10, 8), thoraxGreenMat);
+      thorax.scale.set(1.06, 0.95, 0.96);
+      thorax.position.set(0, 0.96, 0.14);
+      group.add(abdomen, thorax);
+
+      const hugeEyeGeo = new THREE.SphereGeometry(0.17, 8, 6);
+      [-1, 1].forEach((side) => {
+        const redEye = new THREE.Mesh(hugeEyeGeo, redEyeMat);
+        redEye.scale.set(0.95, 1.08, 1.05);
+        redEye.position.set(side * 0.14, 0.99, 0.35);
+        group.add(redEye);
+      });
+
+      const proboscis = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.024, 0.042, 0.16, 6),
+        darkLegMat
+      );
+      proboscis.position.set(0, 0.82, 0.37);
+      proboscis.rotation.x = -0.35;
+      group.add(proboscis);
+
+      const wingsGroup = new THREE.Group();
+      wingsGroup.name = 'anim_wings';
+      const wingGeo = new THREE.CylinderGeometry(0.34, 0.34, 0.028, 8);
+
+      const leftWing = new THREE.Mesh(wingGeo, wingMat);
+      leftWing.scale.set(1.52, 1, 0.82);
+      leftWing.position.set(-0.44, 1.18, 0.02);
+      leftWing.rotation.z = 0.24;
+      leftWing.name = 'left_wing';
+
+      const rightWing = new THREE.Mesh(wingGeo, wingMat);
+      rightWing.scale.set(1.52, 1, 0.82);
+      rightWing.position.set(0.44, 1.18, 0.02);
+      rightWing.rotation.z = -0.24;
+      rightWing.name = 'right_wing';
+
+      wingsGroup.add(leftWing, rightWing);
+      group.add(wingsGroup);
+
+      const legsGroup = new THREE.Group();
+      legsGroup.name = 'anim_legs';
+      const flyLegGeo = new THREE.CylinderGeometry(0.02, 0.014, 0.24, 6);
+      [-0.08, 0.06, 0.2].forEach((lz) => {
+        [-1, 1].forEach((side) => {
+          const leg = new THREE.Mesh(flyLegGeo, darkLegMat);
+          leg.position.set(side * 0.18, 0.72, lz);
+          leg.rotation.z = side * 0.35;
+          legsGroup.add(leg);
+        });
+      });
+      group.add(legsGroup);
+      break;
+    }
+
+    case 'moldy_cloth': {
+      const clothMat = createToonMaterial(0x7c6f91);
+      const moldMat = createToonMaterial(0x65a30d);
+      const moldBrightMat = createToonMaterial(0x84cc16);
+
+      // Cuadrado de tela plano
+      const clothSquare = new THREE.Mesh(
+        new THREE.BoxGeometry(0.76, 0.075, 0.76),
+        clothMat
+      );
+      clothSquare.position.set(0, 0.14, 0);
+      group.add(clothSquare);
+
+      const hump = new THREE.Mesh(new THREE.SphereGeometry(0.24, 8, 6), clothMat);
+      hump.scale.set(1.12, 0.42, 0.95);
+      hump.position.set(0, 0.17, 0.08);
+      hump.userData.skipOutline = true;
+      group.add(hump);
+
+      const moldPatchGeo = new THREE.CylinderGeometry(0.11, 0.12, 0.025, 7);
+      const moldSpots: [number, number, number, boolean][] = [
+        [-0.22, 0.18, -0.18, false],
+        [0.21, 0.18, -0.14, true],
+        [-0.18, 0.18, 0.22, true],
+        [0.24, 0.18, 0.2, false],
+      ];
+      moldSpots.forEach(([mx, my, mz, bright], idx) => {
+        const spot = new THREE.Mesh(moldPatchGeo, bright ? moldBrightMat : moldMat);
+        spot.scale.set(idx % 2 === 0 ? 1.25 : 0.9, 1, idx % 2 === 0 ? 0.9 : 1.2);
+        spot.position.set(mx, my, mz);
+        spot.userData.skipOutline = true;
+        group.add(spot);
+      });
+
+      [-1, 1].forEach((side) => {
+        const eye = new THREE.Mesh(sharedEyeGeo, eyeWhiteMat);
+        eye.position.set(side * 0.13, 0.24, 0.22);
+        const pupil = new THREE.Mesh(sharedPupilGeo, pupilMat);
+        pupil.position.set(side * 0.135, 0.25, 0.29);
+        pupil.userData.skipOutline = true;
+        group.add(eye, pupil);
+      });
+
+      // Las 4 esquinas hacen de patas (anim_legs)
+      const cornersGroup = new THREE.Group();
+      cornersGroup.name = 'anim_legs';
+      const cornerGeo = new THREE.ConeGeometry(0.11, 0.24, 6);
+      [-1, 1].forEach((sx) => {
+        [-1, 1].forEach((sz) => {
+          const corner = new THREE.Mesh(cornerGeo, clothMat);
+          orientNewBugLimb(
+            corner,
+            sx * 0.33,
+            0.14,
+            sz * 0.33,
+            sx * 0.45,
+            0.02,
+            sz * 0.45
+          );
+          cornersGroup.add(corner);
+        });
+      });
+      group.add(cornersGroup);
+      break;
+    }
+
+    case 'mutant_aphid': {
+      const radioLimeMat = createToonMaterial(0xbef264, {
+        emissive: 0x84cc16,
+        emissiveIntensity: 0.25,
+      });
+      const purpleMat = createToonMaterial(0x9333ea);
+      const legMat = createToonMaterial(0x4d7c0f);
+
+      // Cuerpo de pera: trasero ancho y cuello/cabeza estrechos delante
+      const pearRear = new THREE.Mesh(new THREE.SphereGeometry(0.36, 10, 8), radioLimeMat);
+      pearRear.scale.set(1.02, 0.92, 1.12);
+      pearRear.position.set(0, 0.34, -0.14);
+
+      const pearFront = new THREE.Mesh(new THREE.SphereGeometry(0.21, 10, 8), radioLimeMat);
+      pearFront.scale.set(0.88, 0.85, 1.15);
+      pearFront.position.set(0, 0.29, 0.24);
+      group.add(pearRear, pearFront);
+
+      // 2 tubitos traseros (sifúnculos morados)
+      const tubeGeo = new THREE.CylinderGeometry(0.048, 0.06, 0.28, 6);
+      [-1, 1].forEach((side) => {
+        const tube = new THREE.Mesh(tubeGeo, purpleMat);
+        orientNewBugLimb(
+          tube,
+          side * 0.16,
+          0.52,
+          -0.28,
+          side * 0.28,
+          0.74,
+          -0.44
+        );
+        group.add(tube);
+      });
+
+      // Manchas mutantes moradas sobre el abdomen
+      const spotGeo = new THREE.SphereGeometry(0.09, 8, 6);
+      const spots: [number, number, number][] = [
+        [-0.22, 0.48, -0.06],
+        [0.21, 0.46, -0.16],
+        [0.02, 0.59, -0.12],
+      ];
+      spots.forEach(([sx, sy, sz]) => {
+        const spot = new THREE.Mesh(spotGeo, purpleMat);
+        spot.scale.set(1.1, 0.55, 1.1);
+        spot.position.set(sx, sy, sz);
+        spot.userData.skipOutline = true;
+        group.add(spot);
+      });
+
+      const antGeo = new THREE.CylinderGeometry(0.015, 0.022, 0.34, 6);
+      [-1, 1].forEach((side) => {
+        const eyeScale = side === -1 ? 1.15 : 0.88;
+        const eye = new THREE.Mesh(sharedEyeGeo, eyeWhiteMat);
+        eye.scale.setScalar(eyeScale);
+        eye.position.set(side * 0.12, 0.34, 0.4);
+        const pupil = new THREE.Mesh(sharedPupilGeo, pupilMat);
+        pupil.scale.setScalar(eyeScale);
+        pupil.position.set(side * 0.125, 0.345, 0.47);
+        pupil.userData.skipOutline = true;
+
+        const ant = new THREE.Mesh(antGeo, legMat);
+        orientNewBugLimb(ant, side * 0.08, 0.38, 0.4, side * 0.24, 0.56, 0.64);
+        group.add(eye, pupil, ant);
+      });
+
+      const legsGroup = new THREE.Group();
+      legsGroup.name = 'anim_legs';
+      const legGeo = new THREE.CylinderGeometry(0.025, 0.018, 0.36, 6);
+      [-0.26, -0.02, 0.2].forEach((lz, idx) => {
+        [-1, 1].forEach((side) => {
+          const leg = new THREE.Mesh(legGeo, legMat);
+          leg.position.set(side * 0.31, 0.14, lz);
+          leg.rotation.z = side * (Math.PI / 2 - 0.44);
+          leg.rotation.y = -side * (idx - 1) * 0.25;
+          legsGroup.add(leg);
+        });
+      });
+      group.add(legsGroup);
+      break;
+    }
+
+    case 'hermit_can': {
+      const canSteelMat = createToonMaterial(0x94a3b8);
+      const rimLightMat = createToonMaterial(0xcbd5e1);
+      const labelRedMat = createToonMaterial(0xdc2626);
+      const clawRedMat = createToonMaterial(0xef4444);
+      const legDarkRedMat = createToonMaterial(0xb91c1c);
+      const badgeYellowMat = createToonMaterial(0xfacc15);
+
+      // Lata de atún baja y ancha con etiqueta roja
+      const canGroup = new THREE.Group();
+      canGroup.position.set(0, 0.29, -0.05);
+      canGroup.rotation.x = -0.1;
+
+      const canBody = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.41, 0.41, 0.3, 8),
+        canSteelMat
+      );
+      const rimGeo = new THREE.TorusGeometry(0.41, 0.036, 6, 14);
+      const topRim = new THREE.Mesh(rimGeo, rimLightMat);
+      topRim.rotation.x = Math.PI / 2;
+      topRim.position.y = 0.15;
+      const botRim = new THREE.Mesh(rimGeo, rimLightMat);
+      botRim.rotation.x = Math.PI / 2;
+      botRim.position.y = -0.15;
+
+      const redLabel = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.422, 0.422, 0.16, 8),
+        labelRedMat
+      );
+      redLabel.userData.skipOutline = true;
+
+      const yellowBadge = new THREE.Mesh(
+        new THREE.BoxGeometry(0.24, 0.075, 0.05),
+        badgeYellowMat
+      );
+      yellowBadge.position.set(0, 0, 0.41);
+      yellowBadge.userData.skipOutline = true;
+
+      canGroup.add(canBody, topRim, botRim, redLabel, yellowBadge);
+      group.add(canGroup);
+
+      // Ojos en pedúnculos asomando por delante
+      const stalkGeo = new THREE.CylinderGeometry(0.026, 0.032, 0.22, 6);
+      [-1, 1].forEach((side) => {
+        const stalk = new THREE.Mesh(stalkGeo, clawRedMat);
+        orientNewBugLimb(stalk, side * 0.1, 0.3, 0.34, side * 0.14, 0.5, 0.44);
+        const eye = new THREE.Mesh(sharedEyeGeo, eyeWhiteMat);
+        eye.scale.setScalar(0.92);
+        eye.position.set(side * 0.145, 0.52, 0.45);
+        const pupil = new THREE.Mesh(sharedPupilGeo, pupilMat);
+        pupil.scale.setScalar(0.92);
+        pupil.position.set(side * 0.15, 0.525, 0.52);
+        pupil.userData.skipOutline = true;
+        group.add(stalk, eye, pupil);
+      });
+
+      // 2 pinzas rojas asomando delante
+      const palmGeo = new THREE.SphereGeometry(0.13, 10, 8);
+      const pincerGeo = new THREE.ConeGeometry(0.052, 0.19, 6);
+      [-1, 1].forEach((side) => {
+        const palm = new THREE.Mesh(palmGeo, clawRedMat);
+        palm.scale.set(0.85, 0.68, 1.32);
+        palm.position.set(side * 0.26, 0.18, 0.45);
+        palm.rotation.y = -side * 0.34;
+
+        const thumb = new THREE.Mesh(pincerGeo, legDarkRedMat);
+        thumb.rotation.x = Math.PI / 2;
+        thumb.rotation.z = side * 0.28;
+        thumb.position.set(side * 0.17, 0.18, 0.54);
+        group.add(palm, thumb);
+      });
+
+      const legsGroup = new THREE.Group();
+      legsGroup.name = 'anim_legs';
+      const legGeo = new THREE.CylinderGeometry(0.03, 0.02, 0.34, 6);
+      [-0.1, 0.14].forEach((lz, idx) => {
+        [-1, 1].forEach((side) => {
+          const leg = new THREE.Mesh(legGeo, legDarkRedMat);
+          leg.position.set(side * 0.42, 0.13, lz);
+          leg.rotation.z = side * (Math.PI / 2 - 0.4);
+          leg.rotation.y = -side * (idx - 0.5) * 0.3;
+          legsGroup.add(leg);
+        });
+      });
+      group.add(legsGroup);
+      break;
+    }
+
+    case 'harlequin_bug': {
+      const shieldRedMat = createToonMaterial(0xdc2626);
+      const harlequinBlackMat = createToonMaterial(INK_COLOR_HEX);
+
+      // Escudo pentagonal plano (5 lados exactos)
+      const pentagonShield = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.44, 0.47, 0.13, 5),
+        shieldRedMat
+      );
+      pentagonShield.rotation.y = Math.PI;
+      pentagonShield.scale.set(0.98, 1, 1.06);
+      pentagonShield.position.set(0, 0.22, -0.04);
+      group.add(pentagonShield);
+
+      // Dibujo negro de arlequín (4 rombos planos encima)
+      const diamondGeo = new THREE.BoxGeometry(0.16, 0.022, 0.16);
+      const diamondCoords: [number, number, number][] = [
+        [0, -0.02, 1.15],
+        [-0.17, 0.16, 0.85],
+        [0.17, 0.16, 0.85],
+        [0, -0.25, 0.9],
+      ];
+      diamondCoords.forEach(([dx, dz, ds]) => {
+        const diamond = new THREE.Mesh(diamondGeo, harlequinBlackMat);
+        diamond.scale.set(ds, 1, ds);
+        diamond.rotation.y = Math.PI / 4;
+        diamond.position.set(dx, 0.29, dz);
+        diamond.userData.skipOutline = true;
+        group.add(diamond);
+      });
+
+      const head = new THREE.Mesh(new THREE.SphereGeometry(0.15, 8, 6), harlequinBlackMat);
+      head.scale.set(1.1, 0.72, 0.9);
+      head.position.set(0, 0.22, 0.38);
+      group.add(head);
+
+      const antGeo = new THREE.CylinderGeometry(0.016, 0.022, 0.28, 6);
+      [-1, 1].forEach((side) => {
+        const eye = new THREE.Mesh(sharedEyeGeo, eyeWhiteMat);
+        eye.scale.setScalar(0.8);
+        eye.position.set(side * 0.12, 0.26, 0.46);
+        const pupil = new THREE.Mesh(sharedPupilGeo, pupilMat);
+        pupil.scale.setScalar(0.8);
+        pupil.position.set(side * 0.13, 0.265, 0.52);
+        pupil.userData.skipOutline = true;
+
+        const ant = new THREE.Mesh(antGeo, harlequinBlackMat);
+        orientNewBugLimb(ant, side * 0.08, 0.24, 0.48, side * 0.24, 0.32, 0.7);
+        group.add(eye, pupil, ant);
+      });
+
+      const legsGroup = new THREE.Group();
+      legsGroup.name = 'anim_legs';
+      const legGeo = new THREE.CylinderGeometry(0.026, 0.018, 0.34, 6);
+      [-0.22, 0, 0.2].forEach((lz, idx) => {
+        [-1, 1].forEach((side) => {
+          const leg = new THREE.Mesh(legGeo, harlequinBlackMat);
+          leg.position.set(side * 0.38, 0.13, lz);
+          leg.rotation.z = side * (Math.PI / 2 - 0.38);
+          leg.rotation.y = -side * (idx - 1) * 0.26;
+          legsGroup.add(leg);
+        });
+      });
+      group.add(legsGroup);
+      break;
+    }
+
+    case 'pressure_beetle': {
+      const potSteelMat = createToonMaterial(0xcbd5e1);
+      const lidSteelMat = createToonMaterial(0x94a3b8);
+      const darkMetalMat = createToonMaterial(0x334155);
+      const handleRedMat = createToonMaterial(0xdc2626);
+      const valveYellowMat = createToonMaterial(0xfacc15);
+      const steamMat = createToonMaterial(0xffffff);
+
+      // Olla de acero ancha
+      const potBody = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.44, 0.41, 0.42, 8),
+        potSteelMat
+      );
+      potBody.position.set(0, 0.34, 0);
+
+      const lid = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.46, 0.46, 0.09, 8),
+        lidSteelMat
+      );
+      lid.position.set(0, 0.58, 0);
+
+      const lidBar = new THREE.Mesh(
+        new THREE.BoxGeometry(0.92, 0.055, 0.14),
+        darkMetalMat
+      );
+      lidBar.position.set(0, 0.64, 0);
+      group.add(potBody, lid, lidBar);
+
+      // Dos asas rojas laterales
+      const handleGeo = new THREE.TorusGeometry(0.12, 0.045, 6, 10, Math.PI);
+      [-1, 1].forEach((side) => {
+        const handle = new THREE.Mesh(handleGeo, handleRedMat);
+        handle.position.set(side * 0.42, 0.44, 0);
+        handle.rotation.x = Math.PI / 2;
+        handle.rotation.z = side === 1 ? -Math.PI / 2 : Math.PI / 2;
+        group.add(handle);
+      });
+
+      // Válvula amarilla encima de la tapa
+      const valve = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.09, 0.07, 0.16, 8),
+        valveYellowMat
+      );
+      valve.position.set(0, 0.72, 0);
+      group.add(valve);
+
+      // Nubecita de vapor oculta por defecto (steam_puff)
+      const steamPuff = new THREE.Group();
+      steamPuff.name = 'steam_puff';
+      steamPuff.visible = false;
+      steamPuff.position.set(0, 0.88, 0);
+      const puffCoords: [number, number, number, number][] = [
+        [0, 0, 0, 0.13],
+        [-0.09, 0.12, 0.03, 0.11],
+        [0.08, 0.16, -0.02, 0.12],
+      ];
+      puffCoords.forEach(([px, py, pz, pr]) => {
+        const s = new THREE.Mesh(new THREE.SphereGeometry(pr, 8, 6), steamMat);
+        s.position.set(px, py, pz);
+        steamPuff.add(s);
+      });
+      group.add(steamPuff);
+
+      [-1, 1].forEach((side) => {
+        const eye = new THREE.Mesh(sharedEyeGeo, eyeWhiteMat);
+        eye.scale.setScalar(1.1);
+        eye.position.set(side * 0.15, 0.39, 0.41);
+        const pupil = new THREE.Mesh(sharedPupilGeo, pupilMat);
+        pupil.scale.setScalar(1.1);
+        pupil.position.set(side * 0.155, 0.395, 0.49);
+        pupil.userData.skipOutline = true;
+        group.add(eye, pupil);
+      });
+
+      const legsGroup = new THREE.Group();
+      legsGroup.name = 'anim_legs';
+      const legGeo = new THREE.CylinderGeometry(0.052, 0.04, 0.22, 6);
+      [-0.18, 0.18].forEach((lz) => {
+        [-1, 1].forEach((side) => {
+          const leg = new THREE.Mesh(legGeo, darkMetalMat);
+          leg.position.set(side * 0.28, 0.1, lz);
+          leg.rotation.z = side * 0.25;
+          legsGroup.add(leg);
+        });
+      });
+      group.add(legsGroup);
+      break;
+    }
+
+    case 'hood_cricket': {
+      const oliveDarkMat = createToonMaterial(0x3f6212, {
+        emissive: 0x365314,
+        emissiveIntensity: 0.12,
+      });
+      const greaseSheenMat = createToonMaterial(0x65a30d);
+      const chitinDarkMat = createToonMaterial(0x1a2e05);
+
+      const body = new THREE.Mesh(new THREE.SphereGeometry(0.26, 10, 8), oliveDarkMat);
+      body.scale.set(0.76, 0.8, 1.55);
+      body.position.set(0, 0.26, -0.06);
+      group.add(body);
+
+      const greaseSheen = new THREE.Mesh(
+        new THREE.SphereGeometry(0.2, 8, 6),
+        greaseSheenMat
+      );
+      greaseSheen.scale.set(0.7, 0.55, 1.35);
+      greaseSheen.position.set(0, 0.34, -0.06);
+      greaseSheen.userData.skipOutline = true;
+      group.add(greaseSheen);
+
+      const head = new THREE.Mesh(new THREE.SphereGeometry(0.2, 10, 8), oliveDarkMat);
+      head.scale.set(0.86, 0.96, 0.86);
+      head.position.set(0, 0.29, 0.34);
+      group.add(head);
+
+      // Antenas larguísimas hacia delante
+      const longAntGeo = new THREE.CylinderGeometry(0.014, 0.024, 0.78, 6);
+      [-1, 1].forEach((side) => {
+        const eye = new THREE.Mesh(sharedEyeGeo, eyeWhiteMat);
+        eye.scale.setScalar(0.92);
+        eye.position.set(side * 0.13, 0.34, 0.45);
+        const pupil = new THREE.Mesh(sharedPupilGeo, pupilMat);
+        pupil.scale.setScalar(0.92);
+        pupil.position.set(side * 0.14, 0.345, 0.52);
+        pupil.userData.skipOutline = true;
+
+        const ant = new THREE.Mesh(longAntGeo, chitinDarkMat);
+        orientNewBugLimb(ant, side * 0.09, 0.38, 0.44, side * 0.38, 0.56, 1.12);
+        group.add(eye, pupil, ant);
+      });
+
+      const legsGroup = new THREE.Group();
+      legsGroup.name = 'anim_legs';
+
+      // 4 patas delanteras/medias
+      const smallLegGeo = new THREE.CylinderGeometry(0.024, 0.018, 0.34, 6);
+      [0.02, 0.22].forEach((lz, idx) => {
+        [-1, 1].forEach((side) => {
+          const leg = new THREE.Mesh(smallLegGeo, oliveDarkMat);
+          leg.position.set(side * 0.28, 0.13, lz);
+          leg.rotation.z = side * (Math.PI / 2 - 0.42);
+          leg.rotation.y = -side * (idx - 0.5) * 0.25;
+          legsGroup.add(leg);
+        });
+      });
+
+      // Patas traseras enormes en zigzag (/\) sobresaliendo por encima del cuerpo
+      const femurGeo = new THREE.CylinderGeometry(0.044, 0.075, 0.52, 6);
+      const tibiaGeo = new THREE.CylinderGeometry(0.018, 0.03, 0.68, 6);
+      const footGeo = new THREE.CylinderGeometry(0.014, 0.018, 0.18, 6);
+      [-1, 1].forEach((side) => {
+        const femur = new THREE.Mesh(femurGeo, oliveDarkMat);
+        orientNewBugLimb(femur, side * 0.19, 0.24, -0.06, side * 0.33, 0.68, -0.3);
+
+        const tibia = new THREE.Mesh(tibiaGeo, chitinDarkMat);
+        orientNewBugLimb(tibia, side * 0.33, 0.68, -0.3, side * 0.41, 0.04, -0.51);
+
+        const foot = new THREE.Mesh(footGeo, chitinDarkMat);
+        orientNewBugLimb(foot, side * 0.41, 0.04, -0.51, side * 0.43, 0.02, -0.34);
+
+        legsGroup.add(femur, tibia, foot);
+      });
+
+      group.add(legsGroup);
+      break;
+    }
+  }
+
+  addInkOutline(group);
+
+  // Lepisma: tras generar los contornos con opacity 1, bajamos opacidad a 0.45 y ocultamos sus contornos
+  if (id === 'silverfish') {
+    const sfBody = group.getObjectByName('silverfish_body');
+    sfBody?.traverse((child) => {
+      if (child instanceof THREE.Mesh) {
+        if (child.userData.isInkOutline) {
+          child.visible = false;
+        } else {
+          const mat = child.material as THREE.Material;
+          if (mat && mat.transparent) {
+            mat.opacity = 0.45;
+          }
+        }
+      }
+    });
+  }
+
+  const skates = new THREE.Mesh(
+    new THREE.TorusGeometry(0.4, 0.11, 8, 16),
+    createToonMaterial(0xf472b6)
+  );
+  skates.rotation.x = Math.PI / 2;
+  skates.position.y = 0.12;
+  skates.visible = false;
+  skates.name = 'foam_skates';
+  addInkOutline(skates);
+  root.add(skates);
+
+  return root;
+}

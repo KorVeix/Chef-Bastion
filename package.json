@@ -7,7 +7,7 @@
     "dev": "CI=true vite --host 0.0.0.0 --port 3000",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "tsx --test src/game/rules.test.ts src/game/roguelite.test.ts src/game/musicEngine.test.ts src/game/rushDesign.test.ts src/game/analytics.test.ts src/game/levelAudit.test.ts src/game/strategicScripts.test.ts src/game/combatTuning.test.ts src/game/strategicWarnings.test.ts src/game/pointerPriority.test.ts",
+    "test": "tsx --test src/game/rules.test.ts src/game/roguelite.test.ts src/game/musicEngine.test.ts src/game/rushDesign.test.ts src/game/analytics.test.ts src/game/levelAudit.test.ts src/game/strategicScripts.test.ts src/game/combatTuning.test.ts src/game/strategicWarnings.test.ts src/game/pointerPriority.test.ts src/game/newBugModels.test.ts",
     "lint": "tsc --noEmit",
     "audit:estrategico": "tsx scripts/audit-strategic.ts",
     "test:tableros": "STRATEGIC_FULL=1 tsx --test src/game/strategicScripts.test.ts",
